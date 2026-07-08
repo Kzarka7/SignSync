@@ -16,7 +16,7 @@ export default function SpeechSubtitle({
     <Card className="relative overflow-hidden pl-7 w-full min-w-0">
       {/* Left Vertical Blue Accent Bar */}
       <div className="flex justify-between items-center">
-        <span className="text-md text-text-1">Transcription</span>
+        <span className="text-sm text-text-2 font-medium uppercase tracking-wide">Transcription</span>
         <span className="font-mono text-[12px] text-text-3 ml-auto">{time}</span>
       </div>
       <div className="flex items-center gap-2 my-1.5">

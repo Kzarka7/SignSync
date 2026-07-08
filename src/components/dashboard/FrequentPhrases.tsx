@@ -7,7 +7,7 @@ export default function FrequentPhrases() {
   const { data: phrases } = useAsync(() => getPhrases(), [])
 
   return (
-    <Card>
+    <Card className="flex flex-wrap gap-2.5 p-4">
       {phrases?.map((p) => (
         <PhraseChip key={p.id} text={p.text} />
       ))}

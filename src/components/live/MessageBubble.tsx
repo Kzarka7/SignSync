@@ -12,16 +12,16 @@ export default function MessageBubble({ message }: { message: ConversationMessag
       style={{ borderLeft: `3px solid ${isSign ? '#2D7FF9' : '#1B4B66'}` }}
     >
       <div className="flex items-center gap-2 mb-1.5">
-        <span className="flex items-center gap-1.5 text-[11.5px] font-semibold text-text-2">
+        <span className="flex items-center gap-1.5 text-xs font-semibold text-text-2">
           <span className={`w-5 h-5 rounded-md flex items-center justify-center ${isSign ? 'bg-signal-light text-signal' : 'bg-[#EFF3F7] text-trust'}`}>
             {isSign ? <HandMetal size={12} /> : <Mic size={12} />}
           </span>
           {isSign ? 'Signed' : 'Spoken'}
         </span>
-        <span className="font-mono text-[11px] text-text-3 ml-auto">{time}</span>
+        <span className="font-mono text-xs text-text-3 ml-auto">{time}</span>
       </div>
 
-      <div className="text-[14.5px] leading-relaxed mb-1.5">{message.text}</div>
+      <div className="text-md leading-relaxed mb-1.5">{message.text}</div>
 
       {lowConfidence && (
         <div className="h-[5px] rounded bg-[#EAF0F6] overflow-hidden mt-1 mb-1.5">

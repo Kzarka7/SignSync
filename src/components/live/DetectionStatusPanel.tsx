@@ -16,13 +16,13 @@ export default function DetectionStatusPanel() {
 
   return (
     <Card>
-      <h3 className="text-[12.5px] uppercase tracking-wide text-text-2 font-semibold mb-2.5">Detection status</h3>
+      <h3 className="text-sm uppercase tracking-wide text-text-2 font-semibold mb-2.5">Detection status</h3>
       <div className="flex flex-col gap-2.5">
         {status &&
           rows.map(({ key, label }) => (
-            <div key={key} className="flex items-center gap-2.5 text-[13px] font-medium">
+            <div key={key} className="flex items-center gap-2.5 text-xs font-medium">
               <StatusPill label={label} state={status[key]} />
-              <span className="ml-auto text-[11.5px] text-text-2 font-normal capitalize">{status[key]}</span>
+              <span className="ml-auto text-xs text-text-2 font-normal capitalize">{status[key]}</span>
             </div>
           ))}
       </div>

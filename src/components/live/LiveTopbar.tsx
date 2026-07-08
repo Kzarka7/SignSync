@@ -22,8 +22,11 @@ export default function LiveTopbar({ onEnd, onExport }: { onEnd: () => void; onE
   return (
     <div className="flex items-center justify-between bg-white border border-border rounded-xl2 px-4.5 py-3 mb-4" style={{ padding: '12px 18px' }}>
       <div className="flex items-center gap-3">
-        <StatusPill label="Auto-detecting · signing now" state="ready" />
-        <span className="font-mono text-sm text-text-2">{formatTime(elapsedSeconds)}</span>
+        <span className="text-md font-bold text-text-1 uppercase tracking-wide self-center mr-0.5 whitespace-nowrap">Medical</span>
+        <div className="text-text-2">
+          <StatusPill label="Auto-detecting · signing now" state="ready" />
+        </div>
+        <span className="font-mono text-sm text-text-3">{formatTime(elapsedSeconds)}</span>
       </div>
       <div className="flex gap-2">
         <Button size="sm" title="Fullscreen">

@@ -12,7 +12,7 @@ export default function QuickStartCard() {
           One session, both directions. Daloy listens and watches at the same time, so no one has to
           switch modes mid-sentence.
         </p>
-        <Button variant="primary" className="mt-4 !bg-white !text-trust !border-white" onClick={() => navigate('/live')}>
+        <Button variant="primary" className="mt-4 !bg-white hover:!bg-white/90 !text-trust !border-none" onClick={() => navigate('/live')}>
           <Play size={15} />
           Start conversation
         </Button>
