@@ -35,14 +35,6 @@ export default function CameraPanel() {
           </div>
         )}
       </div>
-
-      {status && (
-        <div className="flex gap-2 mt-3 flex-wrap">
-          <StatusPill label="Hands" state={status.hands} />
-          <StatusPill label="Face" state={status.face} />
-          <StatusPill label="Light" state={status.lightLevel} />
-        </div>
-      )}
     </div>
   )
 }

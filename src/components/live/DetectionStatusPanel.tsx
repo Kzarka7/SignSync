@@ -1,10 +1,12 @@
 import { useDeviceStatus } from '../../hooks/useDeviceStatus'
 import Card from '../shared/Card'
+import StatusPill from '../shared/StatusPill'
 
 const rows: { key: keyof NonNullable<ReturnType<typeof useDeviceStatus>>; label: string }[] = [
   { key: 'camera', label: 'Camera' },
   { key: 'hands', label: 'Hands' },
   { key: 'face', label: 'Face' },
+  { key: 'lightLevel', label: 'Light' },
   { key: 'microphone', label: 'Microphone' },
   { key: 'speaker', label: 'Speaker' },
 ]
@@ -19,10 +21,7 @@ export default function DetectionStatusPanel() {
         {status &&
           rows.map(({ key, label }) => (
             <div key={key} className="flex items-center gap-2.5 text-[13px] font-medium">
-              <span className="relative w-4 h-4 flex-shrink-0">
-                <span className="absolute inset-[5px] rounded-full bg-success" />
-              </span>
-              {label}
+              <StatusPill label={label} state={status[key]} />
               <span className="ml-auto text-[11.5px] text-text-2 font-normal capitalize">{status[key]}</span>
             </div>
           ))}

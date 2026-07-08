@@ -6,7 +6,7 @@ export default function QuickPhraseRow() {
   const { data: phrases } = useAsync(() => getPhrases('medical'), [])
 
   return (
-    <div className="flex gap-2 mt-3.5 overflow-x-auto pb-1">
+    <div className="flex gap-2 overflow-x-auto pb-1">
       <span className="text-[11px] font-semibold text-text-3 uppercase tracking-wide self-center mr-0.5 whitespace-nowrap">
         Medical
       </span>

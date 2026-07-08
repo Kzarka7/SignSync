@@ -45,7 +45,7 @@ export default function AvatarPanel() {
             </button>
           ))}
         </div>
-        <Button size="md" className="rounded-[50%]">
+        <Button size="md">
           <Mic size={20} />
         </Button>
       </div>

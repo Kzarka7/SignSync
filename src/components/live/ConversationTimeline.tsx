@@ -9,20 +9,13 @@ export default function ConversationTimeline({
 }) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // We use useLayoutEffect so we can read the DOM changes synchronously
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    const threshold = 100; // Increased slightly to comfortably catch user intent
-    
-    // Calculate distance from the bottom BEFORE we snap to the new height
-    // Since the new message is already in the DOM at this lifecycle step,
-    // we subtract the estimated space or use an offset check.
+    const threshold = 100; 
     const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-
-    // If the user was within threshold distance of the bottom before the change, snap down
-    const shouldScroll = distanceToBottom <= threshold + 150; // Add padding for the incoming bubble height
+    const shouldScroll = distanceToBottom <= threshold + 150;
 
     if (shouldScroll) {
       container.scrollTo({
@@ -39,7 +32,10 @@ export default function ConversationTimeline({
     >
       <div
         ref={scrollContainerRef}
-        className="max-h-[430px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] pr-1"
+        /* 1. Added `flex flex-col` so children stack correctly for the divider
+          2. Added `divide-y divide-border/60` to draw clean lines between blocks
+        */
+        className="max-h-[430px] overflow-y-auto flex flex-col divide-y divide-border [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] pr-1"
       >
         {messages.length === 0 && (
           <div className="text-sm text-text-2 py-6 text-center">
@@ -47,7 +43,9 @@ export default function ConversationTimeline({
           </div>
         )}
         {messages.map((m) => (
-          <MessageBubble key={m.id} message={m} />
+          <div key={m.id} className="py-3 first:pt-0 last:pb-0">
+            <MessageBubble message={m} />
+          </div>
         ))}
       </div>
     </div>

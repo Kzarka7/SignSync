@@ -15,7 +15,7 @@ export default {
         'amber-light': '#FDF3E1',
         danger: '#E0554C',
         'danger-light': '#FCEAE9',
-        border: '#E1E8F0',
+        border: '#cbd0d6',
         'text-2': '#5B6B82',
         'text-3': '#8C9AAF',
       },

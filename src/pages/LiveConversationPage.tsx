@@ -16,18 +16,21 @@ export default function LiveConversationPage() {
     <div>
       <LiveTopbar onEnd={endSession} onExport={exportSession} />
 
-      <div className="grid grid-cols-[3fr_2fr] gap-4 items-start">
-        <div>
+      <div className="grid grid-cols-[5fr_3fr] grid gap-4 items-start">
+        <div className="flex flex-col gap-3.5">
           <CameraPanel />
-          <ConversationTimeline messages={messages} />
+          <SpeechSubtitle message={lastMessage ?? ({ text: 'Waiting for spoken input...' } as any)} />
           <QuickPhraseRow />
         </div>
 
         <div className="flex flex-col gap-3.5">
           <AvatarPanel />
-          <SpeechSubtitle  caption={lastMessage ? `Spoken: "${lastMessage.text}"` : 'Waiting for spoken input...'}/>
           <PlaybackPanel />
           <DetectionStatusPanel />
+        </div>
+        
+        <div className="col-span-2">
+          <ConversationTimeline messages={messages} />
         </div>
       </div>
     </div>

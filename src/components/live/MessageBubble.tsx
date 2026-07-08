@@ -8,7 +8,7 @@ export default function MessageBubble({ message }: { message: ConversationMessag
 
   return (
     <div
-      className="pl-4 pb-4 relative"
+      className="pl-4 relative"
       style={{ borderLeft: `3px solid ${isSign ? '#2D7FF9' : '#1B4B66'}` }}
     >
       <div className="flex items-center gap-2 mb-1.5">

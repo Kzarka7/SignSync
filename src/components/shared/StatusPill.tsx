@@ -26,7 +26,7 @@ const ringColor: Record<DeviceState, string> = {
 // live/AI state in the product reads as one coherent visual language.
 export default function StatusPill({ label, state }: StatusPillProps) {
   return (
-    <div className="flex items-center gap-2 bg-white border border-border rounded-full py-1.5 pl-1.5 pr-3 text-xs font-medium">
+    <div className="flex items-center gap-2 py-1.5 pr-1.5 text-xs font-medium">
       <span className="relative w-4 h-4 flex-shrink-0">
         {state !== 'offline' && (
           <span className={`absolute inset-0 rounded-full border ${ringColor[state]} opacity-0 pulse-ring`} />
