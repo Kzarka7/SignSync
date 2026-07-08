@@ -1,0 +1,11 @@
+[
+  { "id": "p1", "category": "general", "text": "I need assistance" },
+  { "id": "p2", "category": "general", "text": "Thank you" },
+  { "id": "p3", "category": "general", "text": "Can you repeat that" },
+  { "id": "p4", "category": "medical", "text": "Please follow me" },
+  { "id": "p5", "category": "medical", "text": "Where does it hurt" },
+  { "id": "p6", "category": "medical", "text": "Take a deep breath" },
+  { "id": "p7", "category": "school", "text": "I have a question" },
+  { "id": "p8", "category": "school", "text": "Please wait a moment" },
+  { "id": "p9", "category": "government", "text": "I need to file a request" }
+]

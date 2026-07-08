@@ -1,0 +1,9 @@
+{
+  "camera": "tracking",
+  "hands": "tracking",
+  "face": "tracking",
+  "microphone": "listening",
+  "speaker": "ready",
+  "ai": "ready",
+  "lightLevel": "warning"
+}

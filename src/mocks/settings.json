@@ -1,0 +1,9 @@
+{
+  "theme": "light",
+  "interfaceLanguage": "en",
+  "voice": "fil-male",
+  "highContrast": false,
+  "largeText": true,
+  "avatarSpeed": 1,
+  "autoSaveConversations": true
+}

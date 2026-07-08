@@ -1,0 +1,29 @@
+[
+  {
+    "id": "s1",
+    "title": "Hospital reception",
+    "location": "Hospital",
+    "startedAt": "2026-07-08T10:12:00+08:00",
+    "durationMinutes": 14,
+    "messageCount": 26,
+    "avgConfidence": 96
+  },
+  {
+    "id": "s2",
+    "title": "Barangay office visit",
+    "location": "Government office",
+    "startedAt": "2026-07-07T15:45:00+08:00",
+    "durationMinutes": 9,
+    "messageCount": 15,
+    "avgConfidence": 88
+  },
+  {
+    "id": "s3",
+    "title": "Classroom consultation",
+    "location": "School",
+    "startedAt": "2026-07-06T13:20:00+08:00",
+    "durationMinutes": 22,
+    "messageCount": 41,
+    "avgConfidence": 95
+  }
+]
