@@ -8,6 +8,7 @@ export default {
         trust: '#1B4B66',
         signal: '#2D7FF9',
         'signal-light': '#EAF3FB',
+        'signal-light-active': '#e3f1ff',
         sky: '#F5F9FD',
         success: '#1FAA59',
         'success-light': '#E7F7EE',

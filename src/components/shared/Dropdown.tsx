@@ -68,9 +68,9 @@ export default function Dropdown<T extends string | number>({
                 onChange(option.value);
                 setOpen(false);
               }}
-              className={`flex items-center justify-between gap-3 w-full text-left px-3 py-2.5 text-sm hover:bg-signal-light transition-colors rounded-md ${
+              className={`flex items-center justify-between gap-3 w-full text-left my-0.5 px-3 py-2 text-sm hover:bg-signal-light transition-colors rounded-md ${
                 option.value === value
-                  ? "text-signal font-semibold"
+                  ? "text-signal font-semibold bg-signal-light-active"
                   : "text-ink"
               }`}
             >

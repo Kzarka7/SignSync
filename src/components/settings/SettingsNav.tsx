@@ -14,8 +14,8 @@ export default function SettingsNav({ onSelect }: { onSelect: (section: string) 
             setActive(s)
             onSelect(s)
           }}
-          className={`px-3 py-2.5 rounded-lg text-[13.5px] font-medium cursor-pointer ${
-            active === s ? 'bg-signal-light text-signal' : 'text-text-2'
+          className={`px-3 py-2.5 rounded-lg text-[13.5px] font-medium cursor-pointer hover:bg-signal-light ${
+            active === s ? 'bg-signal-light-active text-signal' : 'text-text-2'
           }`}
         >
           {s}
