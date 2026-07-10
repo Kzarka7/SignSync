@@ -1,37 +1,81 @@
-import { AlertTriangle } from 'lucide-react'
-import { useDeviceStatus } from '../../hooks/useDeviceStatus'
+import { AlertTriangle, Play, Square, VideoOff } from 'lucide-react'
+import { CameraFeedState } from '../../hooks/useCameraFeed'
 import StatusPill from '../shared/StatusPill'
 
-export default function CameraPanel() {
-  const status = useDeviceStatus()
+interface CameraPanelProps {
+  feed: CameraFeedState
+}
+
+// Renders the live camera feed with a hand-landmark overlay drawn by
+// useCameraFeed. Hands, face, and light are all real detection now;
+// microphone/speaker/AI status still come from the mocked/REST device
+// snapshot (see DetectionStatusPanel).
+export default function CameraPanel({ feed }: CameraPanelProps) {
+  const handsWarning = feed.enabled && !feed.error && !feed.handsDetected
+  const faceWarning = feed.enabled && !feed.error && !feed.faceDetected
+  const lightWarning = feed.enabled && !feed.error && feed.lightLevel === 'warning'
 
   return (
     <div>
       <div className="relative rounded-xl2 overflow-hidden bg-[#0F1B2B]" style={{ aspectRatio: '16 / 9' }}>
         <div className="absolute top-3 left-3 right-3 flex justify-between z-10">
-          <div className="bg-black/45 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-danger" />
-            Live
+          <div className="flex items-center gap-2">
+            <div className="bg-black/45 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${feed.enabled ? 'bg-danger' : 'bg-text-3'}`} />
+              {feed.enabled ? 'Live' : 'Paused'}
+            </div>
+            <button
+              onClick={feed.toggleCamera}
+              title={feed.enabled ? 'Stop camera' : 'Start camera'}
+              className="bg-black/45 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-black/60 transition-colors"
+            >
+              {feed.enabled ? <Square size={11} /> : <Play size={11} />}
+              {feed.enabled ? 'Stop' : 'Start'}
+            </button>
           </div>
           <div className="bg-black/45 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1.5 rounded-lg">
-            Signer detected
+            {!feed.enabled ? 'Camera off' : feed.handsDetected ? 'Signer detected' : 'No hands detected'}
           </div>
         </div>
 
-        <div className="absolute border-[1.5px] border-dashed border-white/35 rounded-2xl" style={{ inset: '14%' }} />
+        {!feed.enabled ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white/50 px-8 text-center">
+            <VideoOff size={32} />
+            <span className="text-xs">Camera is paused. Click "Start" to resume detection.</span>
+          </div>
+        ) : feed.error ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-white/60 px-8 text-center">
+            <VideoOff size={32} />
+            <span className="text-xs leading-relaxed max-w-xs">{feed.error}</span>
+          </div>
+        ) : (
+          <>
+            <video ref={feed.videoRef} muted playsInline className="absolute inset-0 w-full h-full object-cover" />
+            <canvas ref={feed.canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+            <div className="absolute border-[1.5px] border-dashed border-white/35 rounded-2xl pointer-events-none" style={{ inset: '14%' }} />
+          </>
+        )}
 
-        <div className="absolute inset-0 flex items-center justify-center text-white/25">
-          {/* Placeholder for the live <video> element the camera feed will render into */}
-          <svg width="90" height="120" viewBox="0 0 90 120" fill="none" stroke="currentColor" strokeWidth="2.2">
-            <circle cx="45" cy="20" r="14" />
-            <path d="M45 34v46M20 55l25-10 25 10M25 100l20-20 20 20" />
-          </svg>
-        </div>
-
-        {status?.lightLevel === 'warning' && (
-          <div className="absolute bottom-3 left-3 right-3 bg-amber/15 border border-amber/50 text-[#FDD98A] text-[11.5px] font-medium px-2.5 py-2 rounded-lg flex items-center gap-2 z-10">
-            <AlertTriangle size={14} />
-            Lighting is a little low — move closer to a window for better accuracy.
+        {(handsWarning || faceWarning || lightWarning) && (
+          <div className="absolute bottom-3 left-3 right-3 flex flex-col gap-1.5 z-10">
+            {handsWarning && (
+              <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-[11.5px] font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
+                <AlertTriangle size={14} />
+                No hands detected — make sure your hands are visible in frame.
+              </div>
+            )}
+            {faceWarning && (
+              <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-[11.5px] font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
+                <AlertTriangle size={14} />
+                Face not clearly detected — face the camera directly.
+              </div>
+            )}
+            {lightWarning && (
+              <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-[11.5px] font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
+                <AlertTriangle size={14} />
+                Lighting is a little low — move closer to a window for better accuracy.
+              </div>
+            )}
           </div>
         )}
       </div>

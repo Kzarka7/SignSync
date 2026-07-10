@@ -18,12 +18,14 @@ class MockCameraDetectionService implements ICameraDetectionService {
     callback(current)
 
     const timer = setInterval(() => {
-      // Nudge the light-level state occasionally to demonstrate the
-      // low-light warning banner without a real camera feed.
-      const flicker = Math.random() > 0.85
+      // Nudges face/light occasionally so their warning banners have
+      // something to demonstrate without a real face-detection model yet.
+      // Hands/camera are driven by the real useCameraFeed hook instead -
+      // see components/live/CameraPanel.tsx.
       current = {
         ...current,
-        lightLevel: flicker ? 'warning' : STATES[0],
+        face: Math.random() > 0.85 ? 'warning' : STATES[0],
+        lightLevel: Math.random() > 0.85 ? 'warning' : STATES[0],
       }
       callback(current)
     }, 6000)

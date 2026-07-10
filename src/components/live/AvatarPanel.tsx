@@ -15,7 +15,7 @@ interface AvatarPanelProps {
 // hooks/useAvatarRenderer.ts) so this component stays presentation-only.
 export default function AvatarPanel({ onSubmitSpeech }: AvatarPanelProps) {
   const [speed, setSpeed] = useState<(typeof speeds)[number]>(1)
-  const { isListening, transcript, start, stop, reset } = useSpeechRecognition()
+  const { isListening, transcript, error, start, stop, reset } = useSpeechRecognition()
   const { isRendering, caption, render } = useAvatarRenderer()
 
   function toggleMic() {
@@ -66,8 +66,8 @@ export default function AvatarPanel({ onSubmitSpeech }: AvatarPanelProps) {
 
       {/* Subtitle container: live speech-to-text preview, before submission */}
       <div className="absolute bottom-3.5 left-3.5 right-[92px] bg-black/45 backdrop-blur-sm rounded-lg px-3 py-2 min-h-[34px] flex items-center">
-        <span className="text-white text-xs leading-snug line-clamp-2">
-          {transcript || (isListening ? 'Listening...' : 'Tap the microphone to speak')}
+        <span className={`text-xs leading-snug line-clamp-2 ${error ? 'text-amber' : 'text-white'}`}>
+          {error ?? (transcript || (isListening ? 'Listening...' : 'Tap the microphone to speak'))}
         </span>
       </div>
 
