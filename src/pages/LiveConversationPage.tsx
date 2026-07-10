@@ -28,7 +28,7 @@ export default function LiveConversationPage() {
           <PlaybackPanel />
           <DetectionStatusPanel />
         </div>
-        
+
         <div className="col-span-2">
           <ConversationTimeline messages={messages} />
         </div>
