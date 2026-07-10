@@ -17,15 +17,19 @@ interface DetectionStatusPanelProps {
   feed: CameraFeedState
 }
 
-// Camera/Hands/Light rows are overridden with real values from
-// useCameraFeed; Face/Microphone/Speaker still come from the mocked/REST
+// Camera/Hands/Face/Light rows are overridden with real values from
+// useCameraFeed; Microphone/Speaker still come from the mocked/REST
 // device snapshot until those get their own real implementations.
 export default function DetectionStatusPanel({ feed }: DetectionStatusPanelProps) {
   const status = useDeviceStatus()
 
   function resolveState(key: string, fallback: DeviceState): DeviceState {
+    if (!feed.enabled && (key === 'camera' || key === 'hands' || key === 'face' || key === 'lightLevel')) {
+      return 'offline'
+    }
     if (key === 'camera') return feed.error ? 'offline' : feed.cameraReady ? 'tracking' : 'warning'
     if (key === 'hands') return feed.handsDetected ? 'tracking' : 'warning'
+    if (key === 'face') return feed.faceDetected ? 'tracking' : 'warning'
     if (key === 'lightLevel') return feed.lightLevel
     return fallback
   }

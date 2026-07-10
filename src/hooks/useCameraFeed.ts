@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { FilesetResolver, HandLandmarker, type HandLandmarkerResult } from '@mediapipe/tasks-vision'
+import { FilesetResolver, HandLandmarker, FaceDetector, type HandLandmarkerResult } from '@mediapipe/tasks-vision'
 
 // Decoupled from VITE_USE_MOCKS for the same reason speech recognition is:
 // camera access is a browser capability, not a backend call. Defaults to
@@ -7,11 +7,16 @@ import { FilesetResolver, HandLandmarker, type HandLandmarkerResult } from '@med
 // implementation exists.
 const USE_MOCK_CAMERA = (import.meta.env.VITE_USE_MOCK_CAMERA ?? 'false') === 'true'
 
-// MediaPipe's hosted WASM runtime and hand-landmark model. Fetched by the
-// browser at runtime, not bundled - no local model files to manage.
+// MediaPipe's hosted WASM runtime and models. Fetched by the browser at
+// runtime, not bundled - no local model files to manage.
 const WASM_BASE_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm'
 const HAND_MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
+// Short-range face detector - presence/bounding-box only, not the full
+// 478-point face mesh. Matches the same "is it there" scope as hands;
+// deliberately not the heavier FaceLandmarker model.
+const FACE_MODEL_URL =
+  'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.task'
 
 // Average frame brightness (0-255 scale) below this triggers the low-light
 // warning. Tuned loosely - revisit once you've tested in an actual
@@ -27,8 +32,11 @@ export interface CameraFeedState {
   canvasRef: RefObject<HTMLCanvasElement>
   cameraReady: boolean
   handsDetected: boolean
+  faceDetected: boolean
   lightLevel: 'ready' | 'warning'
   error: string | null
+  enabled: boolean
+  toggleCamera: () => void
 }
 
 // Owns the camera stream and the MediaPipe HandLandmarker detection loop.
@@ -39,18 +47,35 @@ export function useCameraFeed(): CameraFeedState {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  // Persisted across start/stop toggles (not recreated every time) since
+  // loading the MediaPipe models takes a second or two - only closed on
+  // full component unmount, see the effect below.
+  const landmarkerRef = useRef<HandLandmarker | null>(null)
+  const faceDetectorRef = useRef<FaceDetector | null>(null)
 
+  const [enabled, setEnabled] = useState(true)
   const [cameraReady, setCameraReady] = useState(false)
   const [handsDetected, setHandsDetected] = useState(false)
+  const [faceDetected, setFaceDetected] = useState(false)
   const [lightLevel, setLightLevel] = useState<'ready' | 'warning'>('ready')
   const [error, setError] = useState<string | null>(null)
 
+  const toggleCamera = () => setEnabled((prev) => !prev)
+
   useEffect(() => {
+    if (!enabled) {
+      setCameraReady(false)
+      setHandsDetected(false)
+      setFaceDetected(false)
+      return
+    }
+
     if (USE_MOCK_CAMERA) {
       // Preserves the old mocked-timer behaviour for demoing without a
       // webcam, or on a machine where camera access isn't possible.
       const timer = setInterval(() => {
         setHandsDetected(Math.random() > 0.2)
+        setFaceDetected(Math.random() > 0.15)
         setLightLevel(Math.random() > 0.85 ? 'warning' : 'ready')
       }, 6000)
       setCameraReady(true)
@@ -58,7 +83,6 @@ export function useCameraFeed(): CameraFeedState {
     }
 
     let stream: MediaStream | null = null
-    let landmarker: HandLandmarker | null = null
     let rafId: number | null = null
     let cancelled = false
 
@@ -72,17 +96,26 @@ export function useCameraFeed(): CameraFeedState {
           await videoRef.current.play()
         }
         setCameraReady(true)
+        setError(null)
 
-        const fileset = await FilesetResolver.forVisionTasks(WASM_BASE_URL)
-        landmarker = await HandLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: HAND_MODEL_URL },
-          runningMode: 'VIDEO',
-          numHands: 2,
-        })
+        if (!landmarkerRef.current) {
+          const fileset = await FilesetResolver.forVisionTasks(WASM_BASE_URL)
+          landmarkerRef.current = await HandLandmarker.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: HAND_MODEL_URL },
+            runningMode: 'VIDEO',
+            numHands: 2,
+          })
+          faceDetectorRef.current = await FaceDetector.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: FACE_MODEL_URL },
+            runningMode: 'VIDEO',
+          })
+        }
 
-        sampleCanvasRef.current = document.createElement('canvas')
-        sampleCanvasRef.current.width = BRIGHTNESS_SAMPLE_SIZE
-        sampleCanvasRef.current.height = BRIGHTNESS_SAMPLE_SIZE
+        if (!sampleCanvasRef.current) {
+          sampleCanvasRef.current = document.createElement('canvas')
+          sampleCanvasRef.current.width = BRIGHTNESS_SAMPLE_SIZE
+          sampleCanvasRef.current.height = BRIGHTNESS_SAMPLE_SIZE
+        }
 
         detectLoop()
       } catch (err) {
@@ -95,14 +128,19 @@ export function useCameraFeed(): CameraFeedState {
     }
 
     function detectLoop() {
-      if (cancelled || !videoRef.current || !landmarker) return
+      if (cancelled || !videoRef.current || !landmarkerRef.current) return
 
       const video = videoRef.current
       if (video.readyState >= 2) {
-        const result: HandLandmarkerResult = landmarker.detectForVideo(video, performance.now())
+        const result: HandLandmarkerResult = landmarkerRef.current.detectForVideo(video, performance.now())
         setHandsDetected(result.landmarks.length > 0)
         drawOverlay(result)
         updateLightLevel(video)
+
+        if (faceDetectorRef.current) {
+          const faceResult = faceDetectorRef.current.detectForVideo(video, performance.now())
+          setFaceDetected(faceResult.detections.length > 0)
+        }
       }
 
       rafId = requestAnimationFrame(detectLoop)
@@ -150,13 +188,26 @@ export function useCameraFeed(): CameraFeedState {
 
     setup()
 
+    // Runs when `enabled` flips back to false, or the component unmounts.
+    // Stops the stream and the detection loop, but deliberately does NOT
+    // close landmarkerRef - see the dedicated unmount-only effect below.
     return () => {
       cancelled = true
       if (rafId) cancelAnimationFrame(rafId)
       stream?.getTracks().forEach((track) => track.stop())
-      landmarker?.close()
+      if (videoRef.current) videoRef.current.srcObject = null
+    }
+  }, [enabled])
+
+  // Full-unmount-only cleanup: release both MediaPipe models.
+  useEffect(() => {
+    return () => {
+      landmarkerRef.current?.close()
+      landmarkerRef.current = null
+      faceDetectorRef.current?.close()
+      faceDetectorRef.current = null
     }
   }, [])
 
-  return { videoRef, canvasRef, cameraReady, handsDetected, lightLevel, error }
+  return { videoRef, canvasRef, cameraReady, handsDetected, faceDetected, lightLevel, error, enabled, toggleCamera }
 }
