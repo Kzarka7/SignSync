@@ -1,8 +1,17 @@
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, VideoOff } from 'lucide-react'
+import { CameraFeedState } from '../../hooks/useCameraFeed'
 import { useDeviceStatus } from '../../hooks/useDeviceStatus'
 import StatusPill from '../shared/StatusPill'
 
-export default function CameraPanel() {
+interface CameraPanelProps {
+  feed: CameraFeedState
+}
+
+// Renders the live camera feed with a hand-landmark overlay drawn by
+// useCameraFeed. Face/microphone/speaker/AI status still come from the
+// mocked/REST device snapshot (useDeviceStatus) - only hands + light are
+// real in this phase.
+export default function CameraPanel({ feed }: CameraPanelProps) {
   const status = useDeviceStatus()
 
   return (
@@ -14,26 +23,35 @@ export default function CameraPanel() {
             Live
           </div>
           <div className="bg-black/45 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1.5 rounded-lg">
-            Signer detected
+            {feed.handsDetected ? 'Signer detected' : 'No hands detected'}
           </div>
         </div>
 
-        <div className="absolute border-[1.5px] border-dashed border-white/35 rounded-2xl" style={{ inset: '14%' }} />
+        {feed.error ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-white/60 px-8 text-center">
+            <VideoOff size={32} />
+            <span className="text-xs leading-relaxed max-w-xs">{feed.error}</span>
+          </div>
+        ) : (
+          <>
+            <video ref={feed.videoRef} muted playsInline className="absolute inset-0 w-full h-full object-cover" />
+            <canvas ref={feed.canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+            <div className="absolute border-[1.5px] border-dashed border-white/35 rounded-2xl pointer-events-none" style={{ inset: '14%' }} />
+          </>
+        )}
 
-        <div className="absolute inset-0 flex items-center justify-center text-white/25">
-          {/* Placeholder for the live <video> element the camera feed will render into */}
-          <svg width="90" height="120" viewBox="0 0 90 120" fill="none" stroke="currentColor" strokeWidth="2.2">
-            <circle cx="45" cy="20" r="14" />
-            <path d="M45 34v46M20 55l25-10 25 10M25 100l20-20 20 20" />
-          </svg>
-        </div>
-
-        {status?.lightLevel === 'warning' && (
+        {feed.lightLevel === 'warning' && !feed.error && (
           <div className="absolute bottom-3 left-3 right-3 bg-amber/15 border border-amber/50 text-[#FDD98A] text-[11.5px] font-medium px-2.5 py-2 rounded-lg flex items-center gap-2 z-10">
             <AlertTriangle size={14} />
             Lighting is a little low — move closer to a window for better accuracy.
           </div>
         )}
+      </div>
+
+      <div className="flex gap-2 mt-3 flex-wrap">
+        <StatusPill label="Hands" state={feed.handsDetected ? 'tracking' : 'warning'} />
+        {status && <StatusPill label="Face" state={status.face} />}
+        <StatusPill label="Light" state={feed.lightLevel} />
       </div>
     </div>
   )
