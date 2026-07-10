@@ -79,12 +79,6 @@ export default function CameraPanel({ feed }: CameraPanelProps) {
           </div>
         )}
       </div>
-
-      <div className="flex gap-2 mt-3 flex-wrap">
-        <StatusPill label="Hands" state={!feed.enabled ? 'offline' : feed.handsDetected ? 'tracking' : 'warning'} />
-        <StatusPill label="Face" state={!feed.enabled ? 'offline' : feed.faceDetected ? 'tracking' : 'warning'} />
-        <StatusPill label="Light" state={!feed.enabled ? 'offline' : feed.lightLevel} />
-      </div>
     </div>
   )
 }

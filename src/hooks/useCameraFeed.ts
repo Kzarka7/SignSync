@@ -53,7 +53,7 @@ export function useCameraFeed(): CameraFeedState {
   const landmarkerRef = useRef<HandLandmarker | null>(null)
   const faceDetectorRef = useRef<FaceDetector | null>(null)
 
-  const [enabled, setEnabled] = useState(true)
+  const [enabled, setEnabled] = useState(false)
   const [cameraReady, setCameraReady] = useState(false)
   const [handsDetected, setHandsDetected] = useState(false)
   const [faceDetected, setFaceDetected] = useState(false)
