@@ -14,10 +14,13 @@ export default function SpeechSubtitle({
 
   return (
     <Card className="relative overflow-hidden pl-7 w-full min-w-0">
-      {/* Left Vertical Blue Accent Bar */}
       <div className="flex justify-between items-center">
-        <span className="text-sm text-text-2 font-medium uppercase tracking-wide">Transcription</span>
-        <span className="font-mono text-[12px] text-text-3 ml-auto">{time}</span>
+        <span className="text-sm text-text-2 font-medium uppercase tracking-wide">
+          Transcription
+        </span>
+        <span className="font-mono text-[12px] text-text-3 ml-auto">
+          {time}
+        </span>
       </div>
       <div className="flex items-center gap-2 my-1.5">
         <span className="flex items-center gap-1.5 text-[12px] font-semibold text-text-2">
@@ -29,7 +32,10 @@ export default function SpeechSubtitle({
           {isSign ? "Signed" : "Spoken"}
         </span>
       </div>
-      <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-[#0A56D0]" />
+      <div
+        className="absolute left-0 top-0 bottom-0 w-[4px] "
+        style={{ borderLeft: `3px solid ${isSign ? "#2D7FF9" : "#1B4B66"}` }}
+      />
 
       {/* Content wrapper with auto-wrap rules */}
       <div className="text-xl text-[#1E293B] font-bold leading-relaxed break-words whitespace-normal">

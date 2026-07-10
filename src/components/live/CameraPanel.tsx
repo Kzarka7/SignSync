@@ -20,20 +20,20 @@ export default function CameraPanel({ feed }: CameraPanelProps) {
       <div className="relative rounded-xl2 overflow-hidden bg-[#0F1B2B]" style={{ aspectRatio: '16 / 9' }}>
         <div className="absolute top-3 left-3 right-3 flex justify-between z-10">
           <div className="flex items-center gap-2">
-            <div className="bg-black/45 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5">
+            <div className="bg-black/45 backdrop-blur-sm text-white text-xs font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${feed.enabled ? 'bg-danger' : 'bg-text-3'}`} />
               {feed.enabled ? 'Live' : 'Paused'}
             </div>
             <button
               onClick={feed.toggleCamera}
               title={feed.enabled ? 'Stop camera' : 'Start camera'}
-              className="bg-black/45 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-black/60 transition-colors"
+              className="bg-black/45 backdrop-blur-sm text-white text-xs font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-black/60 transition-colors"
             >
               {feed.enabled ? <Square size={11} /> : <Play size={11} />}
               {feed.enabled ? 'Stop' : 'Start'}
             </button>
           </div>
-          <div className="bg-black/45 backdrop-blur-sm text-white text-[11px] font-medium px-2.5 py-1.5 rounded-lg">
+          <div className="bg-black/45 backdrop-blur-sm text-white text-xs font-medium px-2.5 py-1.5 rounded-lg">
             {!feed.enabled ? 'Camera off' : feed.handsDetected ? 'Signer detected' : 'No hands detected'}
           </div>
         </div>
