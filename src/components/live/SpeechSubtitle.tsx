@@ -17,10 +17,10 @@ export default function SpeechSubtitle({
       {/* Left Vertical Blue Accent Bar */}
       <div className="flex justify-between items-center">
         <span className="text-sm text-text-2 font-medium uppercase tracking-wide">Transcription</span>
-        <span className="font-mono text-xs text-text-3 ml-auto">{time}</span>
+        <span className="font-mono text-[12px] text-text-3 ml-auto">{time}</span>
       </div>
       <div className="flex items-center gap-2 my-1.5">
-        <span className="flex items-center gap-1.5 text-xs font-semibold text-text-2">
+        <span className="flex items-center gap-1.5 text-[12px] font-semibold text-text-2">
           <span
             className={`w-6 h-6 rounded-md flex items-center justify-center ${isSign ? "bg-signal-light text-signal" : "bg-[#EFF3F7] text-trust"}`}
           >

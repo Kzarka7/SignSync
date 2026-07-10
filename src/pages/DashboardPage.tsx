@@ -32,11 +32,11 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-[1.4fr_1fr] gap-4.5 items-start" style={{ gap: '18px' }}>
         <div>
-          <div className="text-sm font-semibold text-text-2 uppercase tracking-wide mb-3">Recent sessions</div>
+          <div className="text-[13px] font-semibold text-text-2 uppercase tracking-wide mb-3">Recent sessions</div>
           <RecentSessions />
         </div>
         <div>
-          <div className="text-sm font-semibold text-text-2 uppercase tracking-wide mb-3">Frequently used phrases</div>
+          <div className="text-[13px] font-semibold text-text-2 uppercase tracking-wide mb-3">Frequently used phrases</div>
           <FrequentPhrases />
         </div>
       </div>

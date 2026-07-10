@@ -9,7 +9,7 @@ import PlaybackPanel from '../components/live/PlaybackPanel'
 import SpeechSubtitle from '../components/live/SpeechSubtitle'
 
 export default function LiveConversationPage() {
-  const { messages, endSession, exportSession } = useTranslationStream()
+  const { messages, endSession, exportSession, submitSpeech } = useTranslationStream()
   const lastMessage = messages[messages.length - 1]
 
   return (
@@ -24,7 +24,7 @@ export default function LiveConversationPage() {
         </div>
 
         <div className="flex flex-col gap-3.5">
-          <AvatarPanel />
+          <AvatarPanel onSubmitSpeech={submitSpeech} />
           <PlaybackPanel />
           <DetectionStatusPanel />
         </div>

@@ -9,8 +9,8 @@ export default function SessionHistoryCard({ session }: { session: ConversationS
         <Video size={20} />
       </div>
       <div className="flex-1">
-        <div className="text-sm font-semibold">{session.title}</div>
-        <div className="flex gap-4 text-xs text-text-2 mt-1">
+        <div className="text-md font-semibold">{session.title}</div>
+        <div className="flex gap-4 text-sm text-text-2 mt-1">
           <span>{new Date(session.startedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
           <span>{session.durationMinutes} min</span>
           <span>{session.messageCount} messages</span>
