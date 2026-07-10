@@ -1,11 +1,11 @@
-import { create } from 'zustand'
+import { create } from "zustand";
 
 interface SessionStoreState {
-  isSessionActive: boolean
-  elapsedSeconds: number
-  startSession: () => void
-  endSession: () => void
-  tick: () => void
+  isSessionActive: boolean;
+  elapsedSeconds: number;
+  startSession: () => void;
+  endSession: () => void;
+  tick: () => void;
 }
 
 // Holds the state of the current live session. Once a backend exists,
@@ -13,8 +13,8 @@ interface SessionStoreState {
 // /api/sessions "create" and "close" endpoints alongside the local state.
 export const useSessionStore = create<SessionStoreState>((set) => ({
   isSessionActive: true,
-  elapsedSeconds: 4 * 60 + 12,
+  elapsedSeconds: 0,
   startSession: () => set({ isSessionActive: true, elapsedSeconds: 0 }),
   endSession: () => set({ isSessionActive: false }),
-  tick: () => set((state) => ({ elapsedSeconds: state.elapsedSeconds + 1 })),
-}))
+  tick: () => set((state) => ({ elapsedSeconds: state.isSessionActive ? state.elapsedSeconds + 1 : state.elapsedSeconds })),
+}));

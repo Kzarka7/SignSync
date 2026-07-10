@@ -6,8 +6,8 @@ export default function ResourceCard({ icon: Icon, title, description }: { icon:
       <div className="rounded-[10px] bg-signal-light text-signal flex items-center justify-center mb-3" style={{ width: 42, height: 42 }}>
         <Icon size={20} />
       </div>
-      <h3 className="text-[14.5px] font-semibold mb-1">{title}</h3>
-      <p className="text-xs text-text-2 leading-relaxed">{description}</p>
+      <h3 className="text-md font-semibold mb-1">{title}</h3>
+      <p className="text-sm text-text-2 leading-relaxed">{description}</p>
     </div>
   )
 }

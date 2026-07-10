@@ -65,7 +65,7 @@ export default function AvatarPanel({ onSubmitSpeech }: AvatarPanelProps) {
       </div>
 
       {/* Subtitle container: live speech-to-text preview, before submission */}
-      <div className="absolute bottom-3.5 left-3.5 right-[92px] bg-black/45 backdrop-blur-sm rounded-lg px-3 py-2 min-h-[34px] flex items-center">
+      <div className="absolute bottom-3.5 left-3.5 right-[92px] bg-black/45 backdrop-blur-sm rounded-lg px-3 py-2 mr-2.5 min-h-[38px] flex items-center">
         <span className={`text-xs leading-snug line-clamp-2 ${error ? 'text-amber' : 'text-white'}`}>
           {error ?? (transcript || (isListening ? 'Listening...' : 'Tap the microphone to speak'))}
         </span>
@@ -75,21 +75,21 @@ export default function AvatarPanel({ onSubmitSpeech }: AvatarPanelProps) {
         <button
           onClick={toggleMic}
           title={isListening ? 'Stop microphone' : 'Start microphone'}
-          className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-colors ${
+          className={`w-[38px] h-[38px] rounded-lg flex items-center justify-center border transition-colors ${
             isListening ? 'bg-danger text-white border-danger' : 'bg-white text-text-2 border-border'
           }`}
         >
-          {isListening ? <Square size={14} /> : <Mic size={14} />}
+          {isListening ? <Square size={16} /> : <Mic size={16} />}
         </button>
         <button
           onClick={handleSubmit}
           disabled={!transcript.trim()}
           title="Submit for signing"
-          className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+          className={`w-[38px] h-[38px] rounded-lg flex items-center justify-center border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
             isListening ? 'bg-success text-white border-success' : 'bg-signal text-white border-signal'
           }`}
         >
-          {isListening ? <Check size={14} /> : <ArrowUp size={14} />}
+          {isListening ? <Check size={16} /> : <ArrowUp size={16} />}
         </button>
       </div>
     </div>

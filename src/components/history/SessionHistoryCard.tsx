@@ -17,12 +17,12 @@ export default function SessionHistoryCard({ session }: { session: ConversationS
           <span>{session.avgConfidence}% avg. confidence</span>
         </div>
       </div>
-      <Button size="sm" className="text-[14px]">
-        <Play size={13} />
-        Replay
+      <Button size="md">
+        <Play size={14} />
+        <span className="text-xs">Replay</span>
       </Button>
       <Button size="md" title="Export">
-        <Download size={13} />
+        <Download size={16} />
       </Button>
     </div>
   )
