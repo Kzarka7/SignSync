@@ -20,18 +20,22 @@ export default function DetectionStatusPanel({ feed }: DetectionStatusPanelProps
   const status = useDeviceStatus()
 
   function resolveState(key: string, fallback: DeviceState): DeviceState {
-    // Check if the camera is disabled OR if a camera stream error exists
+    // Camera itself is only unavailable if disabled or a real camera error
+    // occurred - a model-loading failure doesn't affect the camera feed.
     const isCameraUnavailable = !feed.enabled || !!feed.error;
+    // Hands/light depend on detection actually running, which also stops
+    // if the model failed to load, even though the camera is fine.
+    const isDetectionUnavailable = isCameraUnavailable || !!feed.modelError;
 
-    if (isCameraUnavailable && (key === 'camera' || key === 'hands' || key === 'face' || key === 'lightLevel')) {
-      return 'offline'
+    if (isCameraUnavailable && key === 'camera') return 'offline';
+    if (isDetectionUnavailable && (key === 'hands' || key === 'face' || key === 'lightLevel')) {
+      return 'offline';
     }
-    
-    // Fallback handlers if camera is enabled and running without error
+
     if (key === 'camera') return feed.cameraReady ? 'tracking' : 'warning'
     if (key === 'hands') return feed.handsDetected ? 'tracking' : 'warning'
     if (key === 'lightLevel') return feed.lightLevel
-    
+
     return fallback
   }
 

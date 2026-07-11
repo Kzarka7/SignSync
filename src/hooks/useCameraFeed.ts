@@ -63,6 +63,7 @@ export interface CameraFeedState {
   handsDetected: boolean;
   lightLevel: "ready" | "warning";
   error: string | null;
+  modelError: string | null;
   enabled: boolean;
   toggleCamera: () => void;
 }
@@ -76,15 +77,16 @@ export function useCameraFeed(): CameraFeedState {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
   // Persisted across start/stop toggles (not recreated every time) since
-  // loading the MediaPipe models takes a second or two - only closed on
+  // loading the MediaPipe model takes a second or two - only closed on
   // full component unmount, see the effect below.
   const landmarkerRef = useRef<HandLandmarker | null>(null);
 
   const [enabled, setEnabled] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [handsDetected, setHandsDetected] = useState(false);
-  const [lightLevel, setLightLevel] = useState(<"ready" | "warning">"ready");
+  const [lightLevel, setLightLevel] = useState<"ready" | "warning">("ready");
   const [error, setError] = useState<string | null>(null);
+  const [modelError, setModelError] = useState<string | null>(null);
 
   const toggleCamera = () => setEnabled((prev) => !prev);
 
@@ -92,8 +94,9 @@ export function useCameraFeed(): CameraFeedState {
     if (!enabled) {
       setCameraReady(false);
       setHandsDetected(false);
-      setLightLevel("warning");
+      setLightLevel("ready");
       setError(null);
+      setModelError(null);
       return;
     }
 
@@ -102,19 +105,55 @@ export function useCameraFeed(): CameraFeedState {
     let cancelled = false;
 
     async function setup() {
+      setError(null);
+      setModelError(null);
+
+      // Camera acquisition only. If this fails, there's genuinely nothing
+      // to show - hide the video and report it honestly.
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { width: 1280, height: 720 },
         });
-        if (cancelled) return;
+        if (cancelled) {
+          // Effect was cleaned up (a fast Stop click, or leaving the page)
+          // while this permission request was still in flight. Release
+          // the stream immediately - leaving it open here is exactly what
+          // caused "could not access the camera" on every attempt after
+          // this one, since the browser saw the camera as still in use by
+          // this leaked handle.
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
         }
         setCameraReady(true);
-        setError(null);
+      } catch (err) {
+        // Release the stream if one was acquired before the failure (e.g.
+        // video.play() rejected) - leaving it open here would lock the
+        // camera for every subsequent attempt, even with nothing else
+        // using it.
+        stream?.getTracks().forEach((track) => track.stop());
+        stream = null;
+        if (videoRef.current) videoRef.current.srcObject = null;
 
+        setError(
+          err instanceof DOMException && err.name === "NotAllowedError"
+            ? "Camera access was denied. Allow camera access in your browser to use live detection."
+            : "Could not access the camera. Check that no other app is using it.",
+        );
+        return;
+      }
+
+      // Separate try/catch on purpose: a failure here means the hand
+      // detection model didn't load (usually a network issue fetching it
+      // from Google's hosted CDN) - it has nothing to do with camera
+      // access, so it must not be reported as a camera error, and the
+      // video feed you can already see should keep working even without
+      // detection running.
+      try {
         if (!landmarkerRef.current) {
           const fileset = await FilesetResolver.forVisionTasks(WASM_BASE_URL);
           landmarkerRef.current = await HandLandmarker.createFromOptions(
@@ -138,10 +177,9 @@ export function useCameraFeed(): CameraFeedState {
 
         detectLoop();
       } catch (err) {
-        setError(
-          err instanceof DOMException && err.name === "NotAllowedError"
-            ? "Camera access was denied. Allow camera access in your browser to use live detection."
-            : "Could not access the camera. Check that no other app is using it.",
+        console.error("[useCameraFeed] Model loading error:", err);
+        setModelError(
+          "Hand detection isn't available right now (the detection model failed to load). Your camera is still working.",
         );
       }
     }
@@ -270,6 +308,7 @@ export function useCameraFeed(): CameraFeedState {
     handsDetected,
     lightLevel,
     error,
+    modelError,
     enabled,
     toggleCamera,
   };

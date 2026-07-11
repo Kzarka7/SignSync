@@ -10,8 +10,8 @@ interface CameraPanelProps {
 // microphone/speaker/AI status still come from the mocked/REST device
 // snapshot (see DetectionStatusPanel).
 export default function CameraPanel({ feed }: CameraPanelProps) {
-  const handsWarning = feed.enabled && !feed.error && !feed.handsDetected
-  const lightWarning = feed.enabled && !feed.error && feed.lightLevel === 'warning'
+  const handsWarning = feed.enabled && !feed.error && !feed.modelError && !feed.handsDetected
+  const lightWarning = feed.enabled && !feed.error && !feed.modelError && feed.lightLevel === 'warning'
 
   return (
     <div>
@@ -32,7 +32,13 @@ export default function CameraPanel({ feed }: CameraPanelProps) {
             </button>
           </div>
           <div className="bg-black/45 backdrop-blur-sm text-white text-xs font-medium px-2.5 py-1.5 rounded-lg">
-            {!feed.enabled ? 'Camera off' : feed.handsDetected ? 'Signer detected' : 'No hands detected'}
+            {!feed.enabled
+              ? 'Camera off'
+              : feed.modelError
+                ? 'Detection unavailable'
+                : feed.handsDetected
+                  ? 'Signer detected'
+                  : 'No hands detected'}
           </div>
         </div>
 
@@ -54,8 +60,14 @@ export default function CameraPanel({ feed }: CameraPanelProps) {
           </>
         )}
 
-        {(handsWarning || lightWarning) && (
+        {(handsWarning || lightWarning || feed.modelError) && (
           <div className="absolute bottom-3 left-3 right-3 flex flex-col gap-1.5 z-10">
+            {feed.modelError && (
+              <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-[11.5px] font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
+                <AlertTriangle size={14} />
+                {feed.modelError}
+              </div>
+            )}
             {handsWarning && (
               <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-[11.5px] font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
                 <AlertTriangle size={14} />
