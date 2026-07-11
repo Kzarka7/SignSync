@@ -2,16 +2,8 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import {
   FilesetResolver,
   HandLandmarker,
-  FaceDetector,
   type HandLandmarkerResult,
 } from "@mediapipe/tasks-vision";
-
-// Decoupled from VITE_USE_MOCKS for the same reason speech recognition is:
-// camera access is a browser capability, not a backend call. Defaults to
-// "false" (use the real camera + MediaPipe) now that a real
-// implementation exists.
-const USE_MOCK_CAMERA =
-  (import.meta.env.VITE_USE_MOCK_CAMERA ?? "false") === "true";
 
 // MediaPipe's hosted WASM runtime and models. Fetched by the browser at
 // runtime, not bundled - no local model files to manage.
@@ -19,11 +11,6 @@ const WASM_BASE_URL =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
 const HAND_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
-// Short-range face detector - presence/bounding-box only, not the full
-// 478-point face mesh. Matches the same "is it there" scope as hands;
-// deliberately not the heavier FaceLandmarker model.
-const FACE_MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.task";
 
 // Average frame brightness (0-255 scale) below this triggers the low-light
 // warning. Tuned loosely - revisit once you've tested in an actual
@@ -36,30 +23,44 @@ const BRIGHTNESS_SAMPLE_SIZE = 32;
 
 const HAND_CONNECTIONS: [number, number][] = [
   // Thumb
-  [0, 1], [1, 2], [2, 3], [3, 4],
+  [0, 1],
+  [1, 2],
+  [2, 3],
+  [3, 4],
 
   // Index
-  [0, 5], [5, 6], [6, 7], [7, 8],
+  [0, 5],
+  [5, 6],
+  [6, 7],
+  [7, 8],
 
   // Middle
-  [5, 9], [9,10], [10,11], [11,12],
+  [5, 9],
+  [9, 10],
+  [10, 11],
+  [11, 12],
 
   // Ring
-  [9,13], [13,14], [14,15], [15,16],
+  [9, 13],
+  [13, 14],
+  [14, 15],
+  [15, 16],
 
   // Pinky
-  [13,17], [17,18], [18,19], [19,20],
+  [13, 17],
+  [17, 18],
+  [18, 19],
+  [19, 20],
 
   // Palm
-  [0,17],
-]
+  [0, 17],
+];
 
 export interface CameraFeedState {
   videoRef: RefObject<HTMLVideoElement>;
   canvasRef: RefObject<HTMLCanvasElement>;
   cameraReady: boolean;
   handsDetected: boolean;
-  faceDetected: boolean;
   lightLevel: "ready" | "warning";
   error: string | null;
   enabled: boolean;
@@ -78,13 +79,11 @@ export function useCameraFeed(): CameraFeedState {
   // loading the MediaPipe models takes a second or two - only closed on
   // full component unmount, see the effect below.
   const landmarkerRef = useRef<HandLandmarker | null>(null);
-  const faceDetectorRef = useRef<FaceDetector | null>(null);
 
   const [enabled, setEnabled] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [handsDetected, setHandsDetected] = useState(false);
-  const [faceDetected, setFaceDetected] = useState(false);
-  const [lightLevel, setLightLevel] = useState<"ready" | "warning">("ready");
+  const [lightLevel, setLightLevel] = useState(<"ready" | "warning">"ready");
   const [error, setError] = useState<string | null>(null);
 
   const toggleCamera = () => setEnabled((prev) => !prev);
@@ -93,20 +92,9 @@ export function useCameraFeed(): CameraFeedState {
     if (!enabled) {
       setCameraReady(false);
       setHandsDetected(false);
-      setFaceDetected(false);
+      setLightLevel("warning");
+      setError(null);
       return;
-    }
-
-    if (USE_MOCK_CAMERA) {
-      // Preserves the old mocked-timer behaviour for demoing without a
-      // webcam, or on a machine where camera access isn't possible.
-      const timer = setInterval(() => {
-        setHandsDetected(Math.random() > 0.2);
-        setFaceDetected(Math.random() > 0.15);
-        setLightLevel(Math.random() > 0.85 ? "warning" : "ready");
-      }, 6000);
-      setCameraReady(true);
-      return () => clearInterval(timer);
     }
 
     let stream: MediaStream | null = null;
@@ -116,7 +104,7 @@ export function useCameraFeed(): CameraFeedState {
     async function setup() {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 640, height: 480 },
+          video: { width: 1280, height: 720 },
         });
         if (cancelled) return;
 
@@ -135,13 +123,9 @@ export function useCameraFeed(): CameraFeedState {
               baseOptions: { modelAssetPath: HAND_MODEL_URL },
               runningMode: "VIDEO",
               numHands: 2,
-            },
-          );
-          faceDetectorRef.current = await FaceDetector.createFromOptions(
-            fileset,
-            {
-              baseOptions: { modelAssetPath: FACE_MODEL_URL },
-              runningMode: "VIDEO",
+              minHandDetectionConfidence: 0.6,
+              minHandPresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5,
             },
           );
         }
@@ -168,18 +152,10 @@ export function useCameraFeed(): CameraFeedState {
       const video = videoRef.current;
       if (video.readyState >= 2) {
         const result: HandLandmarkerResult =
-          landmarkerRef.current.detectForVideo(video, performance.now());
+          landmarkerRef.current.detectForVideo(video, video.currentTime * 1000);
         setHandsDetected(result.landmarks.length > 0);
         drawOverlay(result);
         updateLightLevel(video);
-
-        if (faceDetectorRef.current) {
-          const faceResult = faceDetectorRef.current.detectForVideo(
-            video,
-            performance.now(),
-          );
-          setFaceDetected(faceResult.detections.length > 0);
-        }
       }
 
       rafId = requestAnimationFrame(detectLoop);
@@ -201,9 +177,11 @@ export function useCameraFeed(): CameraFeedState {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       for (const hand of result.landmarks) {
-        // Draw connections
         ctx.strokeStyle = "#00FF00";
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.imageSmoothingEnabled = true;
 
         for (const [start, end] of HAND_CONNECTIONS) {
           const p1 = hand[start];
@@ -215,18 +193,20 @@ export function useCameraFeed(): CameraFeedState {
           ctx.stroke();
         }
 
-        // Draw landmarks
-        ctx.fillStyle = "#FF0000";
-
         for (const point of hand) {
+          const x = point.x * canvas.width;
+          const y = point.y * canvas.height;
+
+          // Green outer circle
           ctx.beginPath();
-          ctx.arc(
-            point.x * canvas.width,
-            point.y * canvas.height,
-            4,
-            0,
-            Math.PI * 2,
-          );
+          ctx.arc(x, y, 8, 0, Math.PI * 2);
+          ctx.fillStyle = "#00FF00";
+          ctx.fill();
+
+          // Red inner circle
+          ctx.beginPath();
+          ctx.arc(x, y, 5, 0, Math.PI * 2);
+          ctx.fillStyle = "#FF0000";
           ctx.fill();
         }
       }
@@ -280,8 +260,6 @@ export function useCameraFeed(): CameraFeedState {
     return () => {
       landmarkerRef.current?.close();
       landmarkerRef.current = null;
-      faceDetectorRef.current?.close();
-      faceDetectorRef.current = null;
     };
   }, []);
 
@@ -290,7 +268,6 @@ export function useCameraFeed(): CameraFeedState {
     canvasRef,
     cameraReady,
     handsDetected,
-    faceDetected,
     lightLevel,
     error,
     enabled,

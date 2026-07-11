@@ -7,7 +7,6 @@ import StatusPill from '../shared/StatusPill'
 const rows: { key: keyof NonNullable<ReturnType<typeof useDeviceStatus>>; label: string }[] = [
   { key: 'camera', label: 'Camera' },
   { key: 'hands', label: 'Hands' },
-  { key: 'face', label: 'Face' },
   { key: 'lightLevel', label: 'Light' },
   { key: 'microphone', label: 'Microphone' },
   { key: 'speaker', label: 'Speaker' },
@@ -31,7 +30,6 @@ export default function DetectionStatusPanel({ feed }: DetectionStatusPanelProps
     // Fallback handlers if camera is enabled and running without error
     if (key === 'camera') return feed.cameraReady ? 'tracking' : 'warning'
     if (key === 'hands') return feed.handsDetected ? 'tracking' : 'warning'
-    if (key === 'face') return feed.faceDetected ? 'tracking' : 'warning'
     if (key === 'lightLevel') return feed.lightLevel
     
     return fallback

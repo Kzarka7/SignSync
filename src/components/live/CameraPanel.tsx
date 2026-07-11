@@ -1,6 +1,5 @@
 import { AlertTriangle, Play, Square, VideoOff } from 'lucide-react'
 import { CameraFeedState } from '../../hooks/useCameraFeed'
-import StatusPill from '../shared/StatusPill'
 
 interface CameraPanelProps {
   feed: CameraFeedState
@@ -12,7 +11,6 @@ interface CameraPanelProps {
 // snapshot (see DetectionStatusPanel).
 export default function CameraPanel({ feed }: CameraPanelProps) {
   const handsWarning = feed.enabled && !feed.error && !feed.handsDetected
-  const faceWarning = feed.enabled && !feed.error && !feed.faceDetected
   const lightWarning = feed.enabled && !feed.error && feed.lightLevel === 'warning'
 
   return (
@@ -41,7 +39,7 @@ export default function CameraPanel({ feed }: CameraPanelProps) {
         {!feed.enabled ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white/50 px-8 text-center">
             <VideoOff size={32} />
-            <span className="text-xs">Camera is paused. Click "Start" to resume detection.</span>
+            <span className="text-xs">Click "Start" to use camera detection.</span>
           </div>
         ) : feed.error ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-white/60 px-8 text-center">
@@ -50,24 +48,18 @@ export default function CameraPanel({ feed }: CameraPanelProps) {
           </div>
         ) : (
           <>
-            <video ref={feed.videoRef} muted playsInline className="absolute inset-0 w-full h-full object-cover" />
+            <video ref={feed.videoRef} muted playsInline className="absolute inset-0 w-full h-full" />
             <canvas ref={feed.canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
             <div className="absolute border-[1.5px] border-dashed border-white/35 rounded-2xl pointer-events-none" style={{ inset: '14%' }} />
           </>
         )}
 
-        {(handsWarning || faceWarning || lightWarning) && (
+        {(handsWarning || lightWarning) && (
           <div className="absolute bottom-3 left-3 right-3 flex flex-col gap-1.5 z-10">
             {handsWarning && (
               <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-[11.5px] font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
                 <AlertTriangle size={14} />
                 No hands detected — make sure your hands are visible in frame.
-              </div>
-            )}
-            {faceWarning && (
-              <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-[11.5px] font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
-                <AlertTriangle size={14} />
-                Face not clearly detected — face the camera directly.
               </div>
             )}
             {lightWarning && (
