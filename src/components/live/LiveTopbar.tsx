@@ -12,12 +12,17 @@ function formatTime(totalSeconds: number) {
 }
 
 export default function LiveTopbar({ onEnd, onExport }: { onEnd: () => void; onExport: () => void }) {
-  const { elapsedSeconds, tick } = useSessionStore()
+  const { elapsedSeconds, tick, endSession } = useSessionStore()
 
   useEffect(() => {
     const timer = setInterval(tick, 1000)
     return () => clearInterval(timer)
   }, [tick])
+
+  function handleEnd() {
+    endSession() // stops + clears the persisted timer
+    onEnd() // sends the WS control message, unrelated to the timer
+  }
 
   return (
     <div className="flex items-center justify-between bg-white border border-border rounded-xl2 px-4.5 py-3 mb-4" style={{ padding: '12px 18px' }}>
@@ -36,7 +41,7 @@ export default function LiveTopbar({ onEnd, onExport }: { onEnd: () => void; onE
           <Download size={14} />
           Export
         </Button>
-        <Button size="sm" variant="danger" onClick={onEnd}>
+        <Button size="sm" variant="danger" onClick={handleEnd}>
           End session
         </Button>
       </div>

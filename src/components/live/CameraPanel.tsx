@@ -1,4 +1,4 @@
-import { AlertTriangle, Play, Square, VideoOff } from 'lucide-react'
+import { AlertTriangle, Loader2, Play, Square, VideoOff } from 'lucide-react'
 import { CameraFeedState } from '../../hooks/useCameraFeed'
 
 interface CameraPanelProps {
@@ -34,11 +34,15 @@ export default function CameraPanel({ feed }: CameraPanelProps) {
           <div className="bg-black/45 backdrop-blur-sm text-white text-xs font-medium px-2.5 py-1.5 rounded-lg">
             {!feed.enabled
               ? 'Camera off'
-              : feed.modelError
-                ? 'Detection unavailable'
-                : feed.handsDetected
-                  ? 'Signer detected'
-                  : 'No hands detected'}
+              : feed.error
+                ? 'Camera error'
+                : !feed.cameraReady
+                  ? 'Starting camera...'
+                  : feed.modelError
+                    ? 'Detection unavailable'
+                    : feed.handsDetected
+                      ? 'Signer detected'
+                      : 'No hands detected'}
           </div>
         </div>
 
@@ -57,6 +61,12 @@ export default function CameraPanel({ feed }: CameraPanelProps) {
             <video ref={feed.videoRef} muted playsInline className="absolute inset-0 w-full h-full" />
             <canvas ref={feed.canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
             <div className="absolute border-[1.5px] border-dashed border-white/35 rounded-2xl pointer-events-none" style={{ inset: '14%' }} />
+            {!feed.cameraReady && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0F1B2B]/95 text-white/70">
+                <Loader2 size={28} className="animate-spin" />
+                <span className="text-xs">Starting camera...</span>
+              </div>
+            )}
           </>
         )}
 

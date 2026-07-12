@@ -25,5 +25,23 @@
     "durationMinutes": 22,
     "messageCount": 41,
     "avgConfidence": 95
+  },
+  {
+    "id": "s4",
+    "title": "University lecture support",
+    "location": "School",
+    "startedAt": "2026-06-22T09:00:00+08:00",
+    "durationMinutes": 30,
+    "messageCount": 52,
+    "avgConfidence": 91
+  },
+  {
+    "id": "s5",
+    "title": "City hall document request",
+    "location": "Government office",
+    "startedAt": "2026-05-28T11:30:00+08:00",
+    "durationMinutes": 11,
+    "messageCount": 19,
+    "avgConfidence": 89
   }
 ]
