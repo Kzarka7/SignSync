@@ -15,7 +15,7 @@ export default function Sidebar() {
       <div className="flex items-center gap-2.5 px-2 pb-6">
         <div className="w-8 h-8 rounded-[10px] bg-gradient-to-br from-signal to-trust" />
         <div>
-          <div className="font-display font-bold text-lg leading-none">Daloy</div>
+          <div className="font-display font-bold text-lg leading-none">Purdoy</div>
           <div className="text-[11px] text-[#9FC2E4] mt-0.5">FSL conversation assistant</div>
         </div>
       </div>

@@ -1,11 +1,11 @@
-# Daloy — FSL conversation assistant (frontend prototype)
+# Purdoy — FSL conversation assistant (frontend prototype)
 
 Frontend-only prototype for the capstone project. No ML, no backend, no auth,
 no database — every data source is either a static mock JSON file or a mocked
 service that mimics the shape of the real integration to come.
 
 ## Stack
-
+  
 - React 18 + TypeScript + Vite
 - React Router v6
 - Zustand (session state)

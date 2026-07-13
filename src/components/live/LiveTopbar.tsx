@@ -15,7 +15,7 @@ function formatTime(totalSeconds: number) {
 
 export default function LiveTopbar({ onEnd, onExport }: { onEnd: () => void; onExport: () => void }) {
   const { elapsedSeconds, tick, endSession } = useSessionStore()
-  const { conversationType } = useSessionSetupStore()
+  const { conversationType, sessionName  } = useSessionSetupStore()
 
   useEffect(() => {
     const timer = setInterval(tick, 1000)
@@ -30,9 +30,15 @@ export default function LiveTopbar({ onEnd, onExport }: { onEnd: () => void; onE
   return (
     <div className="flex items-center justify-between bg-white border border-border rounded-xl2 px-4.5 py-3 mb-4" style={{ padding: '12px 18px' }}>
       <div className="flex items-center gap-4">
-        <span className="text-md font-bold text-text-1 uppercase tracking-wide self-center mr-0.5 whitespace-nowrap">
-          {CONVERSATION_TYPE_LABELS[conversationType]}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-md font-bold text-text-1 uppercase tracking-wide self-center mr-0.5 whitespace-nowrap">
+            {CONVERSATION_TYPE_LABELS[conversationType]}
+          </span>
+          –
+          <span className="text-sm font-medium text-text-2 capitalize tracking-wide self-center mr-0.5 whitespace-nowrap">
+            {sessionName || "Untitled session"}
+          </span>
+        </div>
         <div className="text-text-2">
           <StatusPill label="Auto-detecting · signing now" state="ready" />
         </div>
