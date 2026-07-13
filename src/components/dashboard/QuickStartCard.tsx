@@ -26,7 +26,7 @@ export default function QuickStartCard() {
         className="!bg-white hover:!bg-white/90 !text-trust !border-none"
         onClick={() => navigate('/session-setup')}
       >
-        Continue to session setup
+        Start Conversation
         <ArrowRight size={15} />
       </Button>
     </div>
