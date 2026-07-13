@@ -72,6 +72,11 @@ export interface CameraFeedState {
 // Renders nothing itself - callers attach `videoRef`/`canvasRef` to their
 // own <video>/<canvas> elements and read the derived state (hands
 // detected, light level) to drive status pills elsewhere on the page.
+//
+// `autoStart` lets a caller begin detection immediately (e.g. Live
+// Conversation, arriving from Session Setup where the user already
+// confirmed device readiness and pressed "Begin Conversation") instead of
+// requiring a further manual Start click.
 export function useCameraFeed(): CameraFeedState {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);

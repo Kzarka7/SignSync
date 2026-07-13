@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Sidebar from './components/layout/Sidebar'
 import DashboardPage from './pages/DashboardPage'
+import SessionSetupPage from './pages/SessionSetupPage'
 import LiveConversationPage from './pages/LiveConversationPage'
 import HistoryPage from './pages/HistoryPage'
 import ResourcesPage from './pages/ResourcesPage'
@@ -14,6 +15,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/session-setup" element={<SessionSetupPage />} />
           <Route path="/live" element={<LiveConversationPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/resources" element={<ResourcesPage />} />

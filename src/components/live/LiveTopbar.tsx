@@ -3,6 +3,8 @@ import { Maximize, Download } from 'lucide-react'
 import Button from '../shared/Button'
 import StatusPill from '../shared/StatusPill'
 import { useSessionStore } from '../../store/sessionStore'
+import { useSessionSetupStore } from '../../store/sessionSetupStore'
+import { CONVERSATION_TYPE_LABELS } from '../../types/conversation'
 
 function formatTime(totalSeconds: number) {
   const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0')
@@ -13,6 +15,7 @@ function formatTime(totalSeconds: number) {
 
 export default function LiveTopbar({ onEnd, onExport }: { onEnd: () => void; onExport: () => void }) {
   const { elapsedSeconds, tick, endSession } = useSessionStore()
+  const { conversationType } = useSessionSetupStore()
 
   useEffect(() => {
     const timer = setInterval(tick, 1000)
@@ -21,13 +24,15 @@ export default function LiveTopbar({ onEnd, onExport }: { onEnd: () => void; onE
 
   function handleEnd() {
     endSession() // stops + clears the persisted timer
-    onEnd() // sends the WS control message, unrelated to the timer
+    onEnd() // sends the WS control message + resets Session Setup gate
   }
 
   return (
     <div className="flex items-center justify-between bg-white border border-border rounded-xl2 px-4.5 py-3 mb-4" style={{ padding: '12px 18px' }}>
       <div className="flex items-center gap-4">
-        <span className="text-md font-bold text-text-1 uppercase tracking-wide self-center mr-0.5 whitespace-nowrap">Medical</span>
+        <span className="text-md font-bold text-text-1 uppercase tracking-wide self-center mr-0.5 whitespace-nowrap">
+          {CONVERSATION_TYPE_LABELS[conversationType]}
+        </span>
         <div className="text-text-2">
           <StatusPill label="Auto-detecting · signing now" state="ready" />
         </div>

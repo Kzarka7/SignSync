@@ -1,4 +1,4 @@
-import { Video, Play, Download } from 'lucide-react'
+import { Video, Play, Download, Trash2 } from 'lucide-react'
 import { ConversationSession } from '../../types/session'
 import Button from '../shared/Button'
 
@@ -17,13 +17,18 @@ export default function SessionHistoryCard({ session }: { session: ConversationS
           <span>{session.avgConfidence}% avg. confidence</span>
         </div>
       </div>
-      <Button size="md">
-        <Play size={14} />
-        <span className="text-xs">Replay</span>
-      </Button>
-      <Button size="md" title="Export">
-        <Download size={16} />
-      </Button>
+      <div className="flex gap-2.5">
+        <Button size="md" className="flex">
+          <Play size={14} />
+          <span className="text-xs">Replay</span>
+        </Button>
+        <Button size="md" title="Delete" variant="danger-solid">
+          <Trash2 size={16} />
+        </Button>
+        <Button size="md" title="Export" variant="primary" className="font-bold">
+          <Download size={16} />
+        </Button>
+      </div>
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Check } from "lucide-react";
+import Button from "./Button";
 
 export interface DropdownOption<T extends string | number> {
   label: string;
@@ -59,24 +60,21 @@ export default function Dropdown<T extends string | number>({
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-1.5 min-w-full w-max bg-white border border-border rounded-lg shadow-lg p-1 z-20">
+        <div className="absolute flex flex-col right-0 mt-1.5 min-w-full w-max bg-white border border-border rounded-lg shadow-lg p-1 z-20">
           {options.map((option) => (
-            <button
+            <Button
               key={option.value}
               type="button"
               onClick={() => {
                 onChange(option.value);
                 setOpen(false);
               }}
-              className={`flex items-center justify-between gap-3 w-full text-left my-0.5 px-3 py-2 text-sm hover:bg-signal-light transition-colors rounded-md ${
-                option.value === value
-                  ? "text-signal font-semibold bg-signal-light-active"
-                  : "text-ink"
-              }`}
+              variant={value === option.value ? 'primary-ghost' : 'default'}
+              className="flex justify-between text-left my-0.5 px-3 py-2 text-sm hover:bg-signal-light transition-colors rounded-md border-none"
             >
               {option.label}
               {option.value === value && <Check size={14} />}
-            </button>
+            </Button>
           ))}
         </div>
       )}
