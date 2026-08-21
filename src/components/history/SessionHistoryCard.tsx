@@ -1,6 +1,7 @@
 import { Video, Play, Download, Trash2 } from "lucide-react";
 import { ConversationSession } from "../../types/session";
 import Button from "../shared/Button";
+import Badge from '../shared/Badge';
 
 export default function SessionHistoryCard({ session}: { session: ConversationSession }) {
   const lowConfidence = session.avgConfidence < 90;
@@ -26,15 +27,7 @@ export default function SessionHistoryCard({ session}: { session: ConversationSe
           </span>
           <span>{session.durationMinutes} min</span>
           <span>{session.messageCount} messages</span>
-          <span
-            className={`font-mono text-sm px-1.5 py-0.5 rounded-md ${
-              lowConfidence
-                ? "text-[#8a5a10] bg-amber-light"
-                : "text-success bg-success-light"
-            }`}
-          >
-            {session.avgConfidence}% avg. confidence
-          </span>
+          <Badge tone={session.avgConfidence >= 90 ? 'ok' : 'med'}>{session.avgConfidence}% confidence</Badge>
         </div>
       </div>
       <div className="flex gap-2.5">

@@ -1,5 +1,6 @@
 import { HandMetal, Mic, RotateCcw, Copy, Pencil } from 'lucide-react'
 import { ConversationMessage } from '../../types/message'
+import Badge from '../shared/Badge'
 
 export default function MessageBubble({ message }: { message: ConversationMessage }) {
   const isSign = message.source === 'sign'
@@ -30,13 +31,7 @@ export default function MessageBubble({ message }: { message: ConversationMessag
       )}
 
       <div className="flex items-center gap-3">
-        <span
-          className={`font-mono text-[11px] px-1.5 py-0.5 rounded-md ${
-            lowConfidence ? 'text-[#8a5a10] bg-amber-light' : 'text-success bg-success-light'
-          }`}
-        >
-          {message.confidence}% match{lowConfidence ? ' — review suggested' : ''}
-        </span>
+        <Badge className="text-xs" tone={message.confidence >= 90 ? 'ok' : 'med'}>{message.confidence}% confidence</Badge>
         <div className="flex gap-1 ml-auto">
           <button className="w-6 h-6 rounded-md flex items-center justify-center text-text-3 hover:bg-[#F0F4F8] hover:text-ink" title="Replay">
             <RotateCcw size={13} />
