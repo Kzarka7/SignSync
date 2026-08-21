@@ -39,15 +39,15 @@ export default function SessionSetupPage() {
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-4">
           <Card>
-            <h3 className="text-sm uppercase tracking-wide text-text-2 font-semibold mb-3">Conversation type</h3>
+            <h3 className="text-md uppercase tracking-wide text-text-2 font-semibold mb-3">Conversation type</h3>
             <ConversationTypeSelector value={conversationType} onChange={setConversationType} />
           </Card>
 
           <Card>
-            <h3 className="text-sm uppercase tracking-wide text-text-2 font-semibold mb-3">Session information</h3>
+            <h3 className="text-md uppercase tracking-wide text-text-2 font-semibold mb-3">Session information</h3>
             <div className="flex flex-col gap-3.5">
               <div>
-                <label className="text-xs font-medium text-text-2 block mb-1.5">Session name (optional)</label>
+                <label className="text-sm font-medium text-text-2 block mb-1.5">Session name (optional)</label>
                 <input
                   type="text"
                   value={sessionName}
@@ -56,13 +56,13 @@ export default function SessionSetupPage() {
                   className="w-full text-sm border border-border rounded-lg px-3 py-2.5"
                 />
               </div>
-              <div className="flex justify-between text-xs text-text-2 pt-3 border-t border-border">
+              <div className="flex justify-between text-sm text-text-2 pt-3 border-t border-border">
                 <span>Timestamp</span>
                 <span className="font-mono">
                   {timestamp.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                 </span>
               </div>
-              <div className="flex justify-between text-xs text-text-2">
+              <div className="flex justify-between text-sm text-text-2">
                 <span>Conversation category</span>
                 <span className="font-semibold text-ink">{CONVERSATION_TYPE_LABELS[conversationType]}</span>
               </div>
@@ -74,7 +74,7 @@ export default function SessionSetupPage() {
           <DeviceReadinessCard readiness={readiness} />
 
           <Card>
-            <p className="text-xs text-text-2 leading-relaxed mb-3.5">
+            <p className="text-sm text-text-2 leading-relaxed mb-3.5">
               {devicesBlocked
                 ? 'Camera and microphone access are required to begin a conversation. Please allow access and try again.'
                 : 'Once you begin, the camera starts watching for signs automatically. Speech recognition only starts when you press the microphone during the conversation.'}
@@ -91,7 +91,7 @@ export default function SessionSetupPage() {
             {devicesBlocked && (
               <button
                 onClick={readiness.recheckDevices}
-                className="text-xs text-signal font-medium mt-2.5 w-full text-center hover:underline"
+                className="text-sm text-signal font-medium mt-2.5 w-full text-center hover:underline"
               >
                 Recheck devices
               </button>

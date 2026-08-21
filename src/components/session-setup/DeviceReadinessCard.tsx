@@ -40,19 +40,19 @@ function readableLabel(state: string): string {
 export default function DeviceReadinessCard({ readiness }: DeviceReadinessCardProps) {
   return (
     <Card>
-      <h3 className="text-sm uppercase tracking-wide text-text-2 font-semibold mb-3">Device readiness</h3>
+      <h3 className="text-md uppercase tracking-wide text-text-2 font-semibold mb-3">Device readiness</h3>
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2.5">
           <StatusPill label="Camera" state={toPillState(readiness.camera)} />
-          <span className="text-xs text-text-2 ml-auto">{readableLabel(readiness.camera)}</span>
+          <span className="text-sm text-text-2 ml-auto">{readableLabel(readiness.camera)}</span>
         </div>
         <div className="flex items-center gap-2.5">
           <StatusPill label="Microphone" state={toPillState(readiness.microphone)} />
-          <span className="text-xs text-text-2 ml-auto">{readableLabel(readiness.microphone)}</span>
+          <span className="text-sm text-text-2 ml-auto">{readableLabel(readiness.microphone)}</span>
         </div>
         <div className="flex items-center gap-2.5">
           <StatusPill label="Speaker" state={toPillState(readiness.speaker)} />
-          <span className="text-xs text-text-2 ml-auto">{readableLabel(readiness.speaker)}</span>
+          <span className="text-sm text-text-2 ml-auto">{readableLabel(readiness.speaker)}</span>
         </div>
       </div>
       <Button size="sm" className="mt-3.5 w-full justify-center" onClick={readiness.testSpeaker}>
