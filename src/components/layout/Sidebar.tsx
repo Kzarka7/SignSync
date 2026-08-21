@@ -31,7 +31,7 @@ export default function Sidebar() {
             Purdoy
           </div>
 
-          <div className="text-[11px] text-[#9FC2E4] mt-0.5">
+          <div className="text-sm text-[#9FC2E4] mt-0.5">
             FSL conversation assistant
           </div>
         </div>
@@ -47,13 +47,13 @@ export default function Sidebar() {
           <NavLink
             key={to}
             to={to}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-sm font-medium transition-colors ${
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-md font-medium transition-colors ${
               isActive
                 ? "bg-signal-light text-trust"
                 : "text-[#C9DDEF] hover:bg-white/5 hover:text-white"
             }`}
           >
-            <Icon size={18} className="flex-shrink-0" />
+            <Icon size={20} className="flex-shrink-0" />
 
             <span>{label}</span>
 
@@ -65,7 +65,7 @@ export default function Sidebar() {
       })}
 
       {/* Footer */}
-      <div className="mt-auto p-3.5 rounded-xl bg-white/5 text-xs text-[#AFCBE4] leading-relaxed">
+      <div className="mt-auto p-3.5 rounded-xl bg-white/5 text-sm text-[#AFCBE4] leading-relaxed">
         <b className="block text-[13px] text-[#EAF3FB] font-display mb-0.5">
           Device status
         </b>

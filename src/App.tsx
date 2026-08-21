@@ -9,7 +9,7 @@ import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
   return (
-    <div className="grid grid-cols-[240px_1fr] min-h-screen">
+    <div className="grid grid-cols-[280px_1fr] min-h-screen">
       <Sidebar />
       <main className="px-9 py-7 pb-16 overflow-x-hidden">
         <Routes>
