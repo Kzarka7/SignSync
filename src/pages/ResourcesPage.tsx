@@ -16,7 +16,7 @@ export default function ResourcesPage() {
   return (
     <div>
       <PageHeader title="Resources" description="Learn the system, browse common phrases, and find help when you need it." />
-      <div className="grid grid-cols-3 gap-4">
+      <div className="flex flex-col gap-2">
         {resources.map((r) => (
           <ResourceCard key={r.title} {...r} />
         ))}

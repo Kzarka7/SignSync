@@ -4,7 +4,7 @@ import Button from '../shared/Button'
 
 export default function SessionHistoryCard({ session }: { session: ConversationSession }) {
   return (
-    <div className="flex items-center gap-4 p-4 border border-border rounded-xl2 bg-white mb-2.5">
+    <div className="flex items-center gap-4 p-[18px] border border-border rounded-xl2 bg-white mb-2.5">
       <div className="w-13 h-13 rounded-[10px] bg-signal-light text-signal flex items-center justify-center flex-shrink-0" style={{ width: 42, height: 42 }}>
         <Video size={20} />
       </div>
