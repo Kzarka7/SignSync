@@ -16,7 +16,7 @@ export default function HistoryPage() {
 
   const [search, setSearch] = useState('')
   const [location, setLocation] = useState<LocationFilter>('all')
-  const [range, setRange] = useState<RangeFilter>('30d')
+  const [range, setRange] = useState<RangeFilter>('all')
 
   const filteredSessions = useMemo(() => {
     if (!sessions) return []

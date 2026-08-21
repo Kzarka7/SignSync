@@ -45,9 +45,9 @@ export default function FilterBar({
         value={range}
         onChange={(v) => onRangeChange(v as RangeFilter)}
         options={[
-          { label: 'Last 7 days', value: '7d' },
-          { label: 'Last 30 days', value: '30d' },
           { label: 'All time', value: 'all' },
+          { label: 'Last 30 days', value: '30d' },
+          { label: 'Last 7 days', value: '7d' },
         ]}
       />
     </div>
