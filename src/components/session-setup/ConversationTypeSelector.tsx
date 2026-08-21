@@ -28,7 +28,7 @@ export default function ConversationTypeSelector({ value, onChange }: Conversati
           className=" flex-col items-center gap-2 py-3.5 px-2 rounded-xl2 border transition-colors"
         >
           <Icon size={20} />
-          <span className="text-xs font-semibold">{label}</span>
+          <span className="text-sm font-semibold">{label}</span>
         </Button>
       ))}
     </div>

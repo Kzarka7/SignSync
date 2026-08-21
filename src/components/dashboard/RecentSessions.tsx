@@ -16,14 +16,14 @@ export default function RecentSessions() {
             <Video size={20} />
           </div>
           <div>
-            <div className="text-sm font-bold">{s.title}</div>
-            <div className="text-xs text-text-2 mt-0.5">
+            <div className="text-md font-bold">{s.title}</div>
+            <div className="text-sm text-text-2 mt-0.5">
               {new Date(s.startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ·{' '}
               {s.durationMinutes} min · {s.messageCount} messages
             </div>
           </div>
           <div className="flex-1" />
-          <Badge className="text-xs" tone={s.avgConfidence >= 90 ? 'ok' : 'med'}>{s.avgConfidence}% confidence</Badge>
+          <Badge tone={s.avgConfidence >= 90 ? 'ok' : 'med'}>{s.avgConfidence}% confidence</Badge>
         </div>
       ))}
     </Card>
