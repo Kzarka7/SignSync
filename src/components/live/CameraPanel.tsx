@@ -18,20 +18,20 @@ export default function CameraPanel({ feed }: CameraPanelProps) {
       <div className="relative rounded-xl2 overflow-hidden bg-[#0F1B2B]" style={{ aspectRatio: '16 / 9' }}>
         <div className="absolute top-3 left-3 right-3 flex justify-between z-10">
           <div className="flex items-center gap-2">
-            <div className="bg-black/45 backdrop-blur-sm text-white text-xs font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5">
+            <div className="bg-black/45 backdrop-blur-sm text-white text-sm font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${feed.enabled ? 'bg-danger' : 'bg-text-3'}`} />
               {feed.enabled ? 'Live' : 'Paused'}
             </div>
             <button
               onClick={feed.toggleCamera}
               title={feed.enabled ? 'Stop camera' : 'Start camera'}
-              className="bg-black/45 backdrop-blur-sm text-white text-xs font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-black/60 transition-colors"
+              className="bg-black/45 backdrop-blur-sm text-white text-sm font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-black/60 transition-colors"
             >
               {feed.enabled ? <Square size={11} /> : <Play size={11} />}
               {feed.enabled ? 'Stop' : 'Start'}
             </button>
           </div>
-          <div className="bg-black/45 backdrop-blur-sm text-white text-xs font-medium px-2.5 py-1.5 rounded-lg">
+          <div className="bg-black/45 backdrop-blur-sm text-white text-sm font-medium px-2.5 py-1.5 rounded-lg">
             {!feed.enabled
               ? 'Camera off'
               : feed.error
@@ -48,13 +48,13 @@ export default function CameraPanel({ feed }: CameraPanelProps) {
 
         {!feed.enabled ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white/50 px-8 text-center">
-            <VideoOff size={32} />
-            <span className="text-xs">Click "Start" to use camera detection.</span>
+            <VideoOff size={40} />
+            <span className="text-sm">Click "Start" to use camera detection.</span>
           </div>
         ) : feed.error ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-white/60 px-8 text-center">
-            <VideoOff size={32} />
-            <span className="text-xs leading-relaxed max-w-xs">{feed.error}</span>
+            <VideoOff size={40} />
+            <span className="text-sm leading-relaxed max-w-xs">{feed.error}</span>
           </div>
         ) : (
           <>
@@ -64,7 +64,7 @@ export default function CameraPanel({ feed }: CameraPanelProps) {
             {!feed.cameraReady && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0F1B2B]/95 text-white/70">
                 <Loader2 size={28} className="animate-spin" />
-                <span className="text-xs">Starting camera...</span>
+                <span className="text-sm">Starting camera...</span>
               </div>
             )}
           </>
@@ -73,19 +73,19 @@ export default function CameraPanel({ feed }: CameraPanelProps) {
         {(handsWarning || lightWarning || feed.modelError) && (
           <div className="absolute bottom-3 left-3 right-3 flex flex-col gap-1.5 z-10">
             {feed.modelError && (
-              <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-[11.5px] font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
+              <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-sm font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
                 <AlertTriangle size={14} />
                 {feed.modelError}
               </div>
             )}
             {handsWarning && (
-              <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-[11.5px] font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
+              <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-sm font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
                 <AlertTriangle size={14} />
                 No hands detected — make sure your hands are visible in frame.
               </div>
             )}
             {lightWarning && (
-              <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-[11.5px] font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
+              <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-sm font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
                 <AlertTriangle size={14} />
                 Lighting is a little low — move closer to a window for better accuracy.
               </div>

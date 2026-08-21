@@ -8,7 +8,7 @@ import Button from "../shared/Button";
 export default function PlaybackPanel() {
   return (
     <Card>
-      <h3 className="text-sm uppercase tracking-wide text-text-2 font-semibold mb-2.5">
+      <h3 className="text-md uppercase tracking-wide text-text-2 font-semibold mb-2.5">
         Playback
       </h3>
       <div className="flex items-center gap-2">
@@ -20,7 +20,7 @@ export default function PlaybackPanel() {
         <div className="flex-1 h-1 bg-[#EAF0F6] rounded">
           <span className="block w-2/5 h-full bg-signal rounded" />
         </div>
-        <span className="font-mono text-xs text-text-2">0:03</span>
+        <span className="font-mono text-sm text-text-2">0:03</span>
       </div>
     </Card>
   );

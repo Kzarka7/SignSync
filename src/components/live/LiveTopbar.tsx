@@ -31,11 +31,11 @@ export default function LiveTopbar({ onEnd, onExport }: { onEnd: () => void; onE
     <div className="flex items-center justify-between bg-white border border-border rounded-xl2 px-4.5 py-3 mb-4" style={{ padding: '12px 18px' }}>
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
-          <span className="text-md font-bold text-text-1 uppercase tracking-wide self-center mr-0.5 whitespace-nowrap">
+          <span className="text-lg font-bold text-text-1 uppercase tracking-wide self-center whitespace-nowrap">
             {CONVERSATION_TYPE_LABELS[conversationType]}
           </span>
           –
-          <span className="text-sm font-medium text-text-2 capitalize tracking-wide self-center mr-0.5 whitespace-nowrap">
+          <span className="text-md font-medium text-text-2 capitalize tracking-wide self-center whitespace-nowrap">
             {sessionName || "Untitled session"}
           </span>
         </div>
@@ -46,10 +46,10 @@ export default function LiveTopbar({ onEnd, onExport }: { onEnd: () => void; onE
       </div>
       <div className="flex gap-2">
         <Button size="sm" title="Fullscreen">
-          <Maximize size={14} />
+          <Maximize size={16} />
         </Button>
         <Button size="sm" onClick={onExport}>
-          <Download size={14} />
+          <Download size={16} />
           Export
         </Button>
         <Button size="sm" variant="danger" onClick={handleEnd}>

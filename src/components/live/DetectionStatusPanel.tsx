@@ -41,15 +41,15 @@ export default function DetectionStatusPanel({ feed }: DetectionStatusPanelProps
 
   return (
     <Card>
-      <h3 className="text-sm uppercase tracking-wide text-text-2 font-semibold mb-2.5">Detection status</h3>
+      <h3 className="text-md uppercase tracking-wide text-text-2 font-semibold mb-2.5">Detection status</h3>
       <div className="flex flex-col gap-2.5">
         {status &&
           rows.map(({ key, label }) => {
             const state = resolveState(key, status[key])
             return (
-              <div key={key} className="flex items-center gap-2.5 text-xs font-medium">
+              <div key={key} className="flex items-center gap-2.5 font-medium">
                 <StatusPill label={label} state={state} />
-                <span className="ml-auto text-xs text-text-2 font-normal capitalize">{state}</span>
+                <span className="ml-auto text-sm text-text-2 font-normal capitalize">{state}</span>
               </div>
             )
           })}

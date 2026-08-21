@@ -42,7 +42,7 @@ export default function AvatarPanel({ onSubmitSpeech }: AvatarPanelProps) {
           <button
             key={s}
             onClick={() => setSpeed(s)}
-            className={`w-5 h-5 rounded-md text-[10px] flex items-center justify-center border ${
+            className={`px-1 py-0.5 rounded-md text-xs flex items-center justify-center border ${
               speed === s ? 'bg-signal text-white border-signal' : 'bg-white text-text-2 border-border'
             }`}
           >
@@ -60,13 +60,13 @@ export default function AvatarPanel({ onSubmitSpeech }: AvatarPanelProps) {
           <path d="M17 14v18M6 22l11-4 11 4M9 40l8-8 8 8" />
         </svg>
       </div>
-      <div className="mt-3.5 text-xs text-text-2 text-center max-w-[220px] leading-relaxed">
+      <div className="mt-3.5 text-sm text-text-2 text-center max-w-[218px] leading-relaxed">
         {isRendering ? 'Generating sign animation...' : caption}
       </div>
 
       {/* Subtitle container: live speech-to-text preview, before submission */}
       <div className="absolute bottom-3.5 left-3.5 right-[92px] bg-black/45 backdrop-blur-sm rounded-lg px-3 py-2 mr-2.5 min-h-[38px] flex items-center">
-        <span className={`text-xs leading-snug line-clamp-2 ${error ? 'text-amber' : 'text-white'}`}>
+        <span className={`text-sm leading-snug line-clamp-2 ${error ? 'text-amber' : 'text-white'}`}>
           {error ?? (transcript || (isListening ? 'Listening...' : 'Tap the microphone to speak'))}
         </span>
       </div>
@@ -79,7 +79,7 @@ export default function AvatarPanel({ onSubmitSpeech }: AvatarPanelProps) {
             isListening ? 'bg-danger text-white border-danger' : 'bg-white text-text-2 border-border'
           }`}
         >
-          {isListening ? <Square size={16} /> : <Mic size={16} />}
+          {isListening ? <Square size={18} /> : <Mic size={18} />}
         </button>
         <button
           onClick={handleSubmit}
@@ -89,7 +89,7 @@ export default function AvatarPanel({ onSubmitSpeech }: AvatarPanelProps) {
             isListening ? 'bg-success text-white border-success' : 'bg-signal text-white border-signal'
           }`}
         >
-          {isListening ? <Check size={16} /> : <ArrowUp size={16} />}
+          {isListening ? <Check size={18} /> : <ArrowUp size={18} />}
         </button>
       </div>
     </div>
