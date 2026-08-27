@@ -16,6 +16,8 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+
+uvicorn app.main:app --reload --port 8000
 ```
 
 **Frontend** (from `Frontend/`):
