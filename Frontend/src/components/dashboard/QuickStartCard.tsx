@@ -23,11 +23,11 @@ export default function QuickStartCard() {
 
       <Button
         variant="primary"
-        className="!bg-white hover:!bg-white/90 !text-trust !border-none"
+        className="!bg-white hover:!bg-white/90 !text-trust !border-none !rounded-xl"
         onClick={() => navigate('/session-setup')}
       >
         Start Conversation
-        <ArrowRight size={15} />
+        <ArrowRight size={18} />
       </Button>
     </div>
   )
