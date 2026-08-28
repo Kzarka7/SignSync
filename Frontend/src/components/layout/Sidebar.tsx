@@ -48,16 +48,16 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
       {/* Logo & Toggle Button */}
       <div
         className={`flex items-center ${
-          isCollapsed ? "justify-center" : "justify-between"
-        } gap-2.5 px-2 mb-6`}
+          isCollapsed ? "justify-start" : "justify-between pl-1.5"
+        } gap-2.5 mb-6`}
       >
         {!isCollapsed && (
-          <div className="flex items-center gap-2 overflow-hidden">
+          <NavLink to="/dashboard" className="flex items-center gap-2 overflow-hidden">
             <div className="w-8 h-8 rounded-[10px] bg-gradient-to-br from-signal to-trust flex-shrink-0" />
             <div className="font-display font-bold text-lg leading-none whitespace-nowrap">
               Purdoy
             </div>
-          </div>
+          </NavLink>
         )}
 
         <button
