@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Sidebar from './components/layout/Sidebar'
 import DashboardPage from './pages/DashboardPage'
@@ -8,9 +9,11 @@ import ResourcesPage from './pages/ResourcesPage'
 import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
+  const [isCollapsed, setIsCollapsed] = useState(false)
+
   return (
-    <div className="grid grid-cols-[280px_1fr] min-h-screen">
-      <Sidebar />
+    <div className={`grid ${isCollapsed ? 'grid-cols-[60px_1fr]' : 'grid-cols-[280px_1fr]'} min-h-screen transition-all duration-300`}>
+      <Sidebar isCollapsed={isCollapsed} onToggle={() => setIsCollapsed(!isCollapsed)} />
       <main className="px-9 py-7 pb-16 overflow-x-hidden">
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
