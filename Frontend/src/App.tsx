@@ -9,11 +9,21 @@ import ResourcesPage from './pages/ResourcesPage'
 import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(
+    () => localStorage.getItem('daloy:sidebar-collapsed') === 'true'
+  )
+
+  function toggleSidebar() {
+    setIsCollapsed((prev) => {
+      const next = !prev
+      localStorage.setItem('daloy:sidebar-collapsed', String(next))
+      return next
+    })
+  }
 
   return (
     <div className={`grid ${isCollapsed ? 'grid-cols-[60px_1fr]' : 'grid-cols-[280px_1fr]'} min-h-screen transition-all duration-300`}>
-      <Sidebar isCollapsed={isCollapsed} onToggle={() => setIsCollapsed(!isCollapsed)} />
+      <Sidebar isCollapsed={isCollapsed} onToggle={toggleSidebar} />
       <main className="px-9 py-7 pb-16 overflow-x-hidden">
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
