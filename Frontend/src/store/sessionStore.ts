@@ -4,6 +4,9 @@ import { create } from "zustand";
 // so refreshing the Live Conversation page - or briefly navigating away
 // and back - doesn't reset the running timer back to zero.
 const STORAGE_KEY = "daloy:session-started-at";
+// Persisted alongside the start time so a page refresh mid-session keeps
+// pointing at the same session id (used later to save/finalize History).
+const ID_STORAGE_KEY = "daloy:session-id";
 
 function readStoredStartTime(): number | null {
   try {
@@ -32,12 +35,40 @@ function clearStoredStartTime() {
   }
 }
 
+function readStoredSessionId(): string | null {
+  try {
+    return localStorage.getItem(ID_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSessionId(id: string) {
+  try {
+    localStorage.setItem(ID_STORAGE_KEY, id);
+  } catch {
+    // ignore
+  }
+}
+
+function generateSessionId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `session-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function computeElapsedSeconds(startedAt: number): number {
   return Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
 }
 
 interface SessionStoreState {
   isSessionActive: boolean;
+  // Identifies the current/most-recently-run live session, so it can be
+  // saved to session history and later re-saved (upserted) without
+  // creating a duplicate History record if "End session" fires twice.
+  sessionId: string | null;
+  startedAt: number | null; // epoch ms
   elapsedSeconds: number;
   startSession: () => void;
   endSession: () => void;
@@ -54,18 +85,23 @@ const initialStartTime = existingStartTime ?? Date.now();
 if (existingStartTime === null) {
   writeStoredStartTime(initialStartTime);
 }
+const initialSessionId = readStoredSessionId();
 
 // Holds the state of the current live session. Once a backend exists,
 // startSession()/endSession() are the natural place to call the
 // /api/sessions "create" and "close" endpoints alongside the local state.
 export const useSessionStore = create<SessionStoreState>((set) => ({
   isSessionActive: true,
+  sessionId: initialSessionId,
+  startedAt: initialStartTime,
   elapsedSeconds: computeElapsedSeconds(initialStartTime),
 
   startSession: () => {
     const now = Date.now();
+    const id = generateSessionId();
     writeStoredStartTime(now);
-    set({ isSessionActive: true, elapsedSeconds: 0 });
+    writeStoredSessionId(id);
+    set({ isSessionActive: true, sessionId: id, startedAt: now, elapsedSeconds: 0 });
   },
 
   endSession: () => {

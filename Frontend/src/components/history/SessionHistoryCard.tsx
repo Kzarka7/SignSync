@@ -3,8 +3,16 @@ import { ConversationSession } from "../../types/session";
 import Button from "../shared/Button";
 import Badge from '../shared/Badge';
 
-export default function SessionHistoryCard({ session}: { session: ConversationSession }) {
-  const lowConfidence = session.avgConfidence < 90;
+interface SessionHistoryCardProps {
+  session: ConversationSession
+  onReplay?: (session: ConversationSession) => void
+  onDownload?: (session: ConversationSession) => void
+  onDelete?: (session: ConversationSession) => void
+}
+
+export default function SessionHistoryCard({ session, onReplay, onDownload, onDelete }: SessionHistoryCardProps) {
+  const hasConfidence = session.avgConfidence !== undefined;
+  const lowConfidence = hasConfidence && (session.avgConfidence as number) < 90;
 
   return (
     <div className="flex items-center gap-4 p-[18px] border border-border rounded-xl2 bg-white mb-2.5">
@@ -27,15 +35,19 @@ export default function SessionHistoryCard({ session}: { session: ConversationSe
           </span>
           <span>{session.durationMinutes} min</span>
           <span>{session.messageCount} messages</span>
-          <Badge tone={session.avgConfidence >= 90 ? 'ok' : 'med'}>{session.avgConfidence}% confidence</Badge>
+          {hasConfidence ? (
+            <Badge tone={lowConfidence ? 'med' : 'ok'}>{session.avgConfidence}% confidence</Badge>
+          ) : (
+            <span className="text-text-3">No confidence data</span>
+          )}
         </div>
       </div>
       <div className="flex gap-2.5">
-        <Button size="md" className="flex">
+        <Button size="md" className="flex" onClick={() => onReplay?.(session)}>
           <Play size={14} />
           <span className="text-sm">Replay</span>
         </Button>
-        <Button size="md" title="Delete" variant="danger-solid">
+        <Button size="md" title="Delete" variant="danger-solid" onClick={() => onDelete?.(session)}>
           <Trash2 size={16} />
         </Button>
         <Button
@@ -43,6 +55,7 @@ export default function SessionHistoryCard({ session}: { session: ConversationSe
           title="Export"
           variant="primary"
           className="font-bold"
+          onClick={() => onDownload?.(session)}
         >
           <Download size={16} />
         </Button>

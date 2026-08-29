@@ -8,6 +8,7 @@ import ConversationTypeSelector from '../components/session-setup/ConversationTy
 import DeviceReadinessCard from '../components/session-setup/DeviceReadinessCard'
 import { useDeviceReadiness } from '../hooks/useDeviceReadiness'
 import { useSessionSetupStore } from '../store/sessionSetupStore'
+import { useSessionStore } from '../store/sessionStore'
 import { CONVERSATION_TYPE_LABELS } from '../types/conversation'
 
 // Sits between Dashboard and Live Conversation. Its job: confirm devices
@@ -19,6 +20,7 @@ export default function SessionSetupPage() {
   const readiness = useDeviceReadiness()
   const { conversationType, setConversationType, sessionName, setSessionName, beginConversation } =
     useSessionSetupStore()
+  const startSession = useSessionStore((s) => s.startSession)
 
   // Captured once, when the page loads - not live-updating, since this
   // represents "when this session was set up", not a running clock.
@@ -28,6 +30,11 @@ export default function SessionSetupPage() {
   const devicesChecking = readiness.camera === 'checking' || readiness.microphone === 'checking'
 
   function handleBegin() {
+    // Stamps a fresh session id + start time for this conversation, so
+    // the elapsed timer and the eventual History record both start
+    // counting from "Begin conversation", not from whenever the app
+    // happened to load.
+    startSession()
     beginConversation()
     navigate('/live')
   }

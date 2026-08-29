@@ -4,6 +4,7 @@ import Sidebar from './components/layout/Sidebar'
 import DashboardPage from './pages/DashboardPage'
 import SessionSetupPage from './pages/SessionSetupPage'
 import LiveConversationPage from './pages/LiveConversationPage'
+import SessionSummaryPage from './pages/SessionSummaryPage'
 import HistoryPage from './pages/HistoryPage'
 import ResourcesPage from './pages/ResourcesPage'
 import SettingsPage from './pages/SettingsPage'
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/session-setup" element={<SessionSetupPage />} />
           <Route path="/live" element={<LiveConversationPage />} />
+          <Route path="/session-summary/:sessionId" element={<SessionSummaryPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/resources" element={<ResourcesPage />} />
           <Route path="/settings" element={<SettingsPage />} />

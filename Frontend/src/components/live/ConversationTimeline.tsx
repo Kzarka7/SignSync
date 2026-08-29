@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { ConversationMessage } from "../../types/message";
 import MessageBubble from "./MessageBubble";
+import Card from "../shared/Card";
 
 export default function ConversationTimeline({
   messages,
@@ -13,8 +14,9 @@ export default function ConversationTimeline({
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    const threshold = 100; 
-    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const threshold = 100;
+    const distanceToBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
     const shouldScroll = distanceToBottom <= threshold + 150;
 
     if (shouldScroll) {
@@ -26,15 +28,9 @@ export default function ConversationTimeline({
   }, [messages]);
 
   return (
-    <div
-      className="bg-white border border-border rounded-xl2 px-4.5 pt-4.5 pb-1.5"
-      style={{ padding: "18px 18px 6px" }}
-    >
+    <Card>
       <div
         ref={scrollContainerRef}
-        /* 1. Added `flex flex-col` so children stack correctly for the divider
-          2. Added `divide-y divide-border/60` to draw clean lines between blocks
-        */
         className="max-h-[430px] overflow-y-auto flex flex-col divide-y divide-border [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] pr-1"
       >
         {messages.length === 0 && (
@@ -48,6 +44,6 @@ export default function ConversationTimeline({
           </div>
         ))}
       </div>
-    </div>
+    </Card>
   );
 }

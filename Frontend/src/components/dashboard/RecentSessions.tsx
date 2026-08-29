@@ -23,7 +23,11 @@ export default function RecentSessions() {
             </div>
           </div>
           <div className="flex-1" />
-          <Badge tone={s.avgConfidence >= 90 ? 'ok' : 'med'}>{s.avgConfidence}% confidence</Badge>
+          {s.avgConfidence !== undefined ? (
+            <Badge tone={s.avgConfidence >= 90 ? 'ok' : 'med'}>{s.avgConfidence}% confidence</Badge>
+          ) : (
+            <span className="text-sm text-text-3">No confidence data</span>
+          )}
         </div>
       ))}
     </Card>
