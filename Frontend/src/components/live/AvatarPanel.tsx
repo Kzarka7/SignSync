@@ -7,16 +7,21 @@ const speeds = [0.75, 1, 1.25] as const
 
 interface AvatarPanelProps {
   onSubmitSpeech: (text: string) => void
+  // Instantiated once in LiveConversationPage (not here) so CameraPanel's
+  // status indicator can read the same isListening/isRendering/isPlaying
+  // state instead of a second, disconnected copy of it.
+  speech: ReturnType<typeof useSpeechRecognition>
+  avatar: ReturnType<typeof useAvatarRenderer>
 }
 
 // Renders the FSL avatar area (speech -> sign direction). Speech
-// recognition and sign-generation are both delegated to their own
-// service/hook (see hooks/useSpeechRecognition.ts and
-// hooks/useAvatarRenderer.ts) so this component stays presentation-only.
-export default function AvatarPanel({ onSubmitSpeech }: AvatarPanelProps) {
+// recognition and sign-generation state both live in the parent (see
+// hooks/useSpeechRecognition.ts and hooks/useAvatarRenderer.ts) - this
+// component just presents them and drives the interactions.
+export default function AvatarPanel({ onSubmitSpeech, speech, avatar }: AvatarPanelProps) {
   const [speed, setSpeed] = useState<(typeof speeds)[number]>(1)
-  const { isListening, transcript, error, start, stop, reset } = useSpeechRecognition()
-  const { isRendering, caption, render } = useAvatarRenderer()
+  const { isListening, transcript, error, start, stop, reset } = speech
+  const { isRendering, caption, render } = avatar
 
   function toggleMic() {
     if (isListening) stop()

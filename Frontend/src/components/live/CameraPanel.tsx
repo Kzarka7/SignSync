@@ -1,17 +1,49 @@
 import { AlertTriangle, Loader2, Play, Square, VideoOff } from 'lucide-react'
 import { CameraFeedState } from '../../hooks/useCameraFeed'
 
+type CameraStatus = 'Listening' | 'Detecting' | 'Interpreting' | 'Playing' | 'Waiting' | 'Error'
+
+// Colored dot per status, reusing the existing palette (tailwind.config.js)
+// rather than introducing new colors.
+const STATUS_DOT: Record<CameraStatus, string> = {
+  Listening: 'bg-signal',
+  Detecting: 'bg-success',
+  Interpreting: 'bg-amber',
+  Playing: 'bg-trust',
+  Waiting: 'bg-text-3',
+  Error: 'bg-danger',
+}
+
 interface CameraPanelProps {
   feed: CameraFeedState
+  // Speech/avatar activity, owned by LiveConversationPage (same instances
+  // AvatarPanel renders from) - passed in rather than re-derived here so
+  // there's a single source of truth for what the system is doing.
+  isListening: boolean
+  isInterpreting: boolean
+  isPlaying: boolean
+}
+
+// One status, in priority order: a real error always wins; otherwise
+// whichever human/system activity is currently happening; DETECTING as a
+// baseline while a signer is in frame; WAITING when nothing is going on.
+function resolveStatus(feed: CameraFeedState, isListening: boolean, isInterpreting: boolean, isPlaying: boolean): CameraStatus {
+  if (feed.error || feed.modelError) return 'Error'
+  if (isListening) return 'Listening'
+  if (isInterpreting) return 'Interpreting'
+  if (isPlaying) return 'Playing'
+  if (feed.enabled && feed.cameraReady && feed.handsDetected) return 'Detecting'
+  return 'Waiting'
 }
 
 // Renders the live camera feed with a hand-landmark overlay drawn by
 // useCameraFeed. Hands, face, and light are all real detection now;
 // microphone/speaker/AI status still come from the mocked/REST device
 // snapshot (see DetectionStatusPanel).
-export default function CameraPanel({ feed }: CameraPanelProps) {
+export default function CameraPanel({ feed, isListening, isInterpreting, isPlaying }: CameraPanelProps) {
   const handsWarning = feed.enabled && !feed.error && !feed.modelError && !feed.handsDetected
   const lightWarning = feed.enabled && !feed.error && !feed.modelError && feed.lightLevel === 'warning'
+  const status = resolveStatus(feed, isListening, isInterpreting, isPlaying)
 
   return (
     <div>
@@ -43,6 +75,13 @@ export default function CameraPanel({ feed }: CameraPanelProps) {
                     : feed.handsDetected
                       ? 'Signer detected'
                       : 'No hands detected'}
+          </div>
+        </div>
+
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
+          <div className="bg-black/45 backdrop-blur-sm text-white text-sm font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 tracking-wide">
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[status]}`} />
+            {status}
           </div>
         </div>
 

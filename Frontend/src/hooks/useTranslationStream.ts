@@ -40,5 +40,20 @@ export function useTranslationStream() {
     setMessages((prev) => [...prev, message])
   }
 
-  return { messages, endSession, exportSession, submitSpeech }
+  // Called when a Quick Phrase chip is clicked. A manually selected
+  // phrase, not something detected by speech/sign recognition - so it
+  // goes through the same message state and shape as any other message,
+  // just with no confidence score (there was nothing to score).
+  const submitPhrase = (text: string) => {
+    const message: ConversationMessage = {
+      id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      sessionId: 'live-demo',
+      source: 'phrase',
+      text,
+      timestamp: new Date().toISOString(),
+    }
+    setMessages((prev) => [...prev, message])
+  }
+
+  return { messages, endSession, exportSession, submitSpeech, submitPhrase }
 }

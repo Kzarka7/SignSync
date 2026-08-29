@@ -1,6 +1,7 @@
 // Mirrors a single translated utterance, whether it originates from the
-// sign-detection pipeline or the speech-to-text pipeline.
-export type MessageSource = 'sign' | 'speech'
+// sign-detection pipeline, the speech-to-text pipeline, or a manually
+// selected quick phrase.
+export type MessageSource = 'sign' | 'speech' | 'phrase'
 
 export interface ConversationMessage {
   id: string
@@ -8,7 +9,9 @@ export interface ConversationMessage {
   source: MessageSource
   text: string
   timestamp: string // ISO 8601
-  confidence: number // 0-100, from the ML model
+  // 0-100, from the ML model. Absent for manually-selected phrases, which
+  // were never run through detection - never fake a number here.
+  confidence?: number
 }
 
 // The envelope the future WebSocket stream will emit. Kept separate from

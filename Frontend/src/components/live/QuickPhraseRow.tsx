@@ -3,7 +3,11 @@ import { getPhrases } from "../../services/api/phrasesService";
 import Card from "../shared/Card";
 import PhraseChip from "../shared/PhraseChip";
 
-export default function QuickPhraseRow() {
+interface QuickPhraseRowProps {
+  onSelectPhrase: (text: string) => void;
+}
+
+export default function QuickPhraseRow({ onSelectPhrase }: QuickPhraseRowProps) {
   const { data: phrases } = useAsync(() => getPhrases("medical"), []);
 
   return (
@@ -13,7 +17,7 @@ export default function QuickPhraseRow() {
       </span>
       <div className="flex gap-2 overflow-x-auto">
         {phrases?.map((p) => (
-          <PhraseChip key={p.id} text={p.text} />
+          <PhraseChip key={p.id} text={p.text} onClick={() => onSelectPhrase(p.text)} />
         ))}
       </div>
     </Card>

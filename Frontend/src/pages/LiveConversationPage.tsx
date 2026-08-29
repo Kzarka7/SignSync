@@ -2,6 +2,8 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslationStream } from '../hooks/useTranslationStream'
 import { useCameraFeed } from '../hooks/useCameraFeed'
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
+import { useAvatarRenderer } from '../hooks/useAvatarRenderer'
 import { useSessionSetupStore } from '../store/sessionSetupStore'
 import { useSessionStore } from '../store/sessionStore'
 import { saveSession } from '../services/sessionHistoryStorage'
@@ -29,7 +31,7 @@ export default function LiveConversationPage() {
     }
   }, [isReadyToBegin, navigate])
 
-  const { messages, endSession, exportSession, submitSpeech } = useTranslationStream()
+  const { messages, endSession, exportSession, submitSpeech, submitPhrase } = useTranslationStream()
   const lastMessage = messages[messages.length - 1]
 
   // Instantiated once here (not inside CameraPanel/DetectionStatusPanel
@@ -41,6 +43,12 @@ export default function LiveConversationPage() {
   // useCameraFeed does not take arguments; it internally manages start/stop
   // based on session/device readiness. Call without parameters.
   const feed = useCameraFeed()
+
+  // Also instantiated once here rather than inside AvatarPanel, so
+  // CameraPanel's status indicator can read the same isListening /
+  // isRendering / isPlaying state instead of a second, disconnected copy.
+  const speech = useSpeechRecognition()
+  const avatar = useAvatarRenderer()
 
   // Called after LiveTopbar has already stopped the session timer (see
   // LiveTopbar.handleEnd, which calls sessionStore.endSession() before
@@ -71,7 +79,7 @@ export default function LiveConversationPage() {
       endedAt: new Date(now).toISOString(),
       durationSeconds: elapsedSeconds,
       messages,
-      phrasesUsed: [], // not tracked yet - show an empty state, not fake data
+      phrasesUsed: messages.filter((m) => m.source === 'phrase').map((m) => m.text),
       avgConfidence,
     }
 
@@ -92,13 +100,18 @@ export default function LiveConversationPage() {
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-[5fr_3fr] gap-4 items-start">
           <div className="flex flex-col gap-4">
-            <CameraPanel feed={feed} />
+            <CameraPanel
+              feed={feed}
+              isListening={speech.isListening}
+              isInterpreting={avatar.isRendering}
+              isPlaying={avatar.isPlaying}
+            />
             <SpeechSubtitle message={lastMessage ?? ({ text: 'Waiting for spoken input...' } as any)} />
-            <QuickPhraseRow />
+            <QuickPhraseRow onSelectPhrase={submitPhrase} />
           </div>
 
           <div className="flex flex-col gap-4">
-            <AvatarPanel onSubmitSpeech={submitSpeech} />
+            <AvatarPanel onSubmitSpeech={submitSpeech} speech={speech} avatar={avatar} />
             <PlaybackPanel />
             <DetectionStatusPanel feed={feed} />
           </div>
