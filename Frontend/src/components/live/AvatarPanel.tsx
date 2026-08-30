@@ -26,15 +26,27 @@ interface AvatarPanelProps {
 // recognition and sign-generation state both live in the parent (see
 // hooks/useSpeechRecognition.ts and hooks/useAvatarRenderer.ts) - this
 // component just presents them and drives the interactions.
-export default function AvatarPanel({ onSubmitSpeech, speech, avatar }: AvatarPanelProps) {
+export default function AvatarPanel({ onSubmitSpeech, speech, avatar, lastMessage }: AvatarPanelProps) {
   const [speed, setSpeed] = useState<(typeof speeds)[number]>(1)
   const { isListening, transcript, error, start, stop, reset } = speech
-  const { isRendering, caption, render } = avatar
-  // Live transcript wins while the mic is open; once it's submitted (or a
-  // quick phrase is picked instead), fall back to whatever the last
-  // speech/phrase message actually says.
+  const { isRendering, render } = avatar
+  // Same caption shown in the microphone/input area, reused here as the
+  // subtitle below the avatar - no second transcript/message state:
+  // - live transcript wins while the mic is actively picking up speech
+  // - otherwise, while listening (before any words land), show the
+  //   generating state
+  // - otherwise fall back to the last submitted speech-to-text result or
+  //   selected quick phrase (the `lastMessage` prop, sourced from the same
+  //   `messages` state the parent already tracks)
+  // - and if none of the above apply yet, the waiting placeholder
 
-  const subtitleText = transcript || (isRendering ? 'Generating sign animation...' : caption)
+  const subtitleText = transcript
+    ? transcript
+    : isListening
+    ? 'Generating sign animation...'
+    : lastMessage
+    ? lastMessage.text
+    : 'Waiting for spoken input...'
 
   function toggleMic() {
     if (isListening) stop()
