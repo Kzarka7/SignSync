@@ -5,7 +5,8 @@
     "source": "sign",
     "text": "I need assistance.",
     "timestamp": "2026-07-08T10:12:03+08:00",
-    "confidence": 98
+    "confidence": 98,
+    "confidenceBreakdown": { "handSignRecognition": 99, "translation": 97 }
   },
   {
     "id": "m2",
@@ -13,7 +14,8 @@
     "source": "speech",
     "text": "How may I help you today?",
     "timestamp": "2026-07-08T10:12:09+08:00",
-    "confidence": 99
+    "confidence": 99,
+    "confidenceBreakdown": { "speechRecognition": 99, "translation": 99 }
   },
   {
     "id": "m3",
@@ -21,7 +23,8 @@
     "source": "sign",
     "text": "My chest hurts, since this morning.",
     "timestamp": "2026-07-08T10:12:22+08:00",
-    "confidence": 82
+    "confidence": 82,
+    "confidenceBreakdown": { "handSignRecognition": 78, "translation": 86 }
   },
   {
     "id": "m4",
@@ -29,6 +32,7 @@
     "source": "speech",
     "text": "Please follow me to the triage room.",
     "timestamp": "2026-07-08T10:12:30+08:00",
-    "confidence": 97
+    "confidence": 97,
+    "confidenceBreakdown": { "speechRecognition": 96, "translation": 98 }
   }
 ]

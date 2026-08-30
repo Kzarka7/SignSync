@@ -1,13 +1,43 @@
 import { HandMetal, Mic, MessageSquareText, RotateCcw, Copy, Pencil } from 'lucide-react'
 import { ConversationMessage } from '../../types/message'
 import Badge from '../shared/Badge'
+import ConfidenceBar from '../shared/ConfidenceBar'
+import { useSessionStore } from '../../store/sessionStore'
+import { formatElapsedTime, elapsedSecondsBetween } from '../../utils/time'
+import { CONFIDENCE_CATEGORY_LABELS } from '../../utils/confidence'
 
-export default function MessageBubble({ message }: { message: ConversationMessage }) {
+interface MessageBubbleProps {
+  message: ConversationMessage
+  // Epoch ms the message's session started at. Defaults to the live
+  // session's own startedAt (from sessionStore) - the same clock/time
+  // source LiveTopbar's counter reads - so Live Conversation needs no
+  // separate timer. History's Replay/Session Summary view passes the
+  // *saved* session's own startedAt instead, since the live store no
+  // longer reflects a past session.
+  sessionStartedAt?: number | null
+  // Only the History Replay/Session Summary transcript sets this - Live
+  // Conversation and the History list both keep showing just the overall
+  // confidence.
+  showConfidenceBreakdown?: boolean
+}
+
+export default function MessageBubble({ message, sessionStartedAt, showConfidenceBreakdown = false }: MessageBubbleProps) {
+  const liveStartedAt = useSessionStore((s) => s.startedAt)
+  const startedAt = sessionStartedAt !== undefined ? sessionStartedAt : liveStartedAt
+
   const isSign = message.source === 'sign'
   const isPhrase = message.source === 'phrase'
-  const time = new Date(message.timestamp).toLocaleTimeString(undefined, { hour12: false })
+  const time =
+    startedAt != null
+      ? formatElapsedTime(elapsedSecondsBetween(startedAt, new Date(message.timestamp).getTime()))
+      : new Date(message.timestamp).toLocaleTimeString(undefined, { hour12: false })
   const hasConfidence = typeof message.confidence === 'number'
   const lowConfidence = hasConfidence && (message.confidence as number) < 90
+  const breakdownEntries = showConfidenceBreakdown
+    ? Object.entries(message.confidenceBreakdown ?? {}).filter(
+        (entry): entry is [keyof typeof CONFIDENCE_CATEGORY_LABELS, number] => typeof entry[1] === 'number',
+      )
+    : []
 
   const accentColor = isSign ? '#2D7FF9' : isPhrase ? '#1FAA59' : '#1B4B66'
   const iconBg = isSign ? 'bg-signal-light text-signal' : isPhrase ? 'bg-success-light text-success-dark' : 'bg-[#EFF3F7] text-trust'
@@ -31,15 +61,28 @@ export default function MessageBubble({ message }: { message: ConversationMessag
 
       <div className="text-lg leading-relaxed mb-1.5">{message.text}</div>
 
-      {hasConfidence && lowConfidence && (
-        <div className="h-[5px] rounded bg-[#EAF0F6] overflow-hidden mt-1 mb-1.5">
-          <span className="block h-full rounded bg-amber" style={{ width: `${message.confidence}%` }} />
+      {hasConfidence && (
+        <ConfidenceBar 
+          bar={message}
+          rate={(message.confidence ?? 0) >= 90 ? 'ok' : 'med'}
+        />
+      )}
+
+      {breakdownEntries.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-1.5">
+          {breakdownEntries.map(([category, value]) => (
+            <Badge key={category} className="text-xs" tone={value >= 90 ? 'ok' : 'med'}>
+              {CONFIDENCE_CATEGORY_LABELS[category]}: {value}% confidence
+            </Badge>
+          ))}
         </div>
       )}
 
       <div className="flex items-center gap-3">
         {hasConfidence ? (
-          <Badge className="text-sm" tone={(message.confidence as number) >= 90 ? 'ok' : 'med'}>{message.confidence}% confidence</Badge>
+          <Badge className="text-sm" tone={(message.confidence as number) >= 90 ? 'ok' : 'med'}>
+            {breakdownEntries.length > 0 ? 'Overall: ' : ''}{message.confidence}% confidence
+          </Badge>
         ) : (
           <span className="text-sm text-text-3">Manually selected</span>
         )}

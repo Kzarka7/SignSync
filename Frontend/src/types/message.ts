@@ -3,6 +3,13 @@
 // selected quick phrase.
 export type MessageSource = 'sign' | 'speech' | 'phrase'
 
+// One score per recognition/translation pipeline stage. Which keys show
+// up depends on the message's source - a 'sign' message never carries
+// speechRecognition, a 'speech' message never carries handSignRecognition -
+// never invent a score for a stage that didn't run on that message.
+export type ConfidenceCategory = 'handSignRecognition' | 'speechRecognition' | 'translation'
+export type ConfidenceBreakdown = Partial<Record<ConfidenceCategory, number>>
+
 export interface ConversationMessage {
   id: string
   sessionId: string
@@ -10,8 +17,14 @@ export interface ConversationMessage {
   text: string
   timestamp: string // ISO 8601
   // 0-100, from the ML model. Absent for manually-selected phrases, which
-  // were never run through detection - never fake a number here.
+  // were never run through detection - never fake a number here. When
+  // confidenceBreakdown is present, this is that breakdown's average -
+  // kept alongside it so existing average-only views (Live Conversation,
+  // the History list) don't need to know about categories at all.
   confidence?: number
+  // Per-stage detail behind `confidence` above. Absent wherever
+  // `confidence` itself is absent (phrases).
+  confidenceBreakdown?: ConfidenceBreakdown
 }
 
 // The envelope the future WebSocket stream will emit. Kept separate from

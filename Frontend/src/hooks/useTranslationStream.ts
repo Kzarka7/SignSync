@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { ConversationMessage, TranslationSocketEvent } from '../types/message'
+import { ConfidenceBreakdown, ConversationMessage, TranslationSocketEvent } from '../types/message'
 import { createTranslationSocket, ITranslationSocket } from '../services/ws/translationSocket'
+import { averageConfidence } from '../utils/confidence'
 
 // Owns the lifecycle of the translation WebSocket and exposes a plain
 // array of messages plus a couple of control actions. Components never
@@ -29,13 +30,19 @@ export function useTranslationStream() {
   // Appends a locally-sourced "speech" message so it flows through the
   // timeline exactly like a message pushed from the socket.
   const submitSpeech = (text: string) => {
+    // Two stages ran to produce this message: the browser's speech
+    // recognizer, then translating that recognized text for the avatar to
+    // sign. `confidence` stays the average of the two, same as before, so
+    // nothing that only reads the overall figure needs to change.
+    const confidenceBreakdown: ConfidenceBreakdown = { speechRecognition: 98, translation: 97 }
     const message: ConversationMessage = {
       id: `local-${Date.now()}`,
       sessionId: 'live-demo',
       source: 'speech',
       text,
       timestamp: new Date().toISOString(),
-      confidence: 99,
+      confidence: averageConfidence(confidenceBreakdown),
+      confidenceBreakdown,
     }
     setMessages((prev) => [...prev, message])
   }

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ArrowUp, Check, Mic, Square } from 'lucide-react'
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition'
 import { useAvatarRenderer } from '../../hooks/useAvatarRenderer'
+import { ConversationMessage } from '../../types/message'
 
 const speeds = [0.75, 1, 1.25] as const
 
@@ -12,16 +13,28 @@ interface AvatarPanelProps {
   // state instead of a second, disconnected copy of it.
   speech: ReturnType<typeof useSpeechRecognition>
   avatar: ReturnType<typeof useAvatarRenderer>
+  // Most recent submitted speech-to-text result or selected quick phrase,
+  // read off the same `messages` state LiveConversationPage already
+  // tracks (via useTranslationStream) - not a separate subtitle store.
+  // Kept showing here once the live transcript clears after submission,
+  // and equally for a quick phrase, since a phrase goes through that same
+  // messages flow.
+  lastMessage?: ConversationMessage
 }
 
 // Renders the FSL avatar area (speech -> sign direction). Speech
 // recognition and sign-generation state both live in the parent (see
 // hooks/useSpeechRecognition.ts and hooks/useAvatarRenderer.ts) - this
 // component just presents them and drives the interactions.
-export default function AvatarPanel({ onSubmitSpeech, speech, avatar }: AvatarPanelProps) {
+export default function AvatarPanel({ onSubmitSpeech, speech, avatar, lastMessage }: AvatarPanelProps) {
   const [speed, setSpeed] = useState<(typeof speeds)[number]>(1)
   const { isListening, transcript, error, start, stop, reset } = speech
   const { isRendering, caption, render } = avatar
+  // Live transcript wins while the mic is open; once it's submitted (or a
+  // quick phrase is picked instead), fall back to whatever the last
+  // speech/phrase message actually says.
+  const subtitleText =
+    error ?? (transcript || (isListening ? 'Listening...' : lastMessage?.text ?? 'Tap the microphone to speak'))
 
   function toggleMic() {
     if (isListening) stop()
@@ -72,7 +85,7 @@ export default function AvatarPanel({ onSubmitSpeech, speech, avatar }: AvatarPa
       {/* Subtitle container: live speech-to-text preview, before submission */}
       <div className="absolute bottom-3.5 left-3.5 right-[92px] bg-black/45 backdrop-blur-sm rounded-lg px-3 py-2 mr-2.5 min-h-[38px] flex items-center">
         <span className={`text-sm leading-snug line-clamp-2 ${error ? 'text-amber' : 'text-white'}`}>
-          {error ?? (transcript || (isListening ? 'Listening...' : 'Tap the microphone to speak'))}
+          {subtitleText}
         </span>
       </div>
 

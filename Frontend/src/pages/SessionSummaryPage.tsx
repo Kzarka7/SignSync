@@ -12,7 +12,8 @@ import {
   CONVERSATION_TYPE_LABELS,
   ConversationType,
 } from "../types/conversation";
-import { ConversationMessage } from "../types/message";
+import { ConfidenceBreakdown, ConfidenceCategory, ConversationMessage } from "../types/message";
+import { averageConfidenceByCategory, CONFIDENCE_CATEGORY_LABELS } from "../utils/confidence";
 
 interface SummaryViewModel {
   sessionName: string;
@@ -21,6 +22,11 @@ interface SummaryViewModel {
   durationLabel: string;
   messages: ConversationMessage[];
   avgConfidence: number | null;
+  // Per-category averages across this session's messages (Sign
+  // recognition/Speech recognition/Translation) - computed straight from
+  // `messages` below, the same data the transcript rows already read, so
+  // this container and the transcript never disagree.
+  categoryAverages: ConfidenceBreakdown;
   phrasesUsed: string[];
 }
 
@@ -51,6 +57,7 @@ async function loadSummary(
       durationLabel: formatDuration(stored.durationSeconds),
       messages: stored.messages,
       avgConfidence: stored.avgConfidence,
+      categoryAverages: averageConfidenceByCategory(stored.messages),
       phrasesUsed: stored.phrasesUsed,
     };
   }
@@ -65,6 +72,7 @@ async function loadSummary(
     durationLabel: formatDuration(mockSession.durationMinutes * 60),
     messages,
     avgConfidence: mockSession.avgConfidence ?? null,
+    categoryAverages: averageConfidenceByCategory(messages),
     phrasesUsed: [],
   };
 }
@@ -131,11 +139,29 @@ export default function SessionSummaryPage() {
           </Card>
 
           <Card className="col-span-3 row-span-4 col-start-3 row-start-1">
-            <div className="text-sm text-text-2 mb-1">Avg. confidence</div>
+            <div className="text-sm text-text-2 mb-1">Confidence</div>
             {summary.avgConfidence !== null ? (
-              <Badge tone={summary.avgConfidence >= 90 ? "ok" : "med"}>
-                {summary.avgConfidence}%
-              </Badge>
+              <>
+                {/* Overall Confidence is the primary/highlighted metric -
+                    a large figure, not just a small badge like the
+                    History list's row-level confidence. */}
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-bold text-ink">{summary.avgConfidence}%</span>
+                  <Badge tone={summary.avgConfidence >= 90 ? "ok" : "med"}>Overall</Badge>
+                </div>
+                {Object.keys(summary.categoryAverages).length > 0 && (
+                  <div className="flex flex-col gap-1.5 mt-3 pt-3 border-t border-border">
+                    {(Object.entries(summary.categoryAverages) as [ConfidenceCategory, number][]).map(
+                      ([category, value]) => (
+                        <div key={category} className="flex justify-between text-sm text-text-2">
+                          <span>{CONFIDENCE_CATEGORY_LABELS[category]}</span>
+                          <span className="font-semibold text-ink">{value}%</span>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                )}
+              </>
             ) : (
               <div className="text-sm text-text-2">Not available</div>
             )}
@@ -176,7 +202,16 @@ export default function SessionSummaryPage() {
             <div className="flex-1 min-h-0 overflow-y-auto flex flex-col divide-y divide-border [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] pr-1">
               {summary.messages.map((m) => (
                 <div key={m.id} className="py-3 first:pt-0 last:pb-0">
-                  <MessageBubble message={m} />
+                  {/* Replay/Session Summary is History's per-message view -
+                      pass this session's own start time (not the live
+                      session's) and show every confidence category, not
+                      just the overall figure the History list already
+                      shows. */}
+                  <MessageBubble
+                    message={m}
+                    sessionStartedAt={new Date(summary.startedAt).getTime()}
+                    showConfidenceBreakdown
+                  />
                 </div>
               ))}
             </div>

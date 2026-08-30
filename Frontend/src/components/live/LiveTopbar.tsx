@@ -5,13 +5,7 @@ import StatusPill from '../shared/StatusPill'
 import { useSessionStore } from '../../store/sessionStore'
 import { useSessionSetupStore } from '../../store/sessionSetupStore'
 import { CONVERSATION_TYPE_LABELS } from '../../types/conversation'
-
-function formatTime(totalSeconds: number) {
-  const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0')
-  const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0')
-  const s = String(totalSeconds % 60).padStart(2, '0')
-  return `${h}:${m}:${s}`
-}
+import { formatElapsedTime } from '../../utils/time'
 
 export default function LiveTopbar({ onEnd, onExport }: { onEnd: () => void; onExport: () => void }) {
   const { elapsedSeconds, tick, endSession } = useSessionStore()
@@ -42,7 +36,7 @@ export default function LiveTopbar({ onEnd, onExport }: { onEnd: () => void; onE
         <div className="text-text-2">
           <StatusPill label="Auto-detecting · signing now" state="ready" />
         </div>
-        <span className="font-mono text-sm text-text-3">{formatTime(elapsedSeconds)}</span>
+        <span className="font-mono text-sm text-text-3">{formatElapsedTime(elapsedSeconds)}</span>
       </div>
       <div className="flex gap-2">
         <Button size="sm" title="Fullscreen">

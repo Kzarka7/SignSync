@@ -33,6 +33,10 @@ export default function LiveConversationPage() {
 
   const { messages, endSession, exportSession, submitSpeech, submitPhrase } = useTranslationStream()
   const lastMessage = messages[messages.length - 1]
+  // The avatar's subtitle only ever reflects the hearing side of the
+  // conversation (speech-to-text or a selected quick phrase) - never a
+  // detected sign, which belongs to the other direction/timeline instead.
+  const lastSpokenOrPhraseMessage = [...messages].reverse().find((m) => m.source === 'speech' || m.source === 'phrase')
 
   // Instantiated once here (not inside CameraPanel/DetectionStatusPanel
   // individually) so there's a single camera stream and detection loop -
@@ -111,7 +115,12 @@ export default function LiveConversationPage() {
           </div>
 
           <div className="flex flex-col gap-4">
-            <AvatarPanel onSubmitSpeech={submitSpeech} speech={speech} avatar={avatar} />
+            <AvatarPanel
+              onSubmitSpeech={submitSpeech}
+              speech={speech}
+              avatar={avatar}
+              lastMessage={lastSpokenOrPhraseMessage}
+            />
             <PlaybackPanel />
             <DetectionStatusPanel feed={feed} />
           </div>

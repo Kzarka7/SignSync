@@ -40,7 +40,11 @@ export default function ConversationTimeline({
         )}
         {messages.map((m) => (
           <div key={m.id} className="py-3 first:pt-0 last:pb-0">
-            <MessageBubble message={m} />
+            {/* Live Conversation's transcript now shows the same
+                per-category breakdown as Session Summary's transcript -
+                both read straight off each message's confidenceBreakdown,
+                no separate confidence system. */}
+            <MessageBubble message={m} showConfidenceBreakdown />
           </div>
         ))}
       </div>
