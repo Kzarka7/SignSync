@@ -31,7 +31,7 @@ export default function ConversationTimeline({
     <Card>
       <div
         ref={scrollContainerRef}
-        className="max-h-[430px] overflow-y-auto flex flex-col divide-y divide-border pr-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+        className="max-h-[430px] overflow-y-auto flex flex-col divide-y divide-border pr-2 custom-scrollbar"
       >
         {messages.length === 0 && (
           <div className="text-sm text-text-2 py-6 text-center">

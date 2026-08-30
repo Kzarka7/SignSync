@@ -30,7 +30,5 @@ export default {
       borderRadius: { xl2: '14px' },
     },
   },
-  plugins: [
-    require('tailwind-scrollbar'),
-  ],
+  plugins: [],
 }
