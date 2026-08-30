@@ -1,9 +1,12 @@
 import { useNavigate, useParams } from "react-router-dom";
 import PageHeader from "../components/layout/PageHeader";
-import Card from "../components/shared/Card";
-import Button from "../components/shared/Button";
-import Badge from "../components/shared/Badge";
-import MessageBubble from "../components/live/MessageBubble";
+import SessionNotFoundCard from "../components/session-summary/SessionNotFoundCard";
+import DurationCard from "../components/session-summary/DurationCard";
+import MessageCountCard from "../components/session-summary/MessageCountCard";
+import ConfidenceCard from "../components/session-summary/ConfidenceCard";
+import PhrasesUsedCard from "../components/session-summary/PhrasesUsedCard";
+import TranscriptCard from "../components/session-summary/TranscriptCard";
+import SummaryActions from "../components/session-summary/SummaryActions";
 import { useAsync } from "../hooks/useAsync";
 import { getSessionById as getStoredSessionById } from "../services/sessionHistoryStorage";
 import { getSessionById as getMockSessionById } from "../services/api/sessionsService";
@@ -12,8 +15,8 @@ import {
   CONVERSATION_TYPE_LABELS,
   ConversationType,
 } from "../types/conversation";
-import { ConfidenceBreakdown, ConfidenceCategory, ConversationMessage } from "../types/message";
-import { averageConfidenceByCategory, CONFIDENCE_CATEGORY_LABELS } from "../utils/confidence";
+import { ConfidenceBreakdown, ConversationMessage } from "../types/message";
+import { averageConfidenceByCategory } from "../utils/confidence";
 
 interface SummaryViewModel {
   sessionName: string;
@@ -37,10 +40,6 @@ function formatDuration(totalSeconds: number): string {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-// Looks in real saved session history first (the normal path, right after
-// End Session). Falls back to the mock/demo session + messages services so
-// "Replay" on a seeded History entry still shows something, rather than a
-// dead end.
 async function loadSummary(
   sessionId: string | undefined,
 ): Promise<SummaryViewModel | null> {
@@ -98,14 +97,7 @@ export default function SessionSummaryPage() {
           title="Session summary"
           description="We couldn't find this session."
         />
-        <Card>
-          <p className="text-sm text-text-2 mb-4">
-            This session may have been deleted, or the link is no longer valid.
-          </p>
-          <Button variant="primary" onClick={() => navigate("/history")}>
-            Back to History
-          </Button>
-        </Card>
+        <SessionNotFoundCard onBackToHistory={() => navigate("/history")} />
       </div>
     );
   }
@@ -126,104 +118,35 @@ export default function SessionSummaryPage() {
 
       <div className="flex-1 min-h-0 flex flex-col gap-4">
         <div className="shrink-0 grid grid-cols-10 grid-rows-4 gap-4">
-          <Card className="col-span-2 row-span-2">
-            <div className="text-sm text-text-2 mb-1">Duration</div>
-            <div className="text-xl font-semibold">{summary.durationLabel}</div>
-          </Card>
-          
-          <Card className="col-span-2 row-span-2 col-start-1 row-start-3">
-            <div className="text-sm text-text-2 mb-1">Messages</div>
-            <div className="text-xl font-semibold">
-              {summary.messages.length}
-            </div>
-          </Card>
+          <DurationCard durationLabel={summary.durationLabel} className="col-span-2 row-span-2" />
 
-          <Card className="col-span-3 row-span-4 col-start-3 row-start-1">
-            <div className="text-sm text-text-2 mb-1">Confidence</div>
-            {summary.avgConfidence !== null ? (
-              <>
-                {/* Overall Confidence is the primary/highlighted metric -
-                    a large figure, not just a small badge like the
-                    History list's row-level confidence. */}
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold text-ink">{summary.avgConfidence}%</span>
-                  <Badge tone={summary.avgConfidence >= 90 ? "ok" : "med"}>Overall</Badge>
-                </div>
-                {Object.keys(summary.categoryAverages).length > 0 && (
-                  <div className="flex flex-col gap-1.5 mt-3 pt-3 border-t border-border">
-                    {(Object.entries(summary.categoryAverages) as [ConfidenceCategory, number][]).map(
-                      ([category, value]) => (
-                        <div key={category} className="flex justify-between text-sm text-text-2">
-                          <span>{CONFIDENCE_CATEGORY_LABELS[category]}</span>
-                          <span className="font-semibold text-ink">{value}%</span>
-                        </div>
-                      ),
-                    )}
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="text-sm text-text-2">Not available</div>
-            )}
-          </Card>
+          <MessageCountCard
+            messageCount={summary.messages.length}
+            className="col-span-2 row-span-2 col-start-1 row-start-3"
+          />
 
-          <Card className="srhink-0 col-span-5 row-span-4 col-start-6 row-start-1">
-            <h3 className="text-md uppercase tracking-wide text-text-2 font-semibold mb-3">
-              Phrases used
-            </h3>
-            {summary.phrasesUsed.length === 0 ? (
-              <p className="text-sm text-text-2">
-                No quick phrases were used in this session.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {summary.phrasesUsed.map((phrase) => (
-                  <span
-                    key={phrase}
-                    className="inline-flex items-center bg-signal-light text-[#0c447c] rounded-md px-3.5 py-1.5 text-sm font-medium"
-                  >
-                    {phrase}
-                  </span>
-                ))}
-              </div>
-            )}
-          </Card>
+          <ConfidenceCard
+            avgConfidence={summary.avgConfidence}
+            categoryAverages={summary.categoryAverages}
+            className="col-span-3 row-span-4 col-start-3 row-start-1"
+          />
+
+          <PhrasesUsedCard
+            phrases={summary.phrasesUsed}
+            className="shrink-0 col-span-5 row-span-4 col-start-6 row-start-1"
+          />
         </div>
 
-        <Card className="flex-1 min-h-0 flex flex-col">
-          <h3 className="shrink-0 text-md uppercase tracking-wide text-text-2 font-semibold mb-3">
-            Transcript
-          </h3>
-          {summary.messages.length === 0 ? (
-            <p className="text-sm text-text-2">
-              No messages were recorded during this session.
-            </p>
-          ) : (
-            <div className="flex-1 min-h-0 overflow-y-auto flex flex-col divide-y divide-border pr-2 custom-scrollbar">
-              {summary.messages.map((m) => (
-                <div key={m.id} className="py-3 first:pt-0 last:pb-0">
-                  {/* Replay/Session Summary is History's per-message view -
-                      pass this session's own start time (not the live
-                      session's) and show every confidence category, not
-                      just the overall figure the History list already
-                      shows. */}
-                  <MessageBubble
-                    message={m}
-                    sessionStartedAt={new Date(summary.startedAt).getTime()}
-                    showConfidenceBreakdown
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
+        <TranscriptCard
+          messages={summary.messages}
+          sessionStartedAt={new Date(summary.startedAt).getTime()}
+          className="flex-1 min-h-0 flex flex-col"
+        />
 
-        <div className="shrink-0 flex gap-2.5">
-          <Button variant="primary" onClick={() => navigate("/session-setup")}>
-            Start a new conversation?
-          </Button>
-          <Button onClick={() => navigate("/history")}>Done</Button>
-        </div>
+        <SummaryActions
+          onStartNewConversation={() => navigate("/session-setup")}
+          onDone={() => navigate("/history")}
+        />
       </div>
     </div>
   );
