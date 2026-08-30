@@ -199,7 +199,7 @@ export default function SessionSummaryPage() {
               No messages were recorded during this session.
             </p>
           ) : (
-            <div className="flex-1 min-h-0 overflow-y-auto flex flex-col divide-y divide-border [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] pr-1">
+            <div className="flex-1 min-h-0 overflow-y-auto flex flex-col divide-y divide-border pr-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               {summary.messages.map((m) => (
                 <div key={m.id} className="py-3 first:pt-0 last:pb-0">
                   {/* Replay/Session Summary is History's per-message view -

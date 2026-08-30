@@ -25,7 +25,7 @@ export default function App() {
   return (
     <div className={`grid ${isCollapsed ? 'grid-cols-[60px_1fr]' : 'grid-cols-[280px_1fr]'} min-h-screen transition-all duration-300`}>
       <Sidebar isCollapsed={isCollapsed} onToggle={toggleSidebar} />
-      <main className="px-9 py-7 pb-16 overflow-x-hidden">
+      <main className="px-8 py-8 overflow-x-hidden">
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />

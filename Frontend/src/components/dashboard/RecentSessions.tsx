@@ -8,10 +8,11 @@ export default function RecentSessions() {
   const { data: sessions, loading } = useAsync(() => getRecentSessions(3), [])
 
   return (
-    <Card className="!p-1.5">
+    <Card className="!p-5">
       {loading && <div className="p-4 text-sm text-text-2">Loading sessions...</div>}
+      <span className="text-md font-semibold text-text-2 uppercase tracking-wide mb-3">Recent sessions</span>
       {sessions?.map((s) => (
-        <div key={s.id} className="flex items-center gap-3.5 px-3 py-3 border-b border-border last:border-none">
+        <div key={s.id} className="flex items-center gap-3.5 py-3 border-b border-border last:border-none">
           <div className="rounded-[10px] bg-signal-light text-signal flex items-center justify-center flex-shrink-0" style={{ width: 42, height: 42 }}>
             <Video size={20} />
           </div>

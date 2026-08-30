@@ -31,7 +31,7 @@ export default function ConversationTimeline({
     <Card>
       <div
         ref={scrollContainerRef}
-        className="max-h-[430px] overflow-y-auto flex flex-col divide-y divide-border [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] pr-1"
+        className="max-h-[430px] overflow-y-auto flex flex-col divide-y divide-border pr-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
       >
         {messages.length === 0 && (
           <div className="text-sm text-text-2 py-6 text-center">
@@ -40,10 +40,6 @@ export default function ConversationTimeline({
         )}
         {messages.map((m) => (
           <div key={m.id} className="py-3 first:pt-0 last:pb-0">
-            {/* Live Conversation's transcript now shows the same
-                per-category breakdown as Session Summary's transcript -
-                both read straight off each message's confidenceBreakdown,
-                no separate confidence system. */}
             <MessageBubble message={m} showConfidenceBreakdown />
           </div>
         ))}

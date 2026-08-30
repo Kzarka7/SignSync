@@ -59,7 +59,7 @@ export default function MessageBubble({ message, sessionStartedAt, showConfidenc
         <span className="font-mono font-medium text-sm text-text-3 ml-auto">{time}</span>
       </div>
 
-      <div className="text-lg leading-relaxed mb-1.5">{message.text}</div>
+      <div className="text-md leading-relaxed mb-1.5">{message.text}</div>
 
       {hasConfidence && (
         <ConfidenceBar 

@@ -31,14 +31,8 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-[1.4fr_1fr] gap-4.5 items-start" style={{ gap: '18px' }}>
-        <div>
-          <div className="text-md font-semibold text-text-2 uppercase tracking-wide mb-3">Recent sessions</div>
-          <RecentSessions />
-        </div>
-        <div>
-          <div className="text-md font-semibold text-text-2 uppercase tracking-wide mb-3">Frequently used phrases</div>
-          <FrequentPhrases />
-        </div>
+        <RecentSessions />
+        <FrequentPhrases />
       </div>
     </div>
   )
