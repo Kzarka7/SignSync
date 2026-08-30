@@ -13,7 +13,7 @@ export default function MetricGrid() {
       {metrics.map((m) => (
         <div key={m.label} className="bg-white border border-border rounded-xl2 px-4 py-3.5">
           <div className="text-md text-text-2 mb-1.5 font-semibold uppercase">{m.label}</div>
-          <div className="text-xl font-display font-bold">
+          <div className="text-xl font-sans font-bold">
             {m.value}
             {m.unit && <span className="text-sm font-medium text-text-2 ml-0.5">{m.unit}</span>}
           </div>
