@@ -1,7 +1,7 @@
 import { AlertTriangle, Loader2, Play, Square, VideoOff } from 'lucide-react'
 import { CameraFeedState } from '../../hooks/useCameraFeed'
 
-type CameraStatus = 'Listening' | 'Detecting' | 'Interpreting' | 'Playing' | 'Waiting' | 'Error'
+type CameraStatus = 'Listening' | 'Detecting' | 'Interpreting' | 'Playing' | 'Error'
 
 // Colored dot per status, reusing the existing palette (tailwind.config.js)
 // rather than introducing new colors.
@@ -10,7 +10,6 @@ const STATUS_DOT: Record<CameraStatus, string> = {
   Detecting: 'bg-success',
   Interpreting: 'bg-amber',
   Playing: 'bg-trust',
-  Waiting: 'bg-text-3',
   Error: 'bg-danger',
 }
 
@@ -31,9 +30,8 @@ function resolveStatus(feed: CameraFeedState, isListening: boolean, isInterpreti
   if (feed.error || feed.modelError) return 'Error'
   if (isListening) return 'Listening'
   if (isInterpreting) return 'Interpreting'
-  if (isPlaying) return 'Playing'
   if (feed.enabled && feed.cameraReady && feed.handsDetected) return 'Detecting'
-  return 'Waiting'
+  return 'Playing'
 }
 
 // Renders the live camera feed with a hand-landmark overlay drawn by
@@ -52,7 +50,7 @@ export default function CameraPanel({ feed, isListening, isInterpreting, isPlayi
           <div className="flex items-center gap-2">
             <div className="bg-black/45 backdrop-blur-sm text-white text-sm font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${feed.enabled ? 'bg-danger' : 'bg-text-3'}`} />
-              {feed.enabled ? 'Live' : 'Paused'}
+              {!feed.enabled ? 'Paused' : feed.cameraReady ? 'Live' : 'Waiting...'}
             </div>
             <button
               onClick={feed.toggleCamera}
@@ -63,26 +61,12 @@ export default function CameraPanel({ feed, isListening, isInterpreting, isPlayi
               {feed.enabled ? 'Stop' : 'Start'}
             </button>
           </div>
-          <div className="bg-black/45 backdrop-blur-sm text-white text-sm font-medium px-2.5 py-1.5 rounded-lg">
-            {!feed.enabled
-              ? 'Camera off'
-              : feed.error
-                ? 'Camera error'
-                : !feed.cameraReady
-                  ? 'Starting camera...'
-                  : feed.modelError
-                    ? 'Detection unavailable'
-                    : feed.handsDetected
-                      ? 'Signer detected'
-                      : 'No hands detected'}
-          </div>
-        </div>
-
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
-          <div className="bg-black/45 backdrop-blur-sm text-white text-sm font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 tracking-wide">
-            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[status]}`} />
-            {status}
-          </div>
+          {feed.enabled && feed.cameraReady && (
+            <div className="bg-black/45 backdrop-blur-sm text-white text-sm font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 tracking-wide">
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[status]}`} />
+              {status}
+            </div>
+          )}
         </div>
 
         {!feed.enabled ? (
@@ -109,27 +93,29 @@ export default function CameraPanel({ feed, isListening, isInterpreting, isPlayi
           </>
         )}
 
-        {(handsWarning || lightWarning || feed.modelError) && (
-          <div className="absolute bottom-3 left-3 right-3 flex flex-col gap-1.5 z-10">
-            {feed.modelError && (
-              <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-sm font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
-                <AlertTriangle size={14} />
-                {feed.modelError}
-              </div>
-            )}
-            {handsWarning && (
-              <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-sm font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
-                <AlertTriangle size={14} />
-                No hands detected — make sure your hands are visible in frame.
-              </div>
-            )}
-            {lightWarning && (
-              <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-sm font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
-                <AlertTriangle size={14} />
-                Lighting is a little low — move closer to a window for better accuracy.
-              </div>
-            )}
-          </div>
+        {feed.enabled && feed.cameraReady && (
+          (handsWarning || lightWarning || feed.modelError) && (
+            <div className="absolute bottom-3 left-3 right-3 flex flex-col gap-1.5 z-10">
+              {feed.modelError && (
+                <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-sm font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
+                  <AlertTriangle size={14} />
+                  {feed.modelError}
+                </div>
+              )}
+              {handsWarning && (
+                <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-sm font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
+                  <AlertTriangle size={14} />
+                  No hands detected — make sure your hands are visible in frame.
+                </div>
+              )}
+              {lightWarning && (
+                <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-sm font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
+                  <AlertTriangle size={14} />
+                  Lighting is a little low — move closer to a window for better accuracy.
+                </div>
+              )}
+            </div>
+          )
         )}
       </div>
     </div>
