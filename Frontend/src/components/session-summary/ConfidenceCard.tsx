@@ -16,7 +16,7 @@ interface ConfidenceCardProps {
 export default function ConfidenceCard({ avgConfidence, categoryAverages, className }: ConfidenceCardProps) {
   return (
     <Card className={className}>
-      <div className="text-sm text-text-2 mb-1">Confidence</div>
+      <div className="text-md text-text-2 font-semibold uppercase mb-1">Confidence</div>
       {avgConfidence !== null ? (
         <>
           <div className="flex items-baseline gap-2">

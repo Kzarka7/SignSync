@@ -8,7 +8,7 @@ interface DurationCardProps {
 export default function DurationCard({ durationLabel, className }: DurationCardProps) {
   return (
     <Card className={className}>
-      <div className="text-sm text-text-2 mb-1">Duration</div>
+      <div className="text-md text-text-2 font-semibold uppercase mb-1">Duration</div>
       <div className="text-xl font-semibold">{durationLabel}</div>
     </Card>
   )
