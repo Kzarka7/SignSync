@@ -1,17 +1,24 @@
 import { HandMetal, Mic, MessageSquareText } from "lucide-react";
 import { ConversationMessage } from "../../types/message";
 import Card from "../shared/Card";
+import { useSessionStore } from '../../store/sessionStore'
+import { formatElapsedTime, elapsedSecondsBetween } from '../../utils/time'
 
-export default function SpeechSubtitle({
-  message,
-}: {
-  message: ConversationMessage;
-}) {
+interface SpeechSubtitleProps {
+  message: ConversationMessage
+  sessionStartedAt?: number | null
+}
+
+export default function SpeechSubtitle({ message, sessionStartedAt } : SpeechSubtitleProps ) {
+  const liveStartedAt = useSessionStore((s) => s.startedAt)
+  const startedAt = sessionStartedAt !== undefined ? sessionStartedAt : liveStartedAt
+
   const isSign = message.source === "sign";
   const isPhrase = message.source === "phrase";
-  const time = new Date(message.timestamp).toLocaleTimeString(undefined, {
-    hour12: false,
-  });
+  const time =
+  startedAt != null
+    ? formatElapsedTime(elapsedSecondsBetween(startedAt, new Date(message.timestamp).getTime()))
+    : new Date(message.timestamp).toLocaleTimeString(undefined, { hour12: false })
   const icon = isSign ? <HandMetal size={16} /> : isPhrase ? <MessageSquareText size={16} /> : <Mic size={16} />;
   const label = isSign ? "Signed" : isPhrase ? "Phrase" : "Spoken";
   const iconBg = isSign ? "bg-signal-light text-signal" : isPhrase ? "bg-success-light text-success-dark" : "bg-[#EFF3F7] text-trust";

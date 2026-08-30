@@ -26,15 +26,15 @@ interface AvatarPanelProps {
 // recognition and sign-generation state both live in the parent (see
 // hooks/useSpeechRecognition.ts and hooks/useAvatarRenderer.ts) - this
 // component just presents them and drives the interactions.
-export default function AvatarPanel({ onSubmitSpeech, speech, avatar, lastMessage }: AvatarPanelProps) {
+export default function AvatarPanel({ onSubmitSpeech, speech, avatar }: AvatarPanelProps) {
   const [speed, setSpeed] = useState<(typeof speeds)[number]>(1)
   const { isListening, transcript, error, start, stop, reset } = speech
   const { isRendering, caption, render } = avatar
   // Live transcript wins while the mic is open; once it's submitted (or a
   // quick phrase is picked instead), fall back to whatever the last
   // speech/phrase message actually says.
-  const subtitleText =
-    error ?? (transcript || (isListening ? 'Listening...' : lastMessage?.text ?? 'Tap the microphone to speak'))
+
+  const subtitleText = transcript || (isRendering ? 'Generating sign animation...' : caption)
 
   function toggleMic() {
     if (isListening) stop()
@@ -79,13 +79,12 @@ export default function AvatarPanel({ onSubmitSpeech, speech, avatar, lastMessag
         </svg>
       </div>
       <div className="mt-3.5 text-sm text-text-2 text-center max-w-[218px] leading-relaxed">
-        {isRendering ? 'Generating sign animation...' : caption}
+        {subtitleText}
       </div>
 
-      {/* Subtitle container: live speech-to-text preview, before submission */}
       <div className="absolute bottom-3.5 left-3.5 right-[92px] bg-black/45 backdrop-blur-sm rounded-lg px-3 py-2 mr-2.5 min-h-[38px] flex items-center">
         <span className={`text-sm leading-snug line-clamp-2 ${error ? 'text-amber' : 'text-white'}`}>
-          {subtitleText}
+          {error ?? (isListening ? 'Listening...' : 'Tap the microphone to speak')}
         </span>
       </div>
 
