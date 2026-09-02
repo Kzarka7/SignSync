@@ -85,6 +85,17 @@ export function useCameraFeed(): CameraFeedState {
   // loading the MediaPipe model takes a second or two - only closed on
   // full component unmount, see the effect below.
   const landmarkerRef = useRef<HandLandmarker | null>(null);
+  // MediaPipe requires each call to detectForVideo() on a given landmarker
+  // to use a strictly increasing timestamp. video.currentTime resets to 0
+  // every time the camera is restarted, but the landmarker instance above
+  // is intentionally kept alive across restarts - so feeding it
+  // video.currentTime again after a stop/start sends a timestamp lower
+  // than one it already saw, which throws and leaves detection broken
+  // until a full page reload. performance.now() is relative to page load,
+  // not the video, so it keeps climbing across restarts and sidesteps the
+  // issue entirely. lastTimestampRef guards against the (rarer) case of
+  // two rAF ticks resolving with an identical or out-of-order value.
+  const lastTimestampRef = useRef<number>(-1);
 
   const [enabled, setEnabled] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
@@ -194,8 +205,16 @@ export function useCameraFeed(): CameraFeedState {
 
       const video = videoRef.current;
       if (video.readyState >= 2) {
+        // Strictly increasing across the landmarker's lifetime, even
+        // across stop/start - see lastTimestampRef comment above.
+        let timestamp = performance.now();
+        if (timestamp <= lastTimestampRef.current) {
+          timestamp = lastTimestampRef.current + 1;
+        }
+        lastTimestampRef.current = timestamp;
+
         const result: HandLandmarkerResult =
-          landmarkerRef.current.detectForVideo(video, video.currentTime * 1000);
+          landmarkerRef.current.detectForVideo(video, timestamp);
         setHandsDetected(result.landmarks.length > 0);
         drawOverlay(result);
         updateLightLevel(video);
