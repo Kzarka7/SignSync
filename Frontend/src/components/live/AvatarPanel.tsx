@@ -49,17 +49,25 @@ export default function AvatarPanel({ onSubmitSpeech, speech, avatar, lastMessag
     : 'Waiting for spoken input...'
 
   function toggleMic() {
-    if (isListening) stop()
+    if (isListening) {
+      stop()
+      reset()
+    } 
     else start()
   }
 
   async function handleSubmit() {
-    if (!transcript.trim()) return
-    stop()
     const text = transcript.trim()
+    if (!text) return
+    stop()
+    // Clear the transcript up front, before the async render call below -
+    // not after it. Submit button re-disables (transcript.trim() is now
+    // empty) the instant this runs, instead of staying enabled with the
+    // same text for the whole render() await, where a fast second click
+    // would submit the same speech again.
+    reset()
     onSubmitSpeech(text)
     await render(text) // speech -> sign generation, via AvatarService seam
-    reset()
   }
 
   return (
@@ -90,7 +98,7 @@ export default function AvatarPanel({ onSubmitSpeech, speech, avatar, lastMessag
           <path d="M17 14v18M6 22l11-4 11 4M9 40l8-8 8 8" />
         </svg>
       </div>
-      <div className="mt-3.5 text-sm text-text-2 text-center max-w-[218px] leading-relaxed">
+      <div className="mt-3.5 text-sm text-text-2 text-center max-w-[450px] leading-relaxed">
         {subtitleText}
       </div>
 
@@ -114,11 +122,8 @@ export default function AvatarPanel({ onSubmitSpeech, speech, avatar, lastMessag
           onClick={handleSubmit}
           disabled={!transcript.trim()}
           title="Submit for signing"
-          className={`w-[38px] h-[38px] rounded-lg flex items-center justify-center border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-            isListening ? 'bg-success text-white border-success' : 'bg-signal text-white border-signal'
-          }`}
-        >
-          {isListening ? <Check size={18} /> : <ArrowUp size={18} />}
+          className="w-[38px] h-[38px] rounded-lg flex items-center justify-center border transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-success text-white border-success">
+          <Check size={18} />
         </button>
       </div>
     </div>

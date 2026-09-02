@@ -66,6 +66,14 @@ class RealSpeechRecognitionService implements ISpeechRecognitionService {
     recognition.lang = 'en-US' // swap to 'fil-PH' if/when the browser's engine supports it well
 
     recognition.onresult = (event) => {
+      // The engine can fire one more "final" result asynchronously after
+      // .stop() has already been called (it flushes whatever was still
+      // interim). Without this guard that stray event lands after the
+      // caller has already read the transcript and cleared it for
+      // submission, silently refilling the box with the same words and
+      // forcing a second submit for the same speech.
+      if (this.manuallyStopped) return
+
       let interimTranscript = ''
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
