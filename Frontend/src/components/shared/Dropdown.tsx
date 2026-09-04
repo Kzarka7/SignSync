@@ -60,7 +60,7 @@ export default function Dropdown<T extends string | number>({
       </button>
 
       {open && (
-        <div className="absolute flex flex-col right-0 mt-1.5 min-w-full w-max bg-white border border-border rounded-lg shadow-lg p-1 z-20">
+        <div className="absolute flex flex-col right-0 mt-1.5 min-w-full w-max max-h-[142px] bg-white border border-border rounded-lg shadow-lg p-1 z-20 overflow-y-auto custom-scrollbar">
           {options.map((option) => (
             <Button
               key={option.value}
