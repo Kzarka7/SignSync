@@ -43,7 +43,10 @@ const UPPER_BODY_POSE_INDEX: Record<UpperBodyPoseLandmarkName, number> = {
   rightHip: 24,
 };
 
-const POSE_CONNECTIONS: [UpperBodyPoseLandmarkName, UpperBodyPoseLandmarkName][] = [
+const POSE_CONNECTIONS: [
+  UpperBodyPoseLandmarkName,
+  UpperBodyPoseLandmarkName,
+][] = [
   ["leftShoulder", "rightShoulder"],
   ["leftShoulder", "leftElbow"],
   ["leftElbow", "leftWrist"],
@@ -99,6 +102,68 @@ const HAND_CONNECTIONS: [number, number][] = [
   // Palm
   [0, 17],
 ];
+
+// Both landmarkers are created with this same fallback: try the GPU
+// (WebGL) delegate first for the big frame-rate win, but some
+// browser/driver combinations (older Android WebViews in particular)
+// don't support it properly and throw during createFromOptions - in that
+// case, retry once with the CPU delegate rather than leaving detection
+// broken on that device.
+type VisionFileset = Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>;
+
+async function createHandLandmarker(
+  fileset: VisionFileset,
+): Promise<HandLandmarker> {
+  const options = {
+    runningMode: "VIDEO" as const,
+    numHands: 2,
+    minHandDetectionConfidence: 0.5,
+    minHandPresenceConfidence: 0.4,
+    minTrackingConfidence: 0.4,
+  };
+  try {
+    return await HandLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate: "GPU" },
+      ...options,
+    });
+  } catch (gpuErr) {
+    console.warn(
+      "[useCameraFeed] GPU delegate unavailable for hand model, falling back to CPU:",
+      gpuErr,
+    );
+    return HandLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate: "CPU" },
+      ...options,
+    });
+  }
+}
+
+async function createPoseLandmarker(
+  fileset: VisionFileset,
+): Promise<PoseLandmarker> {
+  const options = {
+    runningMode: "VIDEO" as const,
+    numPoses: 1,
+    minPoseDetectionConfidence: 0.5,
+    minPosePresenceConfidence: 0.5,
+    minTrackingConfidence: 0.5,
+  };
+  try {
+    return await PoseLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate: "GPU" },
+      ...options,
+    });
+  } catch (gpuErr) {
+    console.warn(
+      "[useCameraFeed] GPU delegate unavailable for pose model, falling back to CPU:",
+      gpuErr,
+    );
+    return PoseLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate: "CPU" },
+      ...options,
+    });
+  }
+}
 
 // MediaPipe's NormalizedLandmark already has this exact shape; this just
 // gives call sites a stable, explicit conversion point (and a single place
@@ -227,7 +292,15 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       // to show - hide the video and report it honestly.
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 1280, height: 720 },
+          // Lowered from 1280x720: MediaPipe resizes its input internally
+          // regardless of source resolution, so capturing at 720p mostly
+          // added decode/color-convert overhead per frame without
+          // improving landmark accuracy - overhead that showed up as a
+          // real bottleneck on recorded datasets (effective detection
+          // rate as low as ~3-5fps even on a laptop, worse on mobile,
+          // per exported dataset analysis). 640x480 is still comfortably
+          // enough resolution for MediaPipe's hand/pose models.
+          video: { width: 1920, height: 1080 },
         });
         if (cancelled) {
           // Effect was cleaned up (a fast Stop click, or leaving the page)
@@ -271,42 +344,18 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       try {
         if (!landmarkerRef.current) {
           const fileset = await FilesetResolver.forVisionTasks(WASM_BASE_URL);
-          landmarkerRef.current = await HandLandmarker.createFromOptions(
-            fileset,
-            {
-              baseOptions: { modelAssetPath: HAND_MODEL_URL },
-              runningMode: "VIDEO",
-              numHands: 2,
-              minHandDetectionConfidence: 0.6,
-              minHandPresenceConfidence: 0.5,
-              minTrackingConfidence: 0.5,
-            },
-          );
+          landmarkerRef.current = await createHandLandmarker(fileset);
 
-          // Pose is loaded in its own nested try/catch: if it fails (e.g.
-          // this specific model file is unreachable while the hand model
-          // loaded fine), hand detection - the pre-existing, required
-          // functionality - must keep working. Pose landmarks simply stay
-          // absent from every frame sample until a later reload succeeds.
-          // Same fileset/WASM runtime as the hand model - only the model
-          // asset differs.
+          // Pose is loaded in its own nested try/catch: if it fails
+          // entirely (both GPU and CPU delegate attempts), hand detection
+          // - the pre-existing, required functionality - must keep
+          // working. Pose landmarks simply stay absent from every frame
+          // sample until a later reload succeeds. Same fileset/WASM
+          // runtime as the hand model - only the model asset differs.
           try {
-            poseLandmarkerRef.current = await PoseLandmarker.createFromOptions(
-              fileset,
-              {
-                baseOptions: { modelAssetPath: POSE_MODEL_URL },
-                runningMode: "VIDEO",
-                numPoses: 1,
-                minPoseDetectionConfidence: 0.5,
-                minPosePresenceConfidence: 0.5,
-                minTrackingConfidence: 0.5,
-              },
-            );
+            poseLandmarkerRef.current = await createPoseLandmarker(fileset);
           } catch (poseErr) {
-            console.error(
-              "[useCameraFeed] Pose model loading error:",
-              poseErr,
-            );
+            console.error("[useCameraFeed] Pose model loading error:", poseErr);
           }
         }
 
@@ -364,9 +413,10 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     // If two hands report the same side (rare misclassification), the
     // higher-confidence one wins and the other is dropped rather than
     // silently overwritten.
-    function splitHandsByHandedness(
-      result: HandLandmarkerResult,
-    ): { left: HandLandmarkFrame | null; right: HandLandmarkFrame | null } {
+    function splitHandsByHandedness(result: HandLandmarkerResult): {
+      left: HandLandmarkFrame | null;
+      right: HandLandmarkFrame | null;
+    } {
       let left: HandLandmarkFrame | null = null;
       let leftScore = 0;
       let right: HandLandmarkFrame | null = null;

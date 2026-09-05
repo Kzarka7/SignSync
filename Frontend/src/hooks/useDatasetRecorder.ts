@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCameraFeed } from './useCameraFeed'
 import type { LandmarkFrameSample } from '../types/landmarks'
 import type { DatasetFrame, LabeledSequence } from '../types/dataset'
@@ -44,15 +44,32 @@ export function useDatasetRecorder() {
   // and reads this on every tick - reading React state directly there
   // would close over a stale value.
   const isRecordingRef = useRef(false)
+  // Mirrors the buffered frame count into `frameCount` state on a fixed
+  // interval instead of every single onFrame tick (see handleFrame and
+  // startRecording) - calling setState on every detection tick guarantees
+  // a re-render of the whole page every tick (unlike e.g. handsDetected,
+  // which only re-renders when the value actually flips), and that
+  // extra, always-on render work was visibly competing with the
+  // detection loop for main-thread time - the skeleton overlay noticeably
+  // choppier while recording than while just previewing.
+  const frameCountIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     setSequences(getSequences())
   }, [])
 
+  // Unmount-only: stop the interval if the component goes away mid-recording.
+  useEffect(() => {
+    return () => {
+      if (frameCountIntervalRef.current !== null) {
+        clearInterval(frameCountIntervalRef.current)
+      }
+    }
+  }, [])
+
   const handleFrame = useCallback((sample: LandmarkFrameSample) => {
     if (!isRecordingRef.current) return
     bufferRef.current.push({ timestamp: sample.timestamp, raw: sample })
-    setFrameCount(bufferRef.current.length)
   }, [])
 
   const feed = useCameraFeed({ onFrame: handleFrame })
@@ -64,6 +81,10 @@ export function useDatasetRecorder() {
     setSaveError(null)
     isRecordingRef.current = true
     setIsRecording(true)
+
+    frameCountIntervalRef.current = setInterval(() => {
+      setFrameCount(bufferRef.current.length)
+    }, 200)
   }, [selectedLabel])
 
   // discard=true drops the buffer without saving - used by both
@@ -71,10 +92,15 @@ export function useDatasetRecorder() {
   // up empty (e.g. stopped a frame after starting).
   const finishRecording = useCallback(
     (discard: boolean) => {
+      if (frameCountIntervalRef.current !== null) {
+        clearInterval(frameCountIntervalRef.current)
+        frameCountIntervalRef.current = null
+      }
       isRecordingRef.current = false
       setIsRecording(false)
       const frames = bufferRef.current
       bufferRef.current = []
+      setFrameCount(frames.length) // final, exact count
 
       if (discard || frames.length === 0) return
 
@@ -115,12 +141,19 @@ export function useDatasetRecorder() {
   }, [])
 
   const exportDataset = useCallback(() => {
-    downloadDatasetExport(sequences)
-  }, [sequences])
+    downloadDatasetExport(sequences, selectedLabel)
+  }, [sequences, selectedLabel])
 
   // Defaults first (so the picker always offers the seed examples), plus
-  // any label that's actually been recorded, deduplicated.
-  const knownLabels = Array.from(new Set([...DEFAULT_SIGN_LABELS, ...sequences.map((s) => s.label)]))
+  // any label that's actually been recorded, deduplicated. Memoized so
+  // the array reference only changes when `sequences` actually changes -
+  // otherwise LabelPicker (wrapped in React.memo) would still re-render
+  // every tick during recording just from receiving a new-but-equal
+  // array each time.
+  const knownLabels = useMemo(
+    () => Array.from(new Set([...DEFAULT_SIGN_LABELS, ...sequences.map((s) => s.label)])),
+    [sequences],
+  )
 
   return {
     feed,

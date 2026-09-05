@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Download, Trash2 } from 'lucide-react'
 import Card from '../shared/Card'
 import Button from '../shared/Button'
@@ -10,7 +11,14 @@ interface SequenceListProps {
   onClearAll: () => void
 }
 
-export default function SequenceList({ sequences, onDelete, onExport, onClearAll }: SequenceListProps) {
+// Wrapped in memo: during a recording session every prop here
+// (sequences/onDelete/onExport/onClearAll) stays reference-stable tick to
+// tick (the callbacks are useCallback'd in useDatasetRecorder, sequences
+// only changes on save/delete) - without memo, this whole list still gets
+// rebuilt on every detection tick purely because its sibling
+// (RecordingControls) re-renders, which is wasted work that competes with
+// the detection loop for main-thread time.
+function SequenceList({ sequences, onDelete, onExport, onClearAll }: SequenceListProps) {
   return (
     <Card>
       <div className="flex items-center justify-between mb-3.5 gap-2">
@@ -57,3 +65,5 @@ export default function SequenceList({ sequences, onDelete, onExport, onClearAll
     </Card>
   )
 }
+
+export default memo(SequenceList)

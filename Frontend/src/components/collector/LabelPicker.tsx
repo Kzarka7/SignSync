@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import Dropdown from '../shared/Dropdown'
 import Button from '../shared/Button'
@@ -17,7 +17,11 @@ function normalizeLabel(input: string): string {
   return input.trim().toUpperCase().replace(/\s+/g, '_')
 }
 
-export default function LabelPicker({ knownLabels, selectedLabel, onSelectLabel, disabled }: LabelPickerProps) {
+// Wrapped in memo: knownLabels/selectedLabel/onSelectLabel/disabled are
+// all reference-stable during a recording session (see useDatasetRecorder's
+// useMemo around knownLabels), so this only needs to re-render when one of
+// them actually changes - not on every detection tick a sibling causes.
+function LabelPicker({ knownLabels, selectedLabel, onSelectLabel, disabled }: LabelPickerProps) {
   const [customInput, setCustomInput] = useState('')
 
   function handleAddCustom() {
@@ -55,3 +59,5 @@ export default function LabelPicker({ knownLabels, selectedLabel, onSelectLabel,
     </div>
   )
 }
+
+export default memo(LabelPicker)
