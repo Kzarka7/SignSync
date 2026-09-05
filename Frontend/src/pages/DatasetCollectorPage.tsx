@@ -41,17 +41,8 @@ export default function DatasetCollectorPage() {
 
       <div className="grid grid-cols-[5fr_3fr] gap-4 items-start">
         <CollectorCameraPreview feed={feed} />
-        
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-4">
-            <SequenceList
-              sequences={sequences}
-              onDelete={removeSequence}
-              onExport={exportDataset}
-              onClearAll={clearAll}
-            />
-          </div>
 
+        <div className="flex flex-col gap-4">
           <Card>
             <div className="flex flex-col gap-4">
               <LabelPicker
@@ -84,6 +75,15 @@ export default function DatasetCollectorPage() {
               )}
             </div>
           </Card>
+          
+          <div className="flex flex-col gap-4">
+            <SequenceList
+              sequences={sequences}
+              onDelete={removeSequence}
+              onExport={exportDataset}
+              onClearAll={clearAll}
+            />
+          </div>
         </div>
       </div>
     </div>
