@@ -14,7 +14,7 @@ import { downloadDatasetExport } from '../services/dataset/datasetExport'
 // custom label typed into the collector joins this list for the rest of
 // the session (see knownLabels below), so this is a starting point, not a
 // fixed enum.
-export const DEFAULT_SIGN_LABELS = ['HELLO', 'GOODBYE', 'THANK_YOU', 'PLEASE', 'SORRY', 'YES', 'NO', 'HELP', 'STOP', 'WAIT', 'MORE', 'WATER', 'FOOD', 'PAIN', 'DOCTOR', 'MEDICINE', 'WHERE', 'WHAT', 'WHO', 'UNDERSTAND' ]
+export const DEFAULT_SIGN_LABELS = ['HELLO', 'WAVE_GREETING', 'THANK_YOU', 'PLEASE', 'SORRY', 'YES', 'NO', 'HELP', 'STOP', 'WAIT', 'MORE', 'WATER', 'FOOD', 'PAIN', 'DOCTOR', 'MEDICINE', 'WHERE', 'WHAT', 'WHO', 'UNDERSTAND' ]
 
 function createSequenceId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
