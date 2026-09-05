@@ -39,7 +39,7 @@ export default function DatasetCollectorPage() {
         description="Record labeled hand + pose landmark sequences to build the training dataset for sign recognition."
       />
 
-      <div className="grid grid-cols-[5fr_3fr] gap-4 items-start">
+      <div className="grid grid-cols-[7fr_3fr] gap-4 items-start">
         <CollectorCameraPreview feed={feed} />
 
         <div className="flex flex-col gap-4">
