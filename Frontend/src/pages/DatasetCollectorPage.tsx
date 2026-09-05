@@ -1,11 +1,11 @@
-import { AlertTriangle } from 'lucide-react'
-import PageHeader from '../components/layout/PageHeader'
-import Card from '../components/shared/Card'
-import CollectorCameraPreview from '../components/collector/CollectorCameraPreview'
-import LabelPicker from '../components/collector/LabelPicker'
-import RecordingControls from '../components/collector/RecordingControls'
-import SequenceList from '../components/collector/SequenceList'
-import { useDatasetRecorder } from '../hooks/useDatasetRecorder'
+import { AlertTriangle } from "lucide-react";
+import PageHeader from "../components/layout/PageHeader";
+import Card from "../components/shared/Card";
+import CollectorCameraPreview from "../components/collector/CollectorCameraPreview";
+import LabelPicker from "../components/collector/LabelPicker";
+import RecordingControls from "../components/collector/RecordingControls";
+import SequenceList from "../components/collector/SequenceList";
+import { useDatasetRecorder } from "../hooks/useDatasetRecorder";
 
 // Camera -> MediaPipe Hands + Pose -> Synchronized landmarks -> Dataset
 // Collector -> Labeled sequences -> Exported dataset. Everything upstream
@@ -28,9 +28,9 @@ export default function DatasetCollectorPage() {
     removeSequence,
     clearAll,
     exportDataset,
-  } = useDatasetRecorder()
+  } = useDatasetRecorder();
 
-  const canRecord = feed.enabled && feed.cameraReady && !!selectedLabel.trim()
+  const canRecord = feed.enabled && feed.cameraReady && !!selectedLabel.trim();
 
   return (
     <div>
@@ -40,8 +40,17 @@ export default function DatasetCollectorPage() {
       />
 
       <div className="grid grid-cols-[5fr_3fr] gap-4 items-start">
+        <CollectorCameraPreview feed={feed} />
+        
         <div className="flex flex-col gap-4">
-          <CollectorCameraPreview feed={feed} />
+          <div className="flex flex-col gap-4">
+            <SequenceList
+              sequences={sequences}
+              onDelete={removeSequence}
+              onExport={exportDataset}
+              onClearAll={clearAll}
+            />
+          </div>
 
           <Card>
             <div className="flex flex-col gap-4">
@@ -62,7 +71,9 @@ export default function DatasetCollectorPage() {
               />
 
               {!feed.enabled && (
-                <p className="text-sm text-text-2">Start the camera above before recording a sample.</p>
+                <p className="text-sm text-text-2">
+                  Start the camera above before recording a sample.
+                </p>
               )}
 
               {saveError && (
@@ -74,16 +85,7 @@ export default function DatasetCollectorPage() {
             </div>
           </Card>
         </div>
-
-        <div className="flex flex-col gap-4">
-          <SequenceList
-            sequences={sequences}
-            onDelete={removeSequence}
-            onExport={exportDataset}
-            onClearAll={clearAll}
-          />
-        </div>
       </div>
     </div>
-  )
+  );
 }
