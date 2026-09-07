@@ -3,6 +3,7 @@ import { DeviceState } from '../../types/device'
 interface StatusPillProps {
   label: string
   state: DeviceState
+  className?: string
 }
 
 const stateColor: Record<DeviceState, string> = {
@@ -24,9 +25,9 @@ const ringColor: Record<DeviceState, string> = {
 // The signature "pulse ring" indicator, reused across the sidebar,
 // dashboard header, camera panel, and detection status panel so every
 // live/AI state in the product reads as one coherent visual language.
-export default function StatusPill({ label, state }: StatusPillProps) {
+export default function StatusPill({ label, state, className = '' }: StatusPillProps) {
   return (
-    <div className="flex items-center gap-2 py-1.5 pr-1.5 text-sm font-medium">
+    <div className={`flex items-center gap-2 text-sm font-medium ${className}`}>
       <span className="relative w-4 h-4 flex-shrink-0">
         {state !== 'offline' && (
           <span className={`absolute inset-0 rounded-full border ${ringColor[state]} opacity-0 pulse-ring`} />

@@ -23,20 +23,16 @@ export default function LiveTopbar({ onEnd, onExport }: { onEnd: () => void; onE
 
   return (
     <div className="flex items-center justify-between bg-white border border-border rounded-xl2 px-4.5 py-3 mb-4" style={{ padding: '12px 18px' }}>
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-bold text-text-1 capitalize tracking-wide self-center whitespace-nowrap">
-            {sessionName || "Untitled session"}
-          </span>
-          –
-          <span className="text-sm font-medium text-text-2 tracking-wide self-center whitespace-nowrap">
-            {CONVERSATION_TYPE_LABELS[conversationType]}
-          </span>
-        </div>
-        <div className="text-text-2">
-          <StatusPill label="Auto-detecting · signing now" state="ready" />
-        </div>
-        <span className="font-mono text-sm text-text-3">{formatElapsedTime(elapsedSeconds)}</span>
+      <div className="flex items-center gap-3">
+        <span className="text-lg font-bold text-text-1 capitalize tracking-wide self-center whitespace-nowrap">
+          {sessionName || "Untitled session"}
+        </span>
+        –
+        <span className="text-sm font-medium text-text-2 tracking-wide self-center whitespace-nowrap">
+          {CONVERSATION_TYPE_LABELS[conversationType]}
+        </span>
+        <StatusPill label="Auto-detecting · signing now" state="ready" className="text-text-2"/>
+        <span className="font-mono font-medium text-sm text-text-3">{formatElapsedTime(elapsedSeconds)}</span>
       </div>
       <div className="flex gap-2">
         <Button size="sm" title="Fullscreen">

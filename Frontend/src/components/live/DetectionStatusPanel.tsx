@@ -47,7 +47,7 @@ export default function DetectionStatusPanel({ feed }: DetectionStatusPanelProps
           rows.map(({ key, label }) => {
             const state = resolveState(key, status[key])
             return (
-              <div key={key} className="flex items-center gap-2.5 font-medium">
+              <div key={key} className="flex items-center py-1.5 font-medium">
                 <StatusPill label={label} state={state} />
                 <span className="ml-auto text-sm text-text-2 font-normal capitalize">{state}</span>
               </div>
