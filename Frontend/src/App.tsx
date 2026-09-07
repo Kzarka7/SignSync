@@ -24,7 +24,7 @@ export default function App() {
   }
 
   return (
-    <div className={`grid ${isCollapsed ? 'grid-cols-[60px_1fr]' : 'grid-cols-[280px_1fr]'} min-h-screen transition-all duration-300`}>
+    <div className={`grid ${isCollapsed ? 'grid-cols-[60px_1fr]' : 'grid-cols-[256px_1fr]'} h-screen transition-all duration-300`}>
       <Sidebar isCollapsed={isCollapsed} onToggle={toggleSidebar} />
       <main className="px-8 py-8 overflow-x-hidden">
         <Routes>
