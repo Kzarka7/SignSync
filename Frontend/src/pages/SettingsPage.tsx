@@ -26,7 +26,7 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Settings" description="Tune how Daloy looks, sounds, and responds to you." />
+      <PageHeader title="Settings" description="Tune how SignSync looks, sounds, and responds to you." />
       <div className="grid grid-cols-[220px_1fr] gap-6">
         <SettingsNav onSelect={() => {}} />
         <Card>

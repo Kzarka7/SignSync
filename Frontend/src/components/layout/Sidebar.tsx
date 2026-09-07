@@ -1,4 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
+import StatusPill from '../shared/StatusPill'
 import {
   LayoutDashboard,
   Video,
@@ -28,13 +29,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  {
-    to: "/live",
-    label: "Live conversation",
-    icon: Video,
-    live: true,
-    activePaths: ["/live", "/session-setup"],
-  },
+  { to: "/live", label: "Live conversation", icon: Video },
   { to: "/dataset-collector", label: "Dataset Collector", icon: Database },
   { to: "/history", label: "History", icon: History },
   { to: "/resources", label: "Resources", icon: BookOpen },
@@ -54,10 +49,13 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         } gap-2.5 mb-6`}
       >
         {!isCollapsed && (
-          <NavLink to="/dashboard" className="flex items-center gap-2 overflow-hidden">
+          <NavLink
+            to="/dashboard"
+            className="flex items-center gap-2 overflow-hidden"
+          >
             <div className="w-8 h-8 rounded-[10px] bg-gradient-to-br from-signal to-trust flex-shrink-0" />
             <div className="font-display font-bold text-lg leading-none whitespace-nowrap">
-              Purdoy
+              SignSync
             </div>
           </NavLink>
         )}
@@ -117,13 +115,18 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
         );
       })}
 
-      {/* Footer */}
-      {!isCollapsed && (
+      {isCollapsed ? (
+        <div className="mt-auto flex flex-col items-center px-3.5 py-1.5 rounded-xl bg-white/5 text-sm text-[#AFCBE4] leading-relaxed">
+          <StatusPill state="ready" />
+          <span className="text-xs text-[#AFCBE4]">v0.2.1</span>
+        </div>
+      ) : (
         <div className="mt-auto p-3.5 rounded-xl bg-white/5 text-sm text-[#AFCBE4] leading-relaxed">
-          <b className="block text-[13px] text-[#EAF3FB] font-display mb-0.5">
+          <b className="flex items-center gap-2 text-[13px] text-[#EAF3FB] font-display mb-0.5">
             Device status
+            <StatusPill state="ready" />
           </b>
-          All systems ready · model v2.3
+          All systems ready · model v0.2.1  
         </div>
       )}
     </aside>

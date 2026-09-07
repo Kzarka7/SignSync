@@ -12,7 +12,7 @@ export default function QuickStartCard() {
     <div className="relative overflow-hidden bg-gradient-to-br from-trust to-[#153A50] rounded-xl2 px-7 py-6 text-white">
       <h2 className="text-xl font-display font-bold mb-1.5">Start a conversation</h2>
       <p className="text-sm text-[#B9D3E4] max-w-md leading-relaxed mb-4">
-        One session, both directions. Daloy listens and watches at the same time, so no one has to switch
+        One session, both directions. SignSync listens and watches at the same time, so no one has to switch
         modes mid-sentence.
       </p>
 
