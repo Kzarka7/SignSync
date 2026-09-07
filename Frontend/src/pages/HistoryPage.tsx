@@ -141,7 +141,7 @@ export default function HistoryPage() {
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
           {loading && (
-            <div className="text-sm text-text-2">Loading sessions...</div>
+            <div className="text-sm text-text-2 py-8 text-center">Loading sessions...</div>
           )}
           {!loading && filteredSessions.length === 0 && (
             <div className="text-sm text-text-2 py-8 text-center">
