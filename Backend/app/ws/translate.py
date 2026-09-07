@@ -15,7 +15,7 @@ logger = logging.getLogger("signsync.ws")
 # the demo "feels" the same once the real socket takes over. Once the ML
 # pipeline exists, replace the timed loop below with pipeline callbacks -
 # push a translation event immediately whenever the model produces one.
-EMIT_INTERVAL_SECONDS = 20
+EMIT_INTERVAL_SECONDS = 4
 
 
 @router.websocket("/ws/translate")
