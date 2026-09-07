@@ -6,7 +6,7 @@ import SessionSetupPage from './pages/SessionSetupPage'
 import LiveConversationPage from './pages/LiveConversationPage'
 import SessionSummaryPage from './pages/SessionSummaryPage'
 import HistoryPage from './pages/HistoryPage'
-import ResourcesPage from './pages/ResourcesPage'
+import FAQPage from './pages/FAQPage'
 import SettingsPage from './pages/SettingsPage'
 import DatasetCollectorPage from './pages/DatasetCollectorPage'
 
@@ -35,7 +35,7 @@ export default function App() {
           <Route path="/session-summary/:sessionId" element={<SessionSummaryPage />} />
           <Route path="/dataset-collector" element={<DatasetCollectorPage />} />
           <Route path="/history" element={<HistoryPage />} />
-          <Route path="/resources" element={<ResourcesPage />} />
+          <Route path="/faq" element={<FAQPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>

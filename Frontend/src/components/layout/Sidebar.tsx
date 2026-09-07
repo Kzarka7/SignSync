@@ -32,7 +32,7 @@ const navItems: NavItem[] = [
   { to: "/live", label: "Live conversation", icon: Video },
   { to: "/dataset-collector", label: "Dataset Collector", icon: Database },
   { to: "/history", label: "History", icon: History },
-  { to: "/resources", label: "Resources", icon: BookOpen },
+  { to: "/faq", label: "FAQ", icon: BookOpen },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
