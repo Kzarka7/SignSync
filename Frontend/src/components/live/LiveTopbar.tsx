@@ -33,9 +33,8 @@ export default function LiveTopbar({ onEnd, onExport }: { onEnd: () => void; onE
             {CONVERSATION_TYPE_LABELS[conversationType]}
           </span>
         </div>
-        <div className="text-text-2 text-sm font-medium flex flex-row items-center gap-2">
-          <StatusPill state="ready" />
-          <span>Auto-detecting · signing now</span>
+        <div className="text-text-2">
+          <StatusPill label="Auto-detecting · signing now" state="ready" />
         </div>
         <span className="font-mono text-sm text-text-3">{formatElapsedTime(elapsedSeconds)}</span>
       </div>

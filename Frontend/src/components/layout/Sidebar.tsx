@@ -117,14 +117,14 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
 
       {isCollapsed ? (
         <div className="mt-auto flex flex-col items-center px-3.5 py-1.5 rounded-xl bg-white/5 text-sm text-[#AFCBE4] leading-relaxed">
-          <StatusPill state="ready" />
+          <StatusPill label="" state="ready" />
           <span className="text-xs text-[#AFCBE4]">v0.2.1</span>
         </div>
       ) : (
         <div className="mt-auto p-3.5 rounded-xl bg-white/5 text-sm text-[#AFCBE4] leading-relaxed">
           <b className="flex items-center gap-2 text-[13px] text-[#EAF3FB] font-display mb-0.5">
             Device status
-            <StatusPill state="ready" />
+            <StatusPill label="" state="ready" />
           </b>
           All systems ready · model v0.2.1  
         </div>
