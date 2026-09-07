@@ -79,7 +79,7 @@ export default function LiveConversationPage() {
               isInterpreting={avatar.isRendering}
               isPlaying={avatar.isPlaying}
             />
-            <SpeechSubtitle message={lastMessage ?? ({ text: 'Waiting for signed or spoken input...' } as any)} />
+            <SpeechSubtitle message={lastMessage ?? null} />
             <QuickPhraseRow onSelectPhrase={submitPhrase} />
           </div>
 

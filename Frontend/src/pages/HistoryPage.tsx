@@ -1,7 +1,5 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAsync } from "../hooks/useAsync";
-import { getAllSessions } from "../services/api/sessionsService";
 import {
   getSessions as getStoredSessions,
   deleteSession as deleteStoredSession,
@@ -22,9 +20,8 @@ const RANGE_DAYS: Record<RangeFilter, number | null> = {
   all: null,
 };
 
-// Maps a real saved session's conversation type onto the same
-// location-style labels the (mock) demo sessions use, so both flow
-// through FilterBar's existing location filter unchanged.
+// Maps a real saved session's conversation type onto the location-style
+// labels FilterBar's location filter expects.
 const CONVERSATION_TYPE_TO_LOCATION: Record<ConversationType, string> = {
   medical: "Hospital",
   school: "School",
@@ -46,27 +43,26 @@ function toConversationSession(saved: SavedSession): ConversationSession {
 
 export default function HistoryPage() {
   const navigate = useNavigate();
-  const { data: mockSessions, loading } = useAsync(() => getAllSessions(), []);
 
   // Read once per page visit (mount) - HistoryPage remounts on every real
   // navigation to /history, so this always reflects the latest saves.
+  // Real recorded sessions only - no seeded/mock demo data.
   const [storedSessions, setStoredSessions] = useState<SavedSession[]>(() =>
     getStoredSessions(),
   );
-  const [hiddenMockIds, setHiddenMockIds] = useState<Set<string>>(new Set());
 
   const [search, setSearch] = useState("");
   const [location, setLocation] = useState<LocationFilter>("all");
   const [range, setRange] = useState<RangeFilter>("all");
 
   const allSessions = useMemo(() => {
-    const real = storedSessions.map(toConversationSession);
-    const mock = (mockSessions ?? []).filter((s) => !hiddenMockIds.has(s.id));
-    return [...real, ...mock].sort(
-      (a, b) =>
-        new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
-    );
-  }, [storedSessions, mockSessions, hiddenMockIds]);
+    return storedSessions
+      .map(toConversationSession)
+      .sort(
+        (a, b) =>
+          new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+      );
+  }, [storedSessions]);
 
   const filteredSessions = useMemo(() => {
     const searchLower = search.trim().toLowerCase();
@@ -95,15 +91,8 @@ export default function HistoryPage() {
   }
 
   function handleDelete(session: ConversationSession) {
-    const isStored = storedSessions.some((s) => s.id === session.id);
-    if (isStored) {
-      deleteStoredSession(session.id); // removes it from localStorage too
-      setStoredSessions((prev) => prev.filter((s) => s.id !== session.id));
-    } else {
-      // Seeded demo session - nothing in localStorage to remove, just
-      // drop it from this view.
-      setHiddenMockIds((prev) => new Set(prev).add(session.id));
-    }
+    deleteStoredSession(session.id); // removes it from localStorage too
+    setStoredSessions((prev) => prev.filter((s) => s.id !== session.id));
   }
 
   function handleDownload(session: ConversationSession) {
@@ -140,12 +129,11 @@ export default function HistoryPage() {
           />
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
-          {loading && (
-            <div className="text-sm text-text-2 py-8 text-center">Loading sessions...</div>
-          )}
-          {!loading && filteredSessions.length === 0 && (
+          {filteredSessions.length === 0 && (
             <div className="text-sm text-text-2 py-8 text-center">
-              No sessions match your filters.
+              {storedSessions.length === 0
+                ? "No sessions yet - start a live conversation to see it here."
+                : "No sessions match your filters."}
             </div>
           )}
           {filteredSessions.map((s) => (
@@ -162,4 +150,3 @@ export default function HistoryPage() {
     </div>
   );
 }
-

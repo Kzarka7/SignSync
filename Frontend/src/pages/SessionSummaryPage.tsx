@@ -9,8 +9,6 @@ import TranscriptCard from "../components/session-summary/TranscriptCard";
 import SummaryActions from "../components/session-summary/SummaryActions";
 import { useAsync } from "../hooks/useAsync";
 import { getSessionById as getStoredSessionById } from "../services/sessionHistoryStorage";
-import { getSessionById as getMockSessionById } from "../services/api/sessionsService";
-import { getMessagesForSession } from "../services/api/messagesService";
 import {
   CONVERSATION_TYPE_LABELS,
   ConversationType,
@@ -46,33 +44,19 @@ async function loadSummary(
   if (!sessionId) return null;
 
   const stored = getStoredSessionById(sessionId);
-  if (stored) {
-    return {
-      sessionName: stored.sessionName,
-      conversationTypeLabel:
-        CONVERSATION_TYPE_LABELS[stored.conversationType as ConversationType] ??
-        stored.conversationType,
-      startedAt: stored.startedAt,
-      durationLabel: formatDuration(stored.durationSeconds),
-      messages: stored.messages,
-      avgConfidence: stored.avgConfidence,
-      categoryAverages: averageConfidenceByCategory(stored.messages),
-      phrasesUsed: stored.phrasesUsed,
-    };
-  }
+  if (!stored) return null;
 
-  const mockSession = await getMockSessionById(sessionId);
-  if (!mockSession) return null;
-  const messages = await getMessagesForSession(sessionId);
   return {
-    sessionName: mockSession.title,
-    conversationTypeLabel: mockSession.location,
-    startedAt: mockSession.startedAt,
-    durationLabel: formatDuration(mockSession.durationMinutes * 60),
-    messages,
-    avgConfidence: mockSession.avgConfidence ?? null,
-    categoryAverages: averageConfidenceByCategory(messages),
-    phrasesUsed: [],
+    sessionName: stored.sessionName,
+    conversationTypeLabel:
+      CONVERSATION_TYPE_LABELS[stored.conversationType as ConversationType] ??
+      stored.conversationType,
+    startedAt: stored.startedAt,
+    durationLabel: formatDuration(stored.durationSeconds),
+    messages: stored.messages,
+    avgConfidence: stored.avgConfidence,
+    categoryAverages: averageConfidenceByCategory(stored.messages),
+    phrasesUsed: stored.phrasesUsed,
   };
 }
 
