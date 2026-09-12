@@ -8,7 +8,7 @@ import {
   getSequences,
   saveSequence,
 } from '../services/dataset/datasetStorage'
-import { downloadDatasetExport } from '../services/dataset/datasetExport'
+import { downloadDatasetExport, downloadPerSampleZipExport } from '../services/dataset/datasetExport'
 
 // Seeds the label picker - the examples from the product brief. Any
 // custom label typed into the collector joins this list for the rest of
@@ -144,6 +144,13 @@ export function useDatasetRecorder() {
     downloadDatasetExport(sequences, selectedLabel)
   }, [sequences, selectedLabel])
 
+  // Same data as exportDataset, split one file per sample and zipped -
+  // for triaging (delete a weak sample's file, then merge_dataset.py
+  // reassembles what's left) instead of hand-editing one combined JSON.
+  const exportPerSampleZip = useCallback(() => {
+    downloadPerSampleZipExport(sequences, selectedLabel)
+  }, [sequences, selectedLabel])
+
   // Defaults first (so the picker always offers the seed examples), plus
   // any label that's actually been recorded, deduplicated. Memoized so
   // the array reference only changes when `sequences` actually changes -
@@ -170,5 +177,6 @@ export function useDatasetRecorder() {
     removeSequence,
     clearAll,
     exportDataset,
+    exportPerSampleZip,
   }
 }

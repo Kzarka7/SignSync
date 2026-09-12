@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { Download, Trash2 } from 'lucide-react'
+import { Download, FolderArchive, Trash2 } from 'lucide-react'
 import Card from '../shared/Card'
 import Button from '../shared/Button'
 import { LabeledSequence } from '../../types/dataset'
@@ -8,26 +8,36 @@ interface SequenceListProps {
   sequences: LabeledSequence[]
   onDelete: (id: string) => void
   onExport: () => void
+  onExportZip: () => void
   onClearAll: () => void
 }
 
 // Wrapped in memo: during a recording session every prop here
-// (sequences/onDelete/onExport/onClearAll) stays reference-stable tick to
-// tick (the callbacks are useCallback'd in useDatasetRecorder, sequences
-// only changes on save/delete) - without memo, this whole list still gets
-// rebuilt on every detection tick purely because its sibling
-// (RecordingControls) re-renders, which is wasted work that competes with
-// the detection loop for main-thread time.
-function SequenceList({ sequences, onDelete, onExport, onClearAll }: SequenceListProps) {
+// (sequences/onDelete/onExport/onExportZip/onClearAll) stays
+// reference-stable tick to tick (the callbacks are useCallback'd in
+// useDatasetRecorder, sequences only changes on save/delete) - without
+// memo, this whole list still gets rebuilt on every detection tick purely
+// because its sibling (RecordingControls) re-renders, which is wasted
+// work that competes with the detection loop for main-thread time.
+function SequenceList({ sequences, onDelete, onExport, onExportZip, onClearAll }: SequenceListProps) {
   return (
     <Card>
-      <div className="flex items-center justify-between mb-3.5 gap-2">
+      <div className="flex items-center justify-between mb-3.5 gap-2 flex-wrap">
         <h3 className="text-md uppercase tracking-wide text-text-2 font-semibold">
           Recorded samples ({sequences.length})
         </h3>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button size="sm" variant="primary" onClick={onExport} disabled={sequences.length === 0}>
             <Download size={13} /> Export
+          </Button>
+          <Button
+            size="sm"
+            variant="default"
+            onClick={onExportZip}
+            disabled={sequences.length === 0}
+            title="One file per sample, zipped - handy for deleting weak samples individually, then re-merging with merge_dataset.py"
+          >
+            <FolderArchive size={13} /> Export as ZIP
           </Button>
           <Button size="sm" variant="danger" onClick={onClearAll} disabled={sequences.length === 0}>
             Clear all

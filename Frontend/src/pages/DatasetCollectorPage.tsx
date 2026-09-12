@@ -28,6 +28,7 @@ export default function DatasetCollectorPage() {
     removeSequence,
     clearAll,
     exportDataset,
+    exportPerSampleZip,
   } = useDatasetRecorder();
 
   const canRecord = feed.enabled && feed.cameraReady && !!selectedLabel.trim();
@@ -81,6 +82,7 @@ export default function DatasetCollectorPage() {
               sequences={sequences}
               onDelete={removeSequence}
               onExport={exportDataset}
+              onExportZip={exportPerSampleZip}
               onClearAll={clearAll}
             />
           </div>
