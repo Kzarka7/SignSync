@@ -3,6 +3,7 @@ import { CameraFeedState } from '../../hooks/useCameraFeed'
 
 interface CollectorCameraPreviewProps {
   feed: CameraFeedState
+  countdown?: number | null
 }
 
 // A deliberately minimal sibling of live/CameraPanel.tsx, not a reuse of
@@ -11,7 +12,7 @@ interface CollectorCameraPreviewProps {
 // requirement is to leave the live-conversation UI untouched rather than
 // bend it to a second purpose. This shows the same video+skeleton overlay
 // with just camera/hand/pose status, which is all the collector needs.
-export default function CollectorCameraPreview({ feed }: CollectorCameraPreviewProps) {
+export default function CollectorCameraPreview({ feed, countdown = null }: CollectorCameraPreviewProps) {
   return (
     <div className="relative rounded-xl2 overflow-hidden bg-[#0F1B2B]" style={{ aspectRatio: '16 / 9' }}>
       <div className="absolute top-3 left-3 right-3 flex justify-between z-10">
@@ -73,6 +74,18 @@ export default function CollectorCameraPreview({ feed }: CollectorCameraPreviewP
             <AlertTriangle size={14} />
             {feed.modelError}
           </div>
+        </div>
+      )}
+
+      {/* Big, hard-to-miss countdown - this is what you're actually
+          watching while getting both hands into position, not the small
+          text in the controls panel below. Detection keeps running
+          underneath the whole time; this is purely visual. */}
+      {countdown !== null && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40">
+          <span className="text-white font-bold text-8xl drop-shadow-lg tabular-nums">
+            {countdown}
+          </span>
         </div>
       )}
     </div>

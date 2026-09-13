@@ -34,6 +34,13 @@ export function useDatasetRecorder() {
   const [isRecording, setIsRecording] = useState(false)
   const [frameCount, setFrameCount] = useState(0)
   const [saveError, setSaveError] = useState<string | null>(null)
+  // How long Start Recording waits before frames actually start buffering -
+  // gives you time to get both hands into position (especially for
+  // two-handed signs, where clicking Start with your hands already up
+  // means you're holding the pose awkwardly while reaching for the mouse).
+  // null = not currently counting down; a number = seconds remaining.
+  const [countdownSeconds, setCountdownSeconds] = useState(3)
+  const [countdown, setCountdown] = useState<number | null>(null)
 
   // Frames accumulate here during a recording rather than in state -
   // pushing to a plain array avoids a state update (and re-render) on
@@ -53,16 +60,24 @@ export function useDatasetRecorder() {
   // detection loop for main-thread time - the skeleton overlay noticeably
   // choppier while recording than while just previewing.
   const frameCountIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Ticks the countdown down once per second before actual recording
+  // begins - separate from frameCountIntervalRef since the two never run
+  // at the same time (countdown finishes, *then* recording starts).
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     setSequences(getSequences())
   }, [])
 
-  // Unmount-only: stop the interval if the component goes away mid-recording.
+  // Unmount-only: stop any running interval if the component goes away
+  // mid-countdown or mid-recording.
   useEffect(() => {
     return () => {
       if (frameCountIntervalRef.current !== null) {
         clearInterval(frameCountIntervalRef.current)
+      }
+      if (countdownIntervalRef.current !== null) {
+        clearInterval(countdownIntervalRef.current)
       }
     }
   }, [])
@@ -74,8 +89,11 @@ export function useDatasetRecorder() {
 
   const feed = useCameraFeed({ onFrame: handleFrame })
 
-  const startRecording = useCallback(() => {
-    if (!selectedLabel.trim()) return
+  // The actual recording - buffering frames, tracking frame count - starts
+  // here, only once the countdown (if any) has finished. Camera detection
+  // itself never stops or pauses during the countdown; only whether
+  // handleFrame keeps what it sees is gated by isRecordingRef.
+  const beginActualRecording = useCallback(() => {
     bufferRef.current = []
     setFrameCount(0)
     setSaveError(null)
@@ -85,7 +103,44 @@ export function useDatasetRecorder() {
     frameCountIntervalRef.current = setInterval(() => {
       setFrameCount(bufferRef.current.length)
     }, 200)
-  }, [selectedLabel])
+  }, [])
+
+  const startRecording = useCallback(() => {
+    if (!selectedLabel.trim()) return
+    if (countdownIntervalRef.current !== null) return // already counting down
+
+    let remaining = countdownSeconds
+    if (remaining <= 0) {
+      beginActualRecording()
+      return
+    }
+
+    setCountdown(remaining)
+    countdownIntervalRef.current = setInterval(() => {
+      remaining -= 1
+      if (remaining <= 0) {
+        if (countdownIntervalRef.current !== null) {
+          clearInterval(countdownIntervalRef.current)
+          countdownIntervalRef.current = null
+        }
+        setCountdown(null)
+        beginActualRecording()
+      } else {
+        setCountdown(remaining)
+      }
+    }, 1000)
+  }, [selectedLabel, countdownSeconds, beginActualRecording])
+
+  // Backs out of a countdown before it finishes - e.g. you clicked Start
+  // too early and want to reset. No frames were ever buffered during a
+  // countdown, so there's nothing to discard, just the timer to stop.
+  const cancelCountdown = useCallback(() => {
+    if (countdownIntervalRef.current !== null) {
+      clearInterval(countdownIntervalRef.current)
+      countdownIntervalRef.current = null
+    }
+    setCountdown(null)
+  }, [])
 
   // discard=true drops the buffer without saving - used by both
   // discardRecording (explicit) and stopRecording when the buffer ended
@@ -171,7 +226,11 @@ export function useDatasetRecorder() {
     isRecording,
     frameCount,
     saveError,
+    countdown,
+    countdownSeconds,
+    setCountdownSeconds,
     startRecording,
+    cancelCountdown,
     stopRecording,
     discardRecording,
     removeSequence,

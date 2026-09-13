@@ -22,7 +22,11 @@ export default function DatasetCollectorPage() {
     isRecording,
     frameCount,
     saveError,
+    countdown,
+    countdownSeconds,
+    setCountdownSeconds,
     startRecording,
+    cancelCountdown,
     stopRecording,
     discardRecording,
     removeSequence,
@@ -41,7 +45,7 @@ export default function DatasetCollectorPage() {
       />
 
       <div className="grid grid-cols-[7fr_3fr] gap-4 items-start">
-        <CollectorCameraPreview feed={feed} />
+        <CollectorCameraPreview feed={feed} countdown={countdown} />
 
         <div className="flex flex-col gap-4">
           <Card>
@@ -50,14 +54,18 @@ export default function DatasetCollectorPage() {
                 knownLabels={knownLabels}
                 selectedLabel={selectedLabel}
                 onSelectLabel={setSelectedLabel}
-                disabled={isRecording}
+                disabled={isRecording || countdown !== null}
               />
 
               <RecordingControls
                 isRecording={isRecording}
                 frameCount={frameCount}
                 canRecord={canRecord}
+                countdown={countdown}
+                countdownSeconds={countdownSeconds}
+                onChangeCountdownSeconds={setCountdownSeconds}
                 onStart={startRecording}
+                onCancelCountdown={cancelCountdown}
                 onStop={stopRecording}
                 onDiscard={discardRecording}
               />
