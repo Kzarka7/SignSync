@@ -47,6 +47,11 @@ export default function RecordingControls({
             <Circle size={14} className="fill-current" /> Start recording
           </Button>
 
+          <span className="text-xs text-text-2">
+            <kbd className="px-1 py-0.5 rounded border border-border bg-sky font-mono">Space</kbd> start/stop ·{' '}
+            <kbd className="px-1 py-0.5 rounded border border-border bg-sky font-mono">Esc</kbd> discard
+          </span>
+
           <div className="flex items-center gap-1.5 text-sm text-text-2">
             <Timer size={14} />
             <span>Delay:</span>

@@ -106,6 +106,7 @@ export function useDatasetRecorder() {
   }, [])
 
   const startRecording = useCallback(() => {
+    if (!feed.enabled || !feed.cameraReady) return
     if (!selectedLabel.trim()) return
     if (countdownIntervalRef.current !== null) return // already counting down
 
@@ -129,7 +130,7 @@ export function useDatasetRecorder() {
         setCountdown(remaining)
       }
     }, 1000)
-  }, [selectedLabel, countdownSeconds, beginActualRecording])
+  }, [selectedLabel, countdownSeconds, beginActualRecording, feed.enabled, feed.cameraReady])
 
   // Backs out of a countdown before it finishes - e.g. you clicked Start
   // too early and want to reset. No frames were ever buffered during a
@@ -184,6 +185,51 @@ export function useDatasetRecorder() {
 
   const stopRecording = useCallback(() => finishRecording(false), [finishRecording])
   const discardRecording = useCallback(() => finishRecording(true), [finishRecording])
+
+  // Global hotkeys: Space toggles start/stop (or is a no-op mid-countdown,
+  // since startRecording already guards against re-triggering one), Esc
+  // cancels a countdown or discards an active recording. The main reason
+  // for these: getting into position for a two-handed sign is easier
+  // without needing a free hand on the mouse right as you start.
+  //
+  // Skipped while focus is in a text input/textarea (so typing a custom
+  // label with a space in it works normally) or while any recorded
+  // sample's delete button etc. has focus is NOT specially handled here -
+  // if you've tabbed to a button and press Space, this still intercepts
+  // it rather than letting that button handle its own native click. A
+  // reasonable trade-off for a tool that's primarily used hands-off-
+  // keyboard (positioning for a sign) rather than keyboard-navigated, but
+  // worth knowing if you ever drive this page by Tab+Space instead of a
+  // mouse.
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.repeat) return
+
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return
+
+      if (event.code === 'Space') {
+        event.preventDefault()
+        if (isRecording) {
+          stopRecording()
+        } else {
+          startRecording() // safely no-ops if already counting down or not ready
+        }
+      } else if (event.code === 'Escape') {
+        if (countdown !== null) {
+          event.preventDefault()
+          cancelCountdown()
+        } else if (isRecording) {
+          event.preventDefault()
+          discardRecording()
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isRecording, countdown, startRecording, stopRecording, discardRecording, cancelCountdown])
 
   const removeSequence = useCallback((id: string) => {
     deleteStoredSequence(id)
