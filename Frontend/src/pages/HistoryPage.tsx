@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { AlertTriangle, X } from 'lucide-react'
 import {
   getSessions as getStoredSessions,
   deleteSession as deleteStoredSession,
@@ -11,6 +12,7 @@ import FilterBar, {
 } from "../components/history/FilterBar";
 import SessionHistoryCard from "../components/history/SessionHistoryCard";
 import Card from "../components/shared/Card";
+import Button from '../components/shared/Button'
 import { ConversationSession, SavedSession } from "../types/session";
 import { ConversationType } from "../types/conversation";
 
@@ -54,6 +56,7 @@ export default function HistoryPage() {
   const [search, setSearch] = useState("");
   const [location, setLocation] = useState<LocationFilter>("all");
   const [range, setRange] = useState<RangeFilter>("all");
+  const [sessionPendingDeletion, setSessionPendingDeletion] = useState<ConversationSession | null>(null)
 
   const allSessions = useMemo(() => {
     return storedSessions
@@ -93,6 +96,7 @@ export default function HistoryPage() {
   function handleDelete(session: ConversationSession) {
     deleteStoredSession(session.id); // removes it from localStorage too
     setStoredSessions((prev) => prev.filter((s) => s.id !== session.id));
+    setSessionPendingDeletion(null)
   }
 
   function handleDownload(session: ConversationSession) {
@@ -110,15 +114,15 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <main className="mx-auto flex h-full max-w-[1440px] flex-col px-3 py-4 sm:px-5 sm:py-6 lg:px-7">
       <div className="shrink-0">
         <PageHeader
           title="History"
           description="Every past conversation, searchable and ready to replay or export."
         />
       </div>
-      <Card className="flex-1 min-h-0 flex flex-col">
-        <div className="shrink-0">
+      <Card className="flex min-h-0 flex-1 flex-col border-border p-4 shadow-sm sm:p-5">
+        <div className="shrink-0 border-b border-border pb-4">
           <FilterBar
             search={search}
             onSearchChange={setSearch}
@@ -128,9 +132,15 @@ export default function HistoryPage() {
             onRangeChange={setRange}
           />
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-3 custom-scrollbar">
+          <div className="mb-2 flex items-center justify-between gap-3 px-1">
+            <p className="text-sm font-semibold text-text-2" aria-live="polite">
+              {filteredSessions.length} {filteredSessions.length === 1 ? 'session' : 'sessions'} shown
+            </p>
+            {(search || location !== 'all' || range !== 'all') && <p className="text-sm text-text-3">Filters applied</p>}
+          </div>
           {filteredSessions.length === 0 && (
-            <div className="text-sm text-text-2 py-8 text-center">
+            <div className="rounded-xl2 bg-sky px-5 py-10 text-center text-base leading-relaxed text-text-2">
               {storedSessions.length === 0
                 ? "No sessions yet - start a live conversation to see it here."
                 : "No sessions match your filters."}
@@ -142,11 +152,30 @@ export default function HistoryPage() {
               session={s}
               onReplay={handleReplay}
               onDownload={handleDownload}
-              onDelete={handleDelete}
+              onDelete={setSessionPendingDeletion}
             />
           ))}
         </div>
       </Card>
-    </div>
+
+      {sessionPendingDeletion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-4" role="presentation">
+          <div role="alertdialog" aria-modal="true" aria-labelledby="delete-session-title" aria-describedby="delete-session-description" className="w-full max-w-md rounded-xl2 border border-border bg-white p-5 shadow-2xl sm:p-6">
+            <div className="flex items-start gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-danger-light text-danger" aria-hidden="true"><AlertTriangle size={23} /></span>
+              <div>
+                <h2 id="delete-session-title" className="text-xl font-bold text-ink">Delete this session?</h2>
+                <p id="delete-session-description" className="mt-2 text-base leading-relaxed text-text-2"><span className="font-semibold text-ink">{sessionPendingDeletion.title}</span> and its transcript will be permanently removed from this device.</p>
+              </div>
+              <button type="button" onClick={() => setSessionPendingDeletion(null)} className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-text-2 hover:bg-sky focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-signal active:scale-[0.97]" aria-label="Keep session"><X size={22} /></button>
+            </div>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <Button type="button" onClick={() => setSessionPendingDeletion(null)} className="min-h-12 justify-center text-base focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-signal active:scale-[0.97]">Keep session</Button>
+              <Button type="button" variant="danger-solid" onClick={() => handleDelete(sessionPendingDeletion)} className="min-h-12 justify-center text-base focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-danger active:scale-[0.97]">Delete session</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
   );
 }

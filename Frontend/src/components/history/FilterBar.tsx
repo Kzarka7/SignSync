@@ -1,3 +1,4 @@
+import { Search } from 'lucide-react'
 import Dropdown from '../shared/Dropdown'
 
 export type LocationFilter = 'all' | 'hospital' | 'school' | 'government'
@@ -23,14 +24,18 @@ export default function FilterBar({
   onRangeChange,
 }: FilterBarProps) {
   return (
-    <div className="flex gap-2.5 mb-4.5 flex-wrap" style={{ marginBottom: '18px' }}>
-      <input
-        type="text"
-        value={search}
-        onChange={(e) => onSearchChange(e.target.value)}
-        placeholder="Search by session title or location"
-        className="flex-1 min-w-[200px] text-sm border border-border rounded-lg px-3 py-2.5"
-      />
+    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+      <label className="relative min-w-0 flex-1">
+        <span className="sr-only">Search sessions</span>
+        <Search size={19} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-3" aria-hidden="true" />
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Search by session title or location"
+          className="min-h-11 w-full rounded-lg border border-border bg-white py-2.5 pl-10 pr-3 text-base font-medium text-ink placeholder:text-text-3 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-signal"
+        />
+      </label>
       <Dropdown
         value={location}
         onChange={(v) => onLocationChange(v as LocationFilter)}
@@ -40,6 +45,7 @@ export default function FilterBar({
           { label: 'School', value: 'school' },
           { label: 'Government office', value: 'government' },
         ]}
+        className="min-w-[180px]"
       />
       <Dropdown
         value={range}
@@ -49,6 +55,7 @@ export default function FilterBar({
           { label: 'Last 30 days', value: '30d' },
           { label: 'Last 7 days', value: '7d' },
         ]}
+        className="min-w-[150px]"
       />
     </div>
   )

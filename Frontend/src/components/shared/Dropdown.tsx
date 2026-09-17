@@ -43,24 +43,26 @@ export default function Dropdown<T extends string | number>({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const sizing = size === "sm" ? "px-2.5 py-1.5 text-xs" : "px-3 py-2.5 text-sm";
+  const sizing = size === "sm" ? "min-h-10 px-2.5 py-1.5 text-sm" : "min-h-11 px-3 py-2.5 text-base";
 
   return (
     <div ref={containerRef} className={`relative inline-block ${className}`}>
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className={`flex items-center justify-between gap-2 w-full bg-white border border-border rounded-lg font-medium text-ink hover:border-[#c9d6e4] transition-colors ${sizing}`}
+        aria-haspopup="true"
+        aria-expanded={open}
+        className={`flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-white font-semibold text-ink transition-colors hover:border-signal focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-signal active:scale-[0.97] ${sizing}`}
       >
         {selected?.label ?? "Select..."}
         <ChevronDown
-          size={14}
-          className={`text-text-2 transition-transform ${open ? "rotate-180" : ""}`}
+          size={18}
+          className={`text-text-2 transition-transform duration-150 ease-out motion-reduce:transition-none ${open ? "rotate-180" : ""}`}
         />
       </button>
 
       {open && (
-        <div className="absolute flex flex-col right-0 mt-1.5 min-w-full w-max max-h-[142px] bg-white border border-border rounded-lg shadow-lg p-1 z-20 overflow-y-auto custom-scrollbar">
+        <div className="absolute right-0 z-20 mt-1.5 flex max-h-[220px] min-w-full w-max flex-col overflow-y-auto rounded-lg border border-border bg-white p-1 shadow-lg custom-scrollbar">
           {options.map((option) => (
             <Button
               key={option.value}
@@ -70,7 +72,7 @@ export default function Dropdown<T extends string | number>({
                 setOpen(false);
               }}
               variant={value === option.value ? 'primary-ghost' : 'default'}
-              className="flex justify-between text-left my-0.5 px-3 py-2 text-sm hover:bg-signal-light transition-colors rounded-md border-none"
+              className="my-0.5 flex min-h-10 justify-between rounded-md border-none px-3 py-2 text-left text-base hover:bg-signal-light focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-signal active:scale-[0.97]"
             >
               {option.label}
               {option.value === value && <Check size={14} />}
