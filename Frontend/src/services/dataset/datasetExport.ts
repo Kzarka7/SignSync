@@ -93,10 +93,52 @@ export async function downloadPerSampleZipExport(
   const slug = slugify(label) || 'sample'
   const pad = (n: number) => String(n).padStart(2, '0')
 
+  // Tracks every filename actually placed in this zip so far. Not just a
+  // theoretical guard: `index` alone already makes filenames unique *today*,
+  // but the moment anyone reshuffles this string (drops the index, sorts
+  // sequences first, whatever) two samples with the same 8-char id prefix
+  // would start overwriting each other in the zip with zero warning. Keeping
+  // this set turns that into a loud failure instead of a silent one.
+  const usedFilenames = new Set<string>()
+
   sequences.forEach((seq, index) => {
     const singleSampleExport = buildDatasetExport([seq])
-    const shortId = seq.id.slice(0, 8)
+
+    // The filename's ID must come from the JSON we're actually about to
+    // write, not from `seq` a second time - if a future refactor ever lets
+    // those two drift apart, the shortId is what silently invalidates
+    // filename-based triage/labeling. Reading it back out of
+    // `singleSampleExport` (the literal object we stringify below) makes
+    // that drift structurally impossible instead of just "shouldn't happen".
+    const contentId = singleSampleExport.sequences[0]?.id
+    if (!contentId) {
+      throw new Error(
+        `[downloadPerSampleZipExport] sample at index ${index} produced no id in its exported content - refusing to export a file whose name can't be trusted to match its contents.`,
+      )
+    }
+
+    const shortId = contentId.slice(0, 8)
     const filename = `${slug}-${pad(index + 1)}-${shortId}.json`
+
+    // Sanity check, kept cheap and inline so it runs on every real export
+    // rather than only in a test someone has to remember to run: the ID
+    // embedded in the filename must be a prefix of the ID embedded in the
+    // content. If this ever throws, something upstream (id generation,
+    // array reordering, a stale reference) has broken the guarantee this
+    // whole naming scheme depends on.
+    if (!contentId.startsWith(shortId)) {
+      throw new Error(
+        `[downloadPerSampleZipExport] filename/content id mismatch for sample at index ${index}: filename id "${shortId}" is not a prefix of content id "${contentId}".`,
+      )
+    }
+
+    if (usedFilenames.has(filename)) {
+      throw new Error(
+        `[downloadPerSampleZipExport] duplicate filename "${filename}" would overwrite an earlier sample in this export - two samples produced the same slug/index/id combination.`,
+      )
+    }
+    usedFilenames.add(filename)
+
     zip.file(filename, JSON.stringify(singleSampleExport, null, 2))
   })
 
