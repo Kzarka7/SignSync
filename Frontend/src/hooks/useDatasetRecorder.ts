@@ -154,11 +154,28 @@ export function useDatasetRecorder() {
       }
       isRecordingRef.current = false
       setIsRecording(false)
-      const frames = bufferRef.current
+      const rawFrames = bufferRef.current
       bufferRef.current = []
-      setFrameCount(frames.length) // final, exact count
+      setFrameCount(rawFrames.length) // final, exact count (pre-trim, matches what was live-displayed)
 
-      if (discard || frames.length === 0) return
+      if (discard || rawFrames.length === 0) return
+
+      // Drop trailing frames before saving: by the time Stop is pressed,
+      // the hands are already lowering out of the sign rather than still
+      // holding it, so the tail of the buffer is motion-toward-rest, not
+      // the sign itself. Scaled to length rather than a fixed count - a
+      // longer recording has a proportionally longer "coming down" tail -
+      // 1 dropped frame per 10 total frames (10 frames -> drop 1, 30-39
+      // frames -> drop 3, etc). Only trims when there's enough buffer left
+      // to still make a usable sample - a short/glitchy take shouldn't get
+      // trimmed down to nothing.
+      const trailingFramesToDrop = Math.floor(rawFrames.length / 10)
+      const frames =
+        trailingFramesToDrop > 0 && rawFrames.length > trailingFramesToDrop
+          ? rawFrames.slice(0, rawFrames.length - trailingFramesToDrop)
+          : rawFrames
+
+      if (frames.length === 0) return
 
       const durationMs =
         frames.length > 1 ? frames[frames.length - 1].timestamp - frames[0].timestamp : 0
