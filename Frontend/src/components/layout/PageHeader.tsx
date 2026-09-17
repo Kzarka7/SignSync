@@ -10,12 +10,12 @@ export default function PageHeader({
   actions?: ReactNode
 }) {
   return (
-    <div className="flex items-start justify-between gap-5 mb-6">
+    <header className="mb-6 flex flex-col gap-4 rounded-xl2 border border-border bg-white px-4 py-4 shadow-sm sm:px-5 lg:flex-row lg:items-center lg:justify-between">
       <div>
-        <h1 className="text-2xl font-display font-bold">{title}</h1>
-        <p className="text-sm text-text-2 mt-1 max-w-lg">{description}</p>
+        <h1 className="font-display text-3xl font-bold tracking-tight text-ink">{title}</h1>
+        <p className="mt-1.5 max-w-2xl text-base leading-relaxed text-text-2">{description}</p>
       </div>
-      {actions}
-    </div>
+      {actions && <div className="shrink-0">{actions}</div>}
+    </header>
   )
 }

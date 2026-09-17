@@ -19,16 +19,16 @@ interface ConversationTypeSelectorProps {
 // editable) - single reusable component instead of two separate pickers.
 export default function ConversationTypeSelector({ value, onChange }: ConversationTypeSelectorProps) {
   return (
-    <div className="grid grid-cols-4 gap-2.5">
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
       {TYPES.map(({ value: typeValue, label, icon: Icon }) => (
         <Button
           key={typeValue}
           onClick={() => onChange(typeValue)}
           variant={value === typeValue ? 'primary-ghost' : 'default'}
-          className=" flex-col items-center gap-2 py-3.5 px-2 rounded-xl2 border transition-colors"
+          className="min-h-[88px] flex-col items-center justify-center gap-2 rounded-xl2 border px-2 py-3 text-base transition-colors focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-white active:scale-[0.97]"
         >
           <Icon size={24} />
-          <span className="text-md font-semibold">{label}</span>
+          <span className="text-base font-semibold">{label}</span>
         </Button>
       ))}
     </div>

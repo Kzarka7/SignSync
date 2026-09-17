@@ -10,13 +10,13 @@ export default function DashboardPage() {
   const status = useDeviceStatus()
 
   return (
-    <div>
+    <main className="mx-auto max-w-[1440px] px-3 py-4 sm:px-5 sm:py-6 lg:px-7">
       <PageHeader
         title="Good afternoon"
         description="Camera, microphone and translation engine are all ready. Start a conversation whenever you need it."
         actions={
           status && (
-            <div className="flex gap-2.5 flex-wrap">
+            <div className="flex flex-wrap gap-x-4 gap-y-2" aria-label="System readiness">
               <StatusPill label="Camera" state={status.camera} />
               <StatusPill label="Microphone" state={status.microphone} />
               <StatusPill label="AI engine" state={status.ai} />
@@ -25,15 +25,15 @@ export default function DashboardPage() {
         }
       />
 
-      <div className="grid grid-cols-[1.6fr_1fr] gap-4.5 mb-5" style={{ gap: '18px' }}>
+      <div className="mb-5 grid items-stretch gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(390px,1fr)] xl:gap-6">
         <QuickStartCard />
         <MetricGrid />
       </div>
 
-      <div className="grid grid-cols-[1.4fr_1fr] gap-4.5 items-start" style={{ gap: '18px' }}>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,1fr)] xl:gap-6">
         <RecentSessions />
         <FrequentPhrases />
       </div>
-    </div>
+    </main>
   )
 }

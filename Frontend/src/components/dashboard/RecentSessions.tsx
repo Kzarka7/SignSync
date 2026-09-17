@@ -43,19 +43,22 @@ export default function RecentSessions() {
   }, [storedSessions])
 
   return (
-    <Card className="!p-5">
-      <span className="text-md font-semibold text-text-2 uppercase tracking-wide mb-3">Recent sessions</span>
+    <Card className="border-border p-4 shadow-sm sm:p-5">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h2 className="text-xl font-bold text-ink">Recent sessions</h2>
+        {sessions.length > 0 && <span className="text-sm font-semibold text-text-2">Latest {sessions.length}</span>}
+      </div>
       {sessions.length === 0 && (
-        <div className="py-4 text-sm text-text-2">No sessions yet - start a live conversation to see it here.</div>
+        <div className="rounded-lg bg-sky px-4 py-5 text-base leading-relaxed text-text-2">No sessions yet. Start a live conversation to see it here.</div>
       )}
       {sessions.map((s) => (
-        <div key={s.id} className="flex items-center gap-3.5 py-3 border-b border-border last:border-none">
-          <div className="rounded-[10px] bg-signal-light text-signal flex items-center justify-center flex-shrink-0" style={{ width: 42, height: 42 }}>
+        <div key={s.id} className="flex items-center gap-3 border-b border-border py-4 last:border-none">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-signal-light text-signal">
             <Video size={20} />
           </div>
-          <div>
-            <div className="text-md font-bold">{s.title}</div>
-            <div className="text-sm text-text-2 mt-0.5">
+          <div className="min-w-0">
+            <div className="truncate text-base font-bold text-ink">{s.title}</div>
+            <div className="mt-0.5 text-sm leading-relaxed text-text-2">
               {new Date(s.startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ·{' '}
               {s.durationMinutes} min · {s.messageCount} messages
             </div>
@@ -64,7 +67,7 @@ export default function RecentSessions() {
           {s.avgConfidence !== undefined ? (
             <Badge tone={s.avgConfidence >= 90 ? 'ok' : 'med'}>{s.avgConfidence}% confidence</Badge>
           ) : (
-            <span className="text-sm text-text-3">No confidence data</span>
+            <span className="text-right text-sm font-medium text-text-3">No score</span>
           )}
         </div>
       ))}
