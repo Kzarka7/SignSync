@@ -132,7 +132,7 @@ export default function HistoryPage() {
             onRangeChange={setRange}
           />
         </div>
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-3 custom-scrollbar">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-3 pr-1 custom-scrollbar">
           <div className="mb-2 flex items-center justify-between gap-3 px-1">
             <p className="text-sm font-semibold text-text-2" aria-live="polite">
               {filteredSessions.length} {filteredSessions.length === 1 ? 'session' : 'sessions'} shown
