@@ -90,7 +90,7 @@ export default function HistoryPage() {
   }, [allSessions, search, location, range]);
 
   function handleReplay(session: ConversationSession) {
-    navigate(`/session-summary/${session.id}`);
+    navigate(`/summary/${session.id}`);
   }
 
   function handleDelete(session: ConversationSession) {

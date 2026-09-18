@@ -94,7 +94,7 @@ export default function SessionSummaryPage() {
   }
 
   return (
-    <main className="mx-auto flex h-[calc(100vh-5.75rem)] max-w-[1440px] flex-col overflow-hidden px-3 py-4 sm:px-5 sm:py-6 lg:px-7">
+    <main className="mx-auto flex min-h-[calc(100vh-5.75rem)] max-w-[1440px] flex-col px-3 py-4 sm:px-5 sm:py-6 xl:h-[calc(100vh-5.75rem)] xl:overflow-hidden lg:px-7">
       <div className="shrink-0">
         <PageHeader
           title={summary.sessionName}
@@ -107,8 +107,8 @@ export default function SessionSummaryPage() {
         />
       </div>
 
-      <div className="flex min-h-0 flex-1 sm:flex-col xl:flex-row gap-4 pb-5">
-        <section className="grid shrink-0 gap-4 sm:grid-cols-2 xl:grid-cols-6 xl:grid-rows-2" aria-label="Session overview">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 pb-5 xl:flex-row">
+        <section className="grid shrink-0 gap-4 sm:grid-cols-2 xl:max-h-full xl:self-start xl:grid-cols-6" aria-label="Session overview">
           <div className="grid sm:grid-cols-[3fr_5fr] sm:grid-rows-2 sm:col-span-2 xl:col-span-6 gap-4">
             <DurationCard durationLabel={summary.durationLabel} />
 

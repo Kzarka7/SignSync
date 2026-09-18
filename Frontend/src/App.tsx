@@ -30,9 +30,9 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/session-setup" element={<SessionSetupPage />} />
+          <Route path="/setup" element={<SessionSetupPage />} />
           <Route path="/live" element={<LiveConversationPage />} />
-          <Route path="/session-summary/:sessionId" element={<SessionSummaryPage />} />
+          <Route path="/summary/:sessionId" element={<SessionSummaryPage />} />
           <Route path="/dataset-collector" element={<DatasetCollectorPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/faq" element={<FAQPage />} />

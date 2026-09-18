@@ -23,7 +23,7 @@ export default function LiveConversationPage() {
   
   useEffect(() => {
     if (!isReadyToBegin) {
-      navigate('/session-setup', { replace: true })
+      navigate('/setup', { replace: true })
     }
   }, [isReadyToBegin, navigate])
 
