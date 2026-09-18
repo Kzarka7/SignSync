@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, CalendarClock, CheckCircle2, Info, Tag } from 'lucide-react'
 import PageHeader from '../components/layout/PageHeader'
 import Card from '../components/shared/Card'
 import Button from '../components/shared/Button'
@@ -40,72 +40,95 @@ export default function SessionSetupPage() {
   }
 
   return (
-    <div>
+    <main className="mx-auto max-w-[1440px] px-3 py-4 sm:px-5 sm:py-6 lg:px-7">
       <PageHeader title="Session setup" description="Confirm your devices and conversation details before starting." />
 
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-4">
-          <Card>
-            <h3 className="text-md uppercase tracking-wide text-text-2 font-semibold mb-3">Conversation type</h3>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)] xl:gap-6">
+        <section className="flex min-w-0 flex-col gap-5" aria-label="Conversation details">
+          <Card className="border-border p-4 shadow-sm sm:p-5">
+            <div className="mb-4">
+              <div className="flex justify-between">
+                <h2 className="text-xl font-bold text-ink">Choose a conversation type</h2>
+                <p className="text-base text-sm leading-relaxed text-text-3">select one category</p>
+              </div>
+              <p className="mt-1 text-base leading-relaxed text-text-2">This helps prepare the right phrases and context for your conversation.</p>
+            </div>
             <ConversationTypeSelector value={conversationType} onChange={setConversationType} />
           </Card>
 
-          <Card>
-            <h3 className="text-md uppercase tracking-wide text-text-2 font-semibold mb-3">Session information</h3>
-            <div className="flex flex-col gap-3.5">
+          <Card className="border-border p-4 shadow-sm sm:p-5">
+            <div className="mb-4 flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-signal-light text-signal" aria-hidden="true"><Info size={20} /></span>
               <div>
-                <label className="text-sm font-medium text-text-2 block mb-1.5">Session name (optional)</label>
+                <h2 className="text-xl font-bold text-ink">Session details</h2>
+                <p className="text-base text-text-2">Optional information for finding this session later.</p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-4 border-t border-border pt-4">
+              <div>
+                <label htmlFor="session-name" className="mb-1.5 block text-base font-bold text-ink">Session name <span className="font-normal text-text-3">(optional)</span></label>
                 <input
+                  id="session-name"
                   type="text"
                   value={sessionName}
                   onChange={(e) => setSessionName(e.target.value)}
                   placeholder="e.g. Hospital reception, 2nd floor"
-                  className="w-full text-sm border border-border rounded-lg px-3 py-2.5"
+                  className="min-h-12 w-full rounded-lg border border-border bg-white px-3 text-base font-medium text-ink placeholder:text-text-3 focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-signal"
                 />
               </div>
-              <div className="flex justify-between text-sm text-text-2 pt-3 border-t border-border">
-                <span>Timestamp</span>
-                <span className="font-mono">
-                  {timestamp.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm text-text-2">
-                <span>Conversation category</span>
-                <span className="font-semibold text-ink">{CONVERSATION_TYPE_LABELS[conversationType]}</span>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col justify-center rounded-lg bg-sky px-3 py-3">
+                  <span className="flex items-center gap-1.5 text-sm font-bold text-text-2"><CalendarClock size={16} aria-hidden="true" /> Started</span>
+                  <span className="mt-1 block text-base font-bold text-ink">
+                    {timestamp.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                  </span>
+                </div>
+                <div className="flex flex-col justify-center rounded-lg bg-sky px-3 py-3">
+                  <span className="flex items-center gap-1.5 text-sm font-bold text-text-2"><Tag size={16} aria-hidden="true" /> Started</span>
+                  <span className="mt-1 block text-base font-bold text-ink">{CONVERSATION_TYPE_LABELS[conversationType]}</span>
+                </div>
               </div>
             </div>
           </Card>
-        </div>
+        </section>
 
-        <div className="flex flex-col gap-4">
+        <aside className="flex min-w-0 flex-col gap-5" aria-label="Device readiness and start">
           <DeviceReadinessCard readiness={readiness} />
 
-          <Card>
-            <p className="text-sm text-text-2 leading-relaxed mb-3.5">
+          <Card className="border-border p-4 shadow-sm sm:p-5">
+            <div className="mb-4 flex items-start gap-3">
+              <span className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${devicesBlocked ? 'bg-danger-light text-danger' : devicesChecking ? 'bg-amber-light text-amber-dark' : 'bg-success-light text-success-dark'}`} aria-hidden="true"><CheckCircle2 size={21} /></span>
+              <div>
+                <h2 className="text-xl font-bold text-ink">Ready to begin?</h2>
+                <p className="mt-1 text-base leading-relaxed text-text-2">
               {devicesBlocked
                 ? 'Camera and microphone access are required to begin a conversation. Please allow access and try again.'
-                : 'Once you begin, the camera starts watching for signs automatically. Speech recognition only starts when you press the microphone during the conversation.'}
-            </p>
+                : devicesChecking
+                ? 'We’re checking your camera and microphone. This only takes a moment.'
+                : 'Once you begin, the camera starts watching for signs automatically. Speech recognition starts when you tap the microphone.'}
+                </p>
+              </div>
+            </div>
             <Button
               variant="primary"
-              className="w-full justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+              className="min-h-13 w-full justify-center text-lg focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-signal active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
               disabled={devicesBlocked || devicesChecking}
               onClick={handleBegin}
             >
               Begin conversation
-              <ArrowRight size={15} />
+              <ArrowRight size={20} />
             </Button>
             {devicesBlocked && (
               <button
                 onClick={readiness.recheckDevices}
-                className="text-sm text-signal font-medium mt-2.5 w-full text-center hover:underline"
+                className="mt-3 min-h-11 w-full rounded-lg text-base font-bold text-signal hover:bg-signal-light focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-signal active:scale-[0.97]"
               >
                 Recheck devices
               </button>
             )}
           </Card>
-        </div>
+        </aside>
       </div>
-    </div>
+    </main>
   )
 }
