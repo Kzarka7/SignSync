@@ -70,24 +70,31 @@ export default function SessionSummaryPage() {
 
   if (loading) {
     return (
-      <div className="text-sm text-text-2">Loading session summary...</div>
+      <main className="mx-auto flex min-h-[50vh] max-w-[1440px] items-center justify-center px-4">
+        <div
+          className="rounded-xl2 border border-border bg-white px-5 py-4 text-base font-medium text-text-2 shadow-sm"
+          role="status"
+        >
+          Loading session summary…
+        </div>
+      </main>
     );
   }
 
   if (!summary) {
     return (
-      <div>
+      <main className="mx-auto max-w-[1440px] px-3 py-4 sm:px-5 sm:py-6 lg:px-7">
         <PageHeader
           title="Session summary"
           description="We couldn't find this session."
         />
         <SessionNotFoundCard onBackToHistory={() => navigate("/history")} />
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className="h-[calc(100vh-5.75rem)] flex flex-col">
+    <main className="mx-auto flex h-[calc(100vh-5.75rem)] max-w-[1440px] flex-col overflow-hidden px-3 py-4 sm:px-5 sm:py-6 lg:px-7">
       <div className="shrink-0">
         <PageHeader
           title={summary.sessionName}
@@ -100,38 +107,37 @@ export default function SessionSummaryPage() {
         />
       </div>
 
-      <div className="flex-1 min-h-0 flex flex-col gap-4">
-        <div className="shrink-0 grid grid-cols-10 grid-rows-4 gap-4">
-          <DurationCard durationLabel={summary.durationLabel} className="col-span-2 row-span-2" />
+      <div className="flex min-h-0 flex-1 sm:flex-col xl:flex-row gap-4 pb-5">
+        <section className="grid shrink-0 gap-4 sm:grid-cols-2 xl:grid-cols-6 xl:grid-rows-2" aria-label="Session overview">
+          <div className="grid sm:grid-cols-[3fr_5fr] sm:grid-rows-2 sm:col-span-2 xl:col-span-6 gap-4">
+            <DurationCard durationLabel={summary.durationLabel} />
 
-          <MessageCountCard
-            messageCount={summary.messages.length}
-            className="col-span-2 row-span-2 col-start-1 row-start-3"
-          />
+            <MessageCountCard messageCount={summary.messages.length} className="sm:col-start-1 sm:row-start-2" />
 
-          <ConfidenceCard
-            avgConfidence={summary.avgConfidence}
-            categoryAverages={summary.categoryAverages}
-            className="col-span-3 row-span-4 col-start-3 row-start-1"
-          />
+            <ConfidenceCard
+              avgConfidence={summary.avgConfidence}
+              categoryAverages={summary.categoryAverages}
+              className="sm:row-span-2 sm:col-start-2 sm:row-start-1"
+            />
+          </div>
 
           <PhrasesUsedCard
             phrases={summary.phrasesUsed}
-            className="shrink-0 col-span-5 row-span-4 col-start-6 row-start-1"
+            className="sm:col-span-2 xl:col-span-6 xl:row-start-2"
           />
-        </div>
+        </section>
 
         <TranscriptCard
           messages={summary.messages}
           sessionStartedAt={new Date(summary.startedAt).getTime()}
           className="flex-1 min-h-0 flex flex-col"
         />
-
+      </div>
+      
         <SummaryActions
           onStartNewConversation={() => navigate("/session-setup")}
           onDone={() => navigate("/history")}
         />
-      </div>
-    </div>
+    </main>
   );
 }

@@ -14,12 +14,15 @@ interface TranscriptCardProps {
 // figure the History list already shows.
 export default function TranscriptCard({ messages, sessionStartedAt, className }: TranscriptCardProps) {
   return (
-    <Card className={className}>
-      <h3 className="shrink-0 text-md uppercase tracking-wide text-text-2 font-semibold mb-3">Transcript</h3>
+    <Card className={`border-border p-4 shadow-sm sm:p-5 ${className ?? ''}`}>
+      <div className="mb-3 flex shrink-0 items-baseline justify-between gap-3">
+        <h2 className="text-xl font-bold text-ink">Transcript</h2>
+        <span className="text-sm font-semibold text-text-2">{messages.length} {messages.length === 1 ? 'message' : 'messages'}</span>
+      </div>
       {messages.length === 0 ? (
-        <p className="text-sm text-text-2">No messages were recorded during this session.</p>
+        <p className="rounded-lg bg-sky px-4 py-5 text-base text-text-2">No messages were recorded during this session.</p>
       ) : (
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col divide-y divide-border pr-1 custom-scrollbar">
+        <div className="custom-scrollbar flex min-h-0 flex-1 flex-col divide-y divide-border overflow-y-auto pr-2" aria-label="Session transcript">
           {messages.map((m) => (
             <div key={m.id} className="py-3 first:pt-0 last:pb-0">
               <MessageBubble message={m} sessionStartedAt={sessionStartedAt} showConfidenceBreakdown />
