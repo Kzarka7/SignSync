@@ -15,7 +15,7 @@ export default function FAQPage() {
   return (
     <main className="mx-auto max-w-[1440px] px-3 py-4 sm:px-5 sm:py-6 lg:px-7">
       <PageHeader title="FAQ" description="Learn the system, browse common phrases, and find help when you need it." />
-      <section aria-labelledby="help-topics-title" className="rounded-xl2 border border-border bg-white p-4 shadow-sm sm:p-5">
+      <section aria-labelledby="help-topics-title" className="rounded-xl2 border border-border bg-white p-4 shadow-sm sm:p-4">
         <div className="mb-4 flex flex-col gap-1 border-b border-border pb-4 sm:flex-row sm:items-baseline sm:justify-between">
           <div>
             <h2 id="help-topics-title" className="text-xl font-bold text-ink">Help topics</h2>
@@ -23,11 +23,11 @@ export default function FAQPage() {
           </div>
           <span className="text-sm font-semibold text-text-2">{resources.length} guides</span>
         </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        {resources.map((r) => (
-          <FAQCard key={r.title} {...r} />
-        ))}
-      </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          {resources.map((r) => (
+            <FAQCard key={r.title} {...r} />
+          ))}
+        </div>
       </section>
     </main>
   )
