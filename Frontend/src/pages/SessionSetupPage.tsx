@@ -53,21 +53,21 @@ export default function SessionSetupPage() {
         }
       />
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)] xl:gap-6">
-        <section className="flex min-w-0 flex-col gap-5" aria-label="Conversation details">
-        <Card className="border-border p-4 shadow-sm sm:p-5">
-          <div className="mb-4 grid grid-cols-[1fr_20fr] items-center border-b border-border pb-4 gap-3">
-            <span className="flex h-10 w-10 items-center justify-center font-bold text-xl rounded-full bg-signal-light text-signal">1</span>
-            <div>
-              <div className="flex justify-between">
-                <h2 className="text-xl font-bold text-ink">Choose a conversation type</h2>
-                <p className="text-base text-sm leading-relaxed text-text-3">select one category</p>
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)] xl:gap-4">
+        <section className="flex min-w-0 flex-col gap-4" aria-label="Conversation details">
+          <Card className="border-border p-4 shadow-sm sm:p-5">
+            <div className="mb-4 grid grid-cols-[1fr_20fr] items-center border-b border-border pb-4 gap-3">
+              <span className="flex h-10 w-10 items-center justify-center font-bold text-xl rounded-full bg-signal-light text-signal">1</span>
+              <div>
+                <div className="flex justify-between">
+                  <h2 className="text-xl font-bold text-ink">Choose a conversation type</h2>
+                  <p className="text-base text-sm leading-relaxed text-text-3">select one category</p>
+                </div>
+                <p className="text-base text-text-2">This helps prepare the right phrases and context for your conversation.</p>
               </div>
-              <p className="text-base text-text-2">This helps prepare the right phrases and context for your conversation.</p>
             </div>
-          </div>
-          <ConversationTypeSelector value={conversationType} onChange={setConversationType} />
-        </Card>
+            <ConversationTypeSelector value={conversationType} onChange={setConversationType} />
+          </Card>
           <SessionDetails
             sessionName={sessionName}
             onSessionNameChange={setSessionName}
@@ -76,7 +76,7 @@ export default function SessionSetupPage() {
           />
         </section>
 
-        <aside className="flex min-w-0 flex-col gap-5" aria-label="Device readiness and start">
+        <aside className="flex min-w-0 flex-col gap-4" aria-label="Device readiness and start">
           <DeviceReadinessCard readiness={readiness} />
           <SessionReadyCard
             devicesBlocked={devicesBlocked}

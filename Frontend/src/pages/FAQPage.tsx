@@ -23,7 +23,7 @@ export default function FAQPage() {
           </div>
           <span className="text-sm font-semibold text-text-2">{resources.length} guides</span>
         </div>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2">
         {resources.map((r) => (
           <FAQCard key={r.title} {...r} />
         ))}

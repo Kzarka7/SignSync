@@ -24,12 +24,12 @@ export default function DashboardPage() {
         description="Camera, microphone and translation engine are all ready. Start a conversation whenever you need it."
       />
 
-      <div className="mb-5 grid items-stretch gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(390px,1fr)] xl:gap-6">
+      <div className="mb-4 grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(390px,1fr)] xl:gap-4">
         <QuickStartCard />
         <MetricGrid />
       </div>
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,1fr)] xl:gap-6">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,1fr)] xl:gap-4">
         <RecentSessions />
         <FrequentPhrases />
       </div>
