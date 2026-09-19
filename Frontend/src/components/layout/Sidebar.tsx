@@ -29,9 +29,9 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/live", label: "Live conversation", icon: Video },
+  { to: "/live", label: "Live conversation", icon: Video, activePaths: ["/live", "/setup"] },
   { to: "/dataset-collector", label: "Dataset Collector", icon: Database },
-  { to: "/history", label: "History", icon: History },
+  { to: "/history", label: "History", icon: History, activePaths: ["/history", "/summary"] },
   { to: "/faq", label: "FAQ", icon: BookOpen },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
@@ -83,8 +83,11 @@ export default function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
 
       {/* Navigation */}
       {navItems.map(({ to, label, icon: Icon, live, activePaths }) => {
+        // activePaths entries are matched as exact-or-prefix, so a static
+        // entry like "/setup" also covers dynamic children the route table
+        // doesn't spell out here, e.g. "/summary" covers "/summary/:id".
         const isActive = activePaths
-          ? activePaths.includes(pathname)
+          ? activePaths.some((p) => pathname === p || pathname.startsWith(`${p}/`))
           : pathname === to;
 
         return (

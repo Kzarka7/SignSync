@@ -61,7 +61,7 @@ export default function LiveConversationPage() {
     saveSession(completedSession)
 
     resetSessionSetup() 
-    navigate(`/session-summary/${completedSession.id}`)
+    navigate(`/summary/${completedSession.id}`)
   }
 
   if (!isReadyToBegin) return null
