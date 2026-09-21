@@ -13,7 +13,8 @@ Use two terminals.
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1 
+.\.venv-gru\Scripts\Activate.ps1
 pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
 
