@@ -12,10 +12,7 @@ import json
 import random
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
-import tensorflow as tf
-from sklearn.metrics import ConfusionMatrixDisplay, classification_report
 
 
 # ---------------------------------------------------------------------------
@@ -28,11 +25,23 @@ BATCH_SIZE = 16
 
 EXPERIMENTS = {
     "gru_p01_train_p02_test": {
-        "trainingParticipant": "participant_01",
+        "trainingParticipants": ["participant_01"],
         "testParticipant": "participant_02",
     },
     "gru_p02_train_p01_test": {
-        "trainingParticipant": "participant_02",
+        "trainingParticipants": ["participant_02"],
+        "testParticipant": "participant_01",
+    },
+    "gru_p01_p02_train_p03_test_v1": {
+        "trainingParticipants": ["participant_01", "participant_02"],
+        "testParticipant": "participant_03",
+    },
+    "gru_p01_p03_train_p02_test_v1": {
+        "trainingParticipants": ["participant_01", "participant_03"],
+        "testParticipant": "participant_02",
+    },
+    "gru_p02_p03_train_p01_test_v1": {
+        "trainingParticipants": ["participant_02", "participant_03"],
         "testParticipant": "participant_01",
     },
 }
@@ -46,11 +55,12 @@ parser.add_argument(
     default="gru_p01_train_p02_test",
     help="Preprocessed experiment folder to train (default: %(default)s)",
 )
+parser.add_argument("--check-only", action="store_true", help="Validate the experiment without training or writing outputs")
 arguments = parser.parse_args()
 
 EXPERIMENT_NAME = arguments.experiment
 experiment = EXPERIMENTS[EXPERIMENT_NAME]
-TRAINING_PARTICIPANT = experiment["trainingParticipant"]
+TRAINING_PARTICIPANTS = experiment["trainingParticipants"]
 TEST_PARTICIPANT = experiment["testParticipant"]
 
 PROJECT_FOLDER = Path(__file__).resolve().parent.parent
@@ -61,7 +71,8 @@ MODEL_FOLDER = DATASET_FOLDER / "models" / EXPERIMENT_NAME
 DATA_PATH = PREPROCESSED_FOLDER / "gru_data.npz"
 METADATA_PATH = PREPROCESSED_FOLDER / "metadata.json"
 
-MODEL_FOLDER.mkdir(parents=True, exist_ok=True)
+if not arguments.check_only and MODEL_FOLDER.exists():
+    parser.error(f"Model folder already exists; preserving previous results: {MODEL_FOLDER}")
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +81,6 @@ MODEL_FOLDER.mkdir(parents=True, exist_ok=True)
 
 random.seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
-tf.random.set_seed(RANDOM_SEED)
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +98,12 @@ with np.load(DATA_PATH) as data:
 with METADATA_PATH.open("r", encoding="utf-8") as file:
     metadata = json.load(file)
 
+if "trainingParticipants" in metadata:
+    if metadata["trainingParticipants"] != TRAINING_PARTICIPANTS or metadata.get("testParticipant") != TEST_PARTICIPANT:
+        raise ValueError("Preprocessing participant identities do not match the chosen experiment")
+elif len(TRAINING_PARTICIPANTS) > 1:
+    raise ValueError("Multi-participant experiments require participant identities in preprocessing metadata")
+
 label_to_index = metadata["labelToIndex"]
 label_names = [
     label
@@ -101,14 +117,49 @@ number_of_classes = len(label_names)
 sequence_length = X_train.shape[1]
 feature_count = X_train.shape[2]
 
+if sorted(label_to_index.values()) != list(range(number_of_classes)):
+    raise ValueError("Label indices must be consecutive starting at zero")
+seen_ids = set()
+for split, x, y in (
+    ("training", X_train, y_train),
+    ("validation", X_validation, y_validation),
+    ("test", X_test, y_test),
+):
+    if x.ndim != 3 or x.shape[1:] != (metadata["sequenceLength"], metadata["featureCount"]) or len(x) == 0:
+        raise ValueError(f"{split}: invalid tensor shape")
+    if y.shape != (len(x),) or not np.issubdtype(y.dtype, np.integer) or np.any(y < 0) or np.any(y >= number_of_classes):
+        raise ValueError(f"{split}: invalid labels")
+    if not np.isfinite(x).all():
+        raise ValueError(f"{split}: non-finite features")
+    ids = metadata["sequenceIds"][split]
+    if len(ids) != len(x) or len(set(ids)) != len(ids) or seen_ids.intersection(ids):
+        raise ValueError(f"{split}: missing, duplicate, or overlapping sequence IDs")
+    seen_ids.update(ids)
+    if "participantIds" in metadata:
+        participants = metadata["participantIds"][split]
+        expected = {TEST_PARTICIPANT} if split == "test" else set(TRAINING_PARTICIPANTS)
+        if len(participants) != len(x) or set(participants) != expected:
+            raise ValueError(f"{split}: incorrect participant membership")
+
 print("Loaded dataset")
 print("Experiment:", EXPERIMENT_NAME)
-print("Training participant:", TRAINING_PARTICIPANT)
+print("Training participants:", ", ".join(TRAINING_PARTICIPANTS))
 print("Unseen test participant:", TEST_PARTICIPANT)
 print("X_train:", X_train.shape)
 print("X_validation:", X_validation.shape)
 print("X_test:", X_test.shape)
 print("Classes:", number_of_classes)
+
+if arguments.check_only:
+    print("Validation passed. No training or output files written.")
+    raise SystemExit(0)
+
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report
+
+tf.random.set_seed(RANDOM_SEED)
+MODEL_FOLDER.mkdir(parents=True, exist_ok=False)
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +235,7 @@ callbacks = [
 
 
 # ---------------------------------------------------------------------------
-# 6. Train using only the selected training participant
+# 6. Train using only the selected training participants
 # ---------------------------------------------------------------------------
 
 history = model.fit(
@@ -239,8 +290,13 @@ print(f"Macro F1: {report['macro avg']['f1-score']:.4f}")
 
 evaluation = {
     "experiment": EXPERIMENT_NAME,
-    "trainingParticipant": TRAINING_PARTICIPANT,
+    "trainingParticipant": TRAINING_PARTICIPANTS[0] if len(TRAINING_PARTICIPANTS) == 1 else None,
+    "trainingParticipants": TRAINING_PARTICIPANTS,
     "testParticipant": TEST_PARTICIPANT,
+    "randomSeed": RANDOM_SEED,
+    "epochsLimit": EPOCHS,
+    "batchSize": BATCH_SIZE,
+    "preprocessingMetadata": metadata,
     "testLoss": float(test_loss),
     "testAccuracy": float(test_accuracy),
     "macroPrecision": float(report["macro avg"]["precision"]),

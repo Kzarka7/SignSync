@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -18,6 +21,7 @@ EXCLUDED_PATH = MANIFEST_FOLDER / "excluded-samples.csv"
 PARTICIPANT_DATASETS = {
     "participant_01": PROCESSED_FOLDER / "participant_01-dataset.json",
     "participant_02": PROCESSED_FOLDER / "participant_02-dataset.json",
+    "participant_03": PROCESSED_FOLDER / "participant_03-dataset.json",
 }
 
 EXCLUDED_SAMPLES = [
@@ -38,15 +42,17 @@ EXCLUDED_SAMPLES = [
 ]
 
 
-def read_existing_rows() -> dict[str, dict[str, str]]:
-    if not SAMPLES_PATH.exists():
+def read_existing_rows(path: Path) -> dict[str, dict[str, str]]:
+    if not path.exists():
         return {}
-    with SAMPLES_PATH.open("r", encoding="utf-8-sig", newline="") as file:
-        return {
-            row["sequence_id"]: row
-            for row in csv.DictReader(file)
-            if row.get("sequence_id")
-        }
+    rows = {}
+    with path.open("r", encoding="utf-8-sig", newline="") as file:
+        for row in csv.DictReader(file):
+            sequence_id = row.get("sequence_id")
+            if not sequence_id or sequence_id in rows:
+                raise ValueError(f"{path}: missing or duplicate sequence ID")
+            rows[sequence_id] = row
+    return rows
 
 
 def recording_date(created_at: str) -> str:
@@ -54,28 +60,36 @@ def recording_date(created_at: str) -> str:
 
 
 def main() -> None:
-    existing = read_existing_rows()
+    existing = read_existing_rows(SAMPLES_PATH)
+    excluded = read_existing_rows(EXCLUDED_PATH)
     rows: list[dict[str, str]] = []
+    selected_ids: set[str] = set()
 
     for participant_id, dataset_path in PARTICIPANT_DATASETS.items():
         with dataset_path.open("r", encoding="utf-8") as file:
             dataset = json.load(file)
 
         for sequence in dataset["sequences"]:
+            if not sequence.get("id") or sequence["id"] in selected_ids:
+                raise ValueError("Missing or duplicate selected sequence ID")
+            selected_ids.add(sequence["id"])
             old = existing.get(sequence["id"], {})
+            if old and (old.get("participant_id") != participant_id or old.get("label") != sequence["label"]):
+                raise ValueError(f"Identity changed for {sequence['id']}; review before regenerating")
             notes = old.get("notes", "")
             source_file = old.get("source_file", "")
 
             rows.append(
                 {
+                    **old,
                     "sequence_id": sequence["id"],
                     "label": sequence["label"],
                     "participant_id": participant_id,
-                    "recording_session": recording_date(sequence.get("createdAt", "")),
+                    "recording_session": old.get("recording_session", recording_date(sequence.get("createdAt", ""))),
                     "source_file": source_file,
-                    "technical_status": "passed",
-                    "variant": old.get("variant", "") or "UNKNOWN",
-                    "fsl_verified": old.get("fsl_verified", "") or "no",
+                    "technical_status": old.get("technical_status", "passed"),
+                    "variant": old.get("variant", "UNKNOWN"),
+                    "fsl_verified": old.get("fsl_verified", "pending"),
                     "notes": notes,
                 }
             )
@@ -89,6 +103,27 @@ def main() -> None:
         )
     )
 
+    for sequence_id, label, reason, replacement_id in EXCLUDED_SAMPLES:
+        excluded.setdefault(sequence_id, {
+            "sequence_id": sequence_id, "label": label,
+            "participant_id": "participant_01", "reason": reason,
+            "replacement_sequence_id": replacement_id, "status": "replaced",
+        })
+    # Private exclusion decisions stay with the dataset, outside the repository.
+    for path in sorted((DATASET_FOLDER / "documentation").glob("participant_*-*-exclusion-*/exclusion.json")):
+        decision = json.loads(path.read_text(encoding="utf-8-sig"))
+        sequence_id = decision["sequence_id"]
+        excluded.setdefault(sequence_id, {
+            "sequence_id": sequence_id, "label": decision["label"],
+            "participant_id": decision["participant_id"], "reason": decision["reason"],
+            "replacement_sequence_id": decision.get("replacement_sequence_id") or "",
+            "status": decision["status"],
+        })
+    if selected_ids & excluded.keys():
+        raise ValueError("Excluded sequences are still in a selected dataset")
+    if existing.keys() - selected_ids - excluded.keys():
+        raise ValueError("Previously selected sequences disappeared without an exclusion record")
+
     MANIFEST_FOLDER.mkdir(parents=True, exist_ok=True)
     sample_fields = [
         "sequence_id",
@@ -101,11 +136,6 @@ def main() -> None:
         "fsl_verified",
         "notes",
     ]
-    with SAMPLES_PATH.open("w", encoding="utf-8", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=sample_fields)
-        writer.writeheader()
-        writer.writerows(rows)
-
     exclusion_fields = [
         "sequence_id",
         "label",
@@ -114,23 +144,31 @@ def main() -> None:
         "replacement_sequence_id",
         "status",
     ]
-    with EXCLUDED_PATH.open("w", encoding="utf-8", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=exclusion_fields)
-        writer.writeheader()
-        for sequence_id, label, reason, replacement_id in EXCLUDED_SAMPLES:
-            writer.writerow(
-                {
-                    "sequence_id": sequence_id,
-                    "label": label,
-                    "participant_id": "participant_01",
-                    "reason": reason,
-                    "replacement_sequence_id": replacement_id,
-                    "status": "replaced",
-                }
-            )
+    backup = MANIFEST_FOLDER / "backups" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    backup.mkdir(parents=True)
+    for path in (SAMPLES_PATH, EXCLUDED_PATH):
+        if path.exists():
+            shutil.copy2(path, backup / path.name)
+    for path, fields, output_rows in (
+        (SAMPLES_PATH, sample_fields, rows),
+        (EXCLUDED_PATH, exclusion_fields, list(excluded.values())),
+    ):
+        fields = fields + sorted({key for row in output_rows for key in row} - set(fields))
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="", dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False) as file:
+                temporary = Path(file.name)
+                writer = csv.DictWriter(file, fieldnames=fields)
+                writer.writeheader()
+                writer.writerows(output_rows)
+            temporary.replace(path)
+        finally:
+            if temporary is not None and temporary.exists():
+                temporary.unlink()
 
-    print(f"Wrote {len(rows)} approved rows to {SAMPLES_PATH}")
-    print(f"Wrote {len(EXCLUDED_SAMPLES)} excluded rows to {EXCLUDED_PATH}")
+    print(f"Wrote {len(rows)} selected rows to {SAMPLES_PATH}")
+    print(f"Wrote {len(excluded)} excluded rows to {EXCLUDED_PATH}")
+    print(f"Previous manifests backed up to {backup}")
 
 
 if __name__ == "__main__":

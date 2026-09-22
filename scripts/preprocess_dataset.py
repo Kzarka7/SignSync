@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare two SignSync participant exports for the first GRU baseline.
+"""Prepare one or more training participants and one held-out test participant.
 
 The collector has already normalized every frame into a 164-value feature
 vector.  This script only validates that format, resamples every performance
@@ -11,14 +11,17 @@ Example (run from the SignSync project folder):
       --test "../SignSync Dataset/processed/participant_02-dataset.json" \
       --output "../SignSync Dataset/processed/gru_p01_train_p02_test"
 
-Run it a second time with --train and --test swapped for the reverse
-participant-independent experiment.
+Pass multiple JSON paths after --train for multiple training participants.
+Validation holds out four samples per label FROM EACH training participant.
+Participant IDs default to the filename prefix before '-dataset'; override
+with --train-participants and --test-participant for other filenames.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import hashlib
 from collections import Counter
 from pathlib import Path
 
@@ -39,6 +42,15 @@ def load_export(path: Path) -> dict:
         raise ValueError(f"{path.name}: expected {EXPECTED_FEATURE_COUNT} features per frame")
     if data.get("sequenceCount") != len(data.get("sequences", [])):
         raise ValueError(f"{path.name}: sequenceCount does not match its sequences array")
+    if not data["sequences"]:
+        raise ValueError(f"{path.name}: no sequences")
+    if set(data.get("labels", [])) != {s.get("label") for s in data["sequences"]}:
+        raise ValueError(f"{path.name}: declared labels do not match sequences")
+    ids = [s.get("id") for s in data["sequences"]]
+    if any(not isinstance(sid, str) or not sid for sid in ids) or len(set(ids)) != len(ids):
+        raise ValueError(f"{path.name}: missing or duplicate sequence IDs")
+    if any(s.get("frameCount") != len(s.get("frames", [])) for s in data["sequences"]):
+        raise ValueError(f"{path.name}: frameCount does not match frames")
     return data
 
 
@@ -87,6 +99,8 @@ def prepare_sequences(data: dict, label_to_index: dict[str, int], target_frames:
 
 
 def stratified_train_validation_split(labels: np.ndarray, validation_per_label: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
+    if validation_per_label < 1:
+        raise ValueError("validation_per_label must be at least 1")
     rng = np.random.default_rng(seed)
     train_indices: list[int] = []
     validation_indices: list[int] = []
@@ -112,30 +126,64 @@ def counts_by_label(labels: np.ndarray, label_names: list[str]) -> dict[str, int
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--train", required=True, type=Path, help="Merged JSON for the training participant")
+    parser.add_argument("--train", required=True, type=Path, nargs="+", help="One merged JSON per training participant")
+    parser.add_argument("--train-participants", nargs="+", help="Participant IDs in the same order as --train")
+    parser.add_argument("--test-participant", help="Held-out participant ID")
     parser.add_argument("--test", required=True, type=Path, help="Merged JSON for the unseen test participant")
     parser.add_argument("--output", required=True, type=Path, help="Directory to receive GRU-ready files")
     parser.add_argument("--frames", type=int, default=40, help="Fixed sequence length after resampling (default: 40)")
-    parser.add_argument("--validation-per-label", type=int, default=4, help="Training-participant samples held out per label (default: 4)")
+    parser.add_argument("--validation-per-label", type=int, default=4, help="Samples held out per label PER training participant (default: 4)")
     parser.add_argument("--seed", type=int, default=42, help="Reproducible split seed (default: 42)")
     args = parser.parse_args()
 
     if args.frames < 2:
         parser.error("--frames must be at least 2")
+    if args.validation_per_label < 1:
+        parser.error("--validation-per-label must be at least 1")
+    if args.output.exists():
+        parser.error("Output already exists; choose a new versioned folder to preserve previous results")
+    train_participants = args.train_participants or [p.stem.split("-dataset")[0] for p in args.train]
+    test_participant = args.test_participant or args.test.stem.split("-dataset")[0]
+    if len(train_participants) != len(args.train):
+        parser.error("Provide one --train-participants ID per training file")
+    participants = train_participants + [test_participant]
+    if any(not p.strip() for p in participants) or len(set(participants)) != len(participants):
+        parser.error("Training and test participant IDs must be distinct and nonempty")
+    paths = args.train + [args.test]
+    if len({p.resolve() for p in paths}) != len(paths):
+        parser.error("A dataset path cannot be used more than once")
 
-    train_data = load_export(args.train)
+    source_hashes = {str(p.resolve()): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
+    train_datasets = [load_export(p) for p in args.train]
     test_data = load_export(args.test)
-    if train_data["featureSchema"] != test_data["featureSchema"]:
+    train_data = train_datasets[0]
+    if any(d["featureSchema"] != train_data["featureSchema"] for d in train_datasets + [test_data]):
         raise SystemExit("The participant files have different feature schemas; do not train them together.")
 
-    label_names = sorted(set(train_data["labels"]) | set(test_data["labels"]))
-    if set(train_data["labels"]) != set(test_data["labels"]):
+    label_names = sorted(train_data["labels"])
+    if any(set(d["labels"]) != set(label_names) for d in train_datasets + [test_data]):
         raise SystemExit("The participant files have different label sets; complete the missing labels first.")
+    all_ids = [s["id"] for d in train_datasets + [test_data] for s in d["sequences"]]
+    if len(set(all_ids)) != len(all_ids):
+        raise SystemExit("Sequence IDs overlap across participant files; refusing possible leakage")
     label_to_index = {label: index for index, label in enumerate(label_names)}
 
-    x_all, y_all, train_ids = prepare_sequences(train_data, label_to_index, args.frames)
+    tensors, labels, train_ids, sample_participants = [], [], [], []
+    training_parts, validation_parts = [], []
+    offset = 0
+    for participant, data in zip(train_participants, train_datasets):
+        x, y, ids = prepare_sequences(data, label_to_index, args.frames)
+        train, validation = stratified_train_validation_split(y, args.validation_per_label, args.seed)
+        tensors.append(x)
+        labels.append(y)
+        train_ids.extend(ids)
+        sample_participants.extend([participant] * len(ids))
+        training_parts.append(train + offset)
+        validation_parts.append(validation + offset)
+        offset += len(ids)
+    x_all, y_all = np.concatenate(tensors), np.concatenate(labels)
+    train_indices, validation_indices = np.concatenate(training_parts), np.concatenate(validation_parts)
     x_test, y_test, test_ids = prepare_sequences(test_data, label_to_index, args.frames)
-    train_indices, validation_indices = stratified_train_validation_split(y_all, args.validation_per_label, args.seed)
 
     # Standardize from training data only. Applying its statistics to validation
     # and unseen-participant test data prevents evaluation leakage.
@@ -144,7 +192,7 @@ def main() -> None:
     std = x_train_unscaled.std(axis=(0, 1), keepdims=True)
     std[std < 1e-6] = 1.0
 
-    args.output.mkdir(parents=True, exist_ok=True)
+    args.output.mkdir(parents=True, exist_ok=False)
     np.savez_compressed(
         args.output / "gru_data.npz",
         X_train=((x_all[train_indices] - mean) / std).astype(np.float32),
@@ -158,13 +206,22 @@ def main() -> None:
     )
 
     metadata = {
-        "trainSource": str(args.train.resolve()),
+        "metadataVersion": 2,
+        "trainSource": str(args.train[0].resolve()) if len(args.train) == 1 else None,
+        "trainSources": [str(p.resolve()) for p in args.train],
         "testSource": str(args.test.resolve()),
+        "sourceSha256": source_hashes,
+        "trainingParticipants": train_participants,
+        "testParticipant": test_participant,
+        "standardizationFit": "training subset only",
+        "resampling": "linear interpolation by frame index; collector normalization retained",
+        "manifestAnnotationsUsed": False,
         "featureCount": EXPECTED_FEATURE_COUNT,
         "sequenceLength": args.frames,
         "labelToIndex": label_to_index,
         "split": {
             "validationPerLabel": args.validation_per_label,
+            "stratification": "participant and label; not sign variant",
             "seed": args.seed,
             "trainingCounts": counts_by_label(y_all[train_indices], label_names),
             "validationCounts": counts_by_label(y_all[validation_indices], label_names),
@@ -174,6 +231,11 @@ def main() -> None:
             "training": [train_ids[index] for index in train_indices],
             "validation": [train_ids[index] for index in validation_indices],
             "test": test_ids,
+        },
+        "participantIds": {
+            "training": [sample_participants[index] for index in train_indices],
+            "validation": [sample_participants[index] for index in validation_indices],
+            "test": [test_participant] * len(test_ids),
         },
     }
     with (args.output / "metadata.json").open("w", encoding="utf-8") as handle:
