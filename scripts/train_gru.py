@@ -46,6 +46,10 @@ EXPERIMENTS = {
     },
 }
 
+# Separate handshape experiments use the same architecture and training settings.
+EXPERIMENTS.update({name.replace('_v1', '_handshape_v2'): dict(config)
+                    for name, config in list(EXPERIMENTS.items()) if name.endswith('_v1')})
+
 parser = argparse.ArgumentParser(
     description="Train a SignSync GRU participant-independent experiment."
 )
@@ -56,7 +60,11 @@ parser.add_argument(
     help="Preprocessed experiment folder to train (default: %(default)s)",
 )
 parser.add_argument("--check-only", action="store_true", help="Validate the experiment without training or writing outputs")
+parser.add_argument("--seed", type=int, default=42, help="Training randomness seed; preprocessing splits stay unchanged (default: 42)")
 arguments = parser.parse_args()
+if not 0 <= arguments.seed < 2**32:
+    parser.error("--seed must be between 0 and 4294967295")
+RANDOM_SEED = arguments.seed
 
 EXPERIMENT_NAME = arguments.experiment
 experiment = EXPERIMENTS[EXPERIMENT_NAME]
@@ -66,7 +74,8 @@ TEST_PARTICIPANT = experiment["testParticipant"]
 PROJECT_FOLDER = Path(__file__).resolve().parent.parent
 DATASET_FOLDER = PROJECT_FOLDER.parent / "SignSync Dataset"
 PREPROCESSED_FOLDER = DATASET_FOLDER / "processed" / EXPERIMENT_NAME
-MODEL_FOLDER = DATASET_FOLDER / "models" / EXPERIMENT_NAME
+RUN_NAME = EXPERIMENT_NAME if RANDOM_SEED == 42 else f"{EXPERIMENT_NAME}_seed{RANDOM_SEED}"
+MODEL_FOLDER = DATASET_FOLDER / "models" / RUN_NAME
 
 DATA_PATH = PREPROCESSED_FOLDER / "gru_data.npz"
 METADATA_PATH = PREPROCESSED_FOLDER / "metadata.json"
@@ -143,6 +152,8 @@ for split, x, y in (
 
 print("Loaded dataset")
 print("Experiment:", EXPERIMENT_NAME)
+print("Training seed:", RANDOM_SEED)
+print("Model output:", MODEL_FOLDER)
 print("Training participants:", ", ".join(TRAINING_PARTICIPANTS))
 print("Unseen test participant:", TEST_PARTICIPANT)
 print("X_train:", X_train.shape)
@@ -290,6 +301,7 @@ print(f"Macro F1: {report['macro avg']['f1-score']:.4f}")
 
 evaluation = {
     "experiment": EXPERIMENT_NAME,
+    "runName": RUN_NAME,
     "trainingParticipant": TRAINING_PARTICIPANTS[0] if len(TRAINING_PARTICIPANTS) == 1 else None,
     "trainingParticipants": TRAINING_PARTICIPANTS,
     "testParticipant": TEST_PARTICIPANT,

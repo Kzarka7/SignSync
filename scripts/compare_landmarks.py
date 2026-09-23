@@ -5,9 +5,13 @@ Examples (run from the SignSync project folder):
     python scripts/compare_landmarks.py --label FRIEND
     python scripts/compare_landmarks.py --label HELP --participants 1 3 --samples 3 7
     python scripts/compare_landmarks.py --label SORRY --sample-a 3 --sample-b 7 --sample-c 2
+    python scripts/compare_landmarks.py --label FAMILY --label-c HELP --sample-a 2 --sample-b 5 --sample-c 3
+    python scripts/compare_landmarks.py --label PLEASE --label-b SORRY --samples 1 1 1  
+    python .\scripts\compare_landmarks.py --label HELP --sample-a 6 --sample-b 6 --label-c FAMILY --sample-c 6  
+    python scripts/compare_landmarks.py --label HELP --id-c 015e578e-6e63-4f96-b204-97f66bfd4e4d
     python scripts/compare_landmarks.py --label SORRY --raw-frames
     python scripts/compare_landmarks.py --label WHICH --save-gif which-comparison.gif
-    python .\scripts\compare_landmarks.py --label SORRY --samples 1 1 1
+    python scripts/compare_landmarks.py --label SORRY --samples 1 1 1
 
 Controls:
     Space       pause/resume
@@ -90,6 +94,26 @@ def aligned_frame_index(
     return round(progress * (len(sequence["frames"]) - 1))
 
 
+def select_sequence_by_id(dataset: dict, sequence_id: str) -> tuple[dict, int]:
+    """Resolve a full ID or unique prefix, returning its within-label sample number."""
+    sequence_id = sequence_id.strip()
+    if not sequence_id:
+        raise ValueError("Sequence ID must not be empty")
+    matches = [s for s in dataset["sequences"] if s["id"] == sequence_id]
+    if not matches:
+        matches = [s for s in dataset["sequences"] if s["id"].startswith(sequence_id)]
+    if not matches:
+        raise ValueError(f"Sequence ID {sequence_id!r} was not found in this participant's dataset")
+    if len(matches) != 1:
+        raise ValueError(f"Sequence ID {sequence_id!r} is ambiguous; use the full ID")
+    sequence = matches[0]
+    if not sequence.get("frames"):
+        raise ValueError(f"{sequence['id']}: no frames to display")
+    same_label = [s for s in dataset["sequences"] if s["label"] == sequence["label"]]
+    number = next(i for i, s in enumerate(same_label, 1) if s["id"] == sequence["id"])
+    return sequence, number
+
+
 def landmark_xy(point: dict, mirror: bool) -> tuple[float, float]:
     x = float(point["x"])
     return (1.0 - x if mirror else x, float(point["y"]))
@@ -162,11 +186,13 @@ def presence_summary(sequence: dict) -> str:
 def main() -> None:
     dataset_folder = Path(__file__).resolve().parent.parent.parent / "SignSync Dataset" / "processed"
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--label", default="FRIEND")
+    parser.add_argument("--label", default="FRIEND", help="Default sign for all participants; --label-a/b/c override it")
     parser.add_argument("--participants", nargs="+", type=int, choices=(1, 2, 3), default=[1, 2, 3], help="Participants in display order (default: 1 2 3)")
     parser.add_argument("--samples", nargs="+", type=int, help="Sample numbers in the same order as --participants")
     for letter, participant in zip("abc", (1, 2, 3)):
-        parser.add_argument(f"--sample-{letter}", type=int, default=1, help=f"Participant {participant:02d} sample number")
+        parser.add_argument(f"--sample-{letter}", f"--samples-{letter}", type=int, default=1, help=f"Participant {participant:02d} sample number within its selected sign")
+        parser.add_argument(f"--label-{letter}", help=f"Sign for Participant {participant:02d} (overrides --label)")
+        parser.add_argument(f"--id-{letter}", help=f"Full sequence ID or unique prefix for Participant {participant:02d}; overrides its label and sample number")
     parser.add_argument("--fps", type=float, default=30.0, help="Playback FPS (default: 30)")
     parser.add_argument("--display-frames", type=int, default=120, help="Frames per aligned loop (default: 120, or 4 seconds at 30 FPS)")
     parser.add_argument("--raw-frames", action="store_true", help="Show nearest recorded frames without interpolation")
@@ -183,11 +209,28 @@ def main() -> None:
         parser.error("Provide one --samples number per selected participant")
     defaults = {1: arguments.sample_a, 2: arguments.sample_b, 3: arguments.sample_c}
     samples = arguments.samples or [defaults[p] for p in arguments.participants]
-    label = arguments.label.strip().upper().replace(" ", "_")
+    participant_labels = {
+        participant: (getattr(arguments, f"label_{letter}") or arguments.label).strip().upper().replace(" ", "_")
+        for letter, participant in zip("abc", (1, 2, 3))
+    }
     sequences = []
-    for participant, sample in zip(arguments.participants, samples):
+    for letter, participant in zip("abc", (1, 2, 3)):
+        if getattr(arguments, f"id_{letter}") is not None and participant not in arguments.participants:
+            parser.error(f"--id-{letter} requires participant {participant} in --participants")
+    for panel_index, (participant, sample) in enumerate(zip(arguments.participants, samples)):
+        label = participant_labels[participant]
         path = dataset_folder / f"participant_{participant:02d}-dataset.json"
-        sequence = select_sequence(load_dataset(path), label, sample)
+        dataset = load_dataset(path)
+        sequence_id = getattr(arguments, f"id_{'abc'[participant - 1]}")
+        try:
+            if sequence_id is not None:
+                sequence, sample = select_sequence_by_id(dataset, sequence_id)
+                label = sequence["label"]
+                samples[panel_index] = sample
+            else:
+                sequence = select_sequence(dataset, label, sample)
+        except ValueError as error:
+            parser.error(f"Participant {participant:02d}: {error}")
         sequences.append(sequence)
         print(f"Participant {participant:02d} | {label} | sample {sample}")
         print(f"  Sequence ID: {sequence['id']}")
@@ -205,7 +248,8 @@ def main() -> None:
     figure, grid = plt.subplots(1, count, figsize=(6 * count, 7), sharex=True, sharey=True, squeeze=False)
     axes = grid[0]
     mode = "Recorded frames" if arguments.raw_frames else "Interpolated playback (display only)"
-    figure.suptitle(f"{label}: normalized-time comparison | {mode}")
+    compared_labels = " / ".join(dict.fromkeys(sequence["label"] for sequence in sequences))
+    figure.suptitle(f"{compared_labels}: normalized-time comparison | {mode}")
     figure.text(0.5, 0.025, "Space: pause/play | Left/Right: step | Shift+Left/Right: jump 10 | Up/Down: speed | Home/End: endpoints | Esc: close", ha="center", fontsize=9)
     figure.subplots_adjust(top=0.82, bottom=0.13, wspace=0.15)
     groups = []
@@ -214,7 +258,7 @@ def main() -> None:
         axis.set_xlim(minimum[0], maximum[0])
         axis.set_ylim(maximum[1], minimum[1])
         axis.set_aspect("equal", adjustable="box")
-        axis.set_title(f"Participant {participant:02d} | sample {sample}\nID: {sequence['id']}", fontsize=9)
+        axis.set_title(f"Participant {participant:02d} | {sequence['label']} | sample {sample}\nID: {sequence['id']}", fontsize=9)
         axis.set_xlabel("Camera x")
         axis.grid(alpha=0.15)
         groups.append(create_artists(axis))
