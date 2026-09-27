@@ -1,0 +1,22 @@
+{
+  "FAMILY": 0,
+  "FRIEND": 1,
+  "HELLO": 2,
+  "HELP": 3,
+  "HOW": 4,
+  "NO": 5,
+  "PLEASE": 6,
+  "SORRY": 7,
+  "STAY": 8,
+  "THANK_YOU": 9,
+  "WAIT": 10,
+  "WAVE_GREETING": 11,
+  "WELCOME": 12,
+  "WHAT": 13,
+  "WHEN": 14,
+  "WHERE": 15,
+  "WHICH": 16,
+  "WHO": 17,
+  "WHY": 18,
+  "YES": 19
+}

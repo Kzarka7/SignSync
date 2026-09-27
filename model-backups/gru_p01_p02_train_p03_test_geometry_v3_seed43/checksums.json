@@ -1,0 +1,19 @@
+{
+  ".gitattributes": "3885bd3e619e099168711493bca660b45b34ce5f274f461a48d5fd20f4c0910b",
+  "best_model.keras": "3395850b5f9af6a4b312ca392d652401c153d842ece1088de032f366a7590ebd",
+  "confusion_matrix.png": "fdc8a537526db47a7595a321de2ef2ae910450d9399ee9b1a41e4bf8cdd92ddd",
+  "environment.json": "41259a481b2e552d5ed33db2063030b6303b5c611f1436f6589dd1679a5f82b5",
+  "evaluation_summary.json": "bbce04393f2baceee9cdeb978f4c9ab754400ed438bd361518b3a3995b3d07c3",
+  "labels.json": "1e3ed9199c0e3ab3d61f54333312a9f4515d8ad6d62fc54d86cb80107fa7dcd2",
+  "normalization.npz": "c93c664174263cb9a4c8142ecc04a94b6bc237157e4d76af32af783e4af29983",
+  "preprocessing.json": "45daa332ab5f06abd0bdb03c13099f675f54551fbead2a3827dae914665329fb",
+  "README.md": "b26a5f5780fca17e66ace403570a15a2891b4273b72ee8e87816e1bfe4a8f40d",
+  "source/gesture_geometry.py": "ae096ebd300ffa7b5e1c30a95633ccac4b9068eeaf7380fbf97eb7bd4c747454",
+  "source/model_paths.py": "cd2d7f7aae58324431cd3e53ac7a9534a7994c24c81b210f356b9f580b1efa78",
+  "source/normalize.ts": "266fa86ec4588b05fc5f8963ba1ba4e9e007fb49d293747cd889f24772caff96",
+  "source/prepare_geometry_experiments.py": "69a29a5c0210ba513498fb6cc41b96eb44271b2b23b510705e9c2efcf2ffb645",
+  "source/prepare_handshape_experiments.py": "13677523038e43642f4be3df29c7880ecbfcec663cbffa63bf30fda629049b27",
+  "source/preprocess_dataset.py": "a89053f9e86254b07cce0156980f849a38f4282381037f7346bec52bbccb0647",
+  "source/train_gru.py": "bdadad22dc7c2151ce799af6c63301714f16ce4a29524838bebeec7328bdb765",
+  "training_history.png": "9481146f64b1c3704490bf85fbfc8f63f99a1213341df2a5f0ccbecbeb75bf21"
+}
