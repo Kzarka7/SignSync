@@ -1,0 +1,83 @@
+[
+  {
+    "run": "gru_p01_p02_train_p03_test_geometry_v3",
+    "correct": 352,
+    "total": 400,
+    "accuracy": 0.88,
+    "macroF1": 0.8507018842272134,
+    "normalizationMatches": true,
+    "savedMetricsMatch": true
+  },
+  {
+    "run": "gru_p01_p02_train_p03_test_geometry_v3_seed43",
+    "correct": 357,
+    "total": 400,
+    "accuracy": 0.8925,
+    "macroF1": 0.8754284377652649,
+    "normalizationMatches": true,
+    "savedMetricsMatch": true
+  },
+  {
+    "run": "gru_p01_p02_train_p03_test_geometry_v3_seed44",
+    "correct": 343,
+    "total": 400,
+    "accuracy": 0.8575,
+    "macroF1": 0.8330917961099622,
+    "normalizationMatches": true,
+    "savedMetricsMatch": true
+  },
+  {
+    "run": "gru_p01_p03_train_p02_test_geometry_v3",
+    "correct": 314,
+    "total": 400,
+    "accuracy": 0.785,
+    "macroF1": 0.7416027123796786,
+    "normalizationMatches": true,
+    "savedMetricsMatch": true
+  },
+  {
+    "run": "gru_p01_p03_train_p02_test_geometry_v3_seed43",
+    "correct": 312,
+    "total": 400,
+    "accuracy": 0.78,
+    "macroF1": 0.759923861772067,
+    "normalizationMatches": true,
+    "savedMetricsMatch": true
+  },
+  {
+    "run": "gru_p01_p03_train_p02_test_geometry_v3_seed44",
+    "correct": 312,
+    "total": 400,
+    "accuracy": 0.78,
+    "macroF1": 0.7494996546403245,
+    "normalizationMatches": true,
+    "savedMetricsMatch": true
+  },
+  {
+    "run": "gru_p02_p03_train_p01_test_geometry_v3",
+    "correct": 301,
+    "total": 400,
+    "accuracy": 0.7525,
+    "macroF1": 0.7473157055903064,
+    "normalizationMatches": true,
+    "savedMetricsMatch": true
+  },
+  {
+    "run": "gru_p02_p03_train_p01_test_geometry_v3_seed43",
+    "correct": 326,
+    "total": 400,
+    "accuracy": 0.815,
+    "macroF1": 0.8069654765055315,
+    "normalizationMatches": true,
+    "savedMetricsMatch": true
+  },
+  {
+    "run": "gru_p02_p03_train_p01_test_geometry_v3_seed44",
+    "correct": 284,
+    "total": 400,
+    "accuracy": 0.71,
+    "macroF1": 0.6874672605819613,
+    "normalizationMatches": true,
+    "savedMetricsMatch": true
+  }
+]

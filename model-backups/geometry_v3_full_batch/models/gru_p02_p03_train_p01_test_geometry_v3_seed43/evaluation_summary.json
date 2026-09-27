@@ -1,0 +1,153 @@
+{
+  "experiment": "gru_p02_p03_train_p01_test_geometry_v3",
+  "runName": "gru_p02_p03_train_p01_test_geometry_v3_seed43",
+  "trainingParticipants": [
+    "participant_02",
+    "participant_03"
+  ],
+  "testParticipant": "participant_01",
+  "randomSeed": 43,
+  "epochsLimit": 100,
+  "batchSize": 16,
+  "testLoss": 0.5995491147041321,
+  "testAccuracy": 0.8149999976158142,
+  "macroPrecision": 0.8448712090157569,
+  "macroRecall": 0.8150000000000001,
+  "macroF1": 0.8069654765055315,
+  "classificationReport": {
+    "FAMILY": {
+      "precision": 1.0,
+      "recall": 0.95,
+      "f1-score": 0.9743589743589743,
+      "support": 20.0
+    },
+    "FRIEND": {
+      "precision": 0.7647058823529411,
+      "recall": 0.65,
+      "f1-score": 0.7027027027027027,
+      "support": 20.0
+    },
+    "HELLO": {
+      "precision": 1.0,
+      "recall": 0.75,
+      "f1-score": 0.8571428571428571,
+      "support": 20.0
+    },
+    "HELP": {
+      "precision": 1.0,
+      "recall": 0.85,
+      "f1-score": 0.918918918918919,
+      "support": 20.0
+    },
+    "HOW": {
+      "precision": 1.0,
+      "recall": 0.95,
+      "f1-score": 0.9743589743589743,
+      "support": 20.0
+    },
+    "NO": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 20.0
+    },
+    "PLEASE": {
+      "precision": 0.875,
+      "recall": 0.7,
+      "f1-score": 0.7777777777777778,
+      "support": 20.0
+    },
+    "SORRY": {
+      "precision": 0.9523809523809523,
+      "recall": 1.0,
+      "f1-score": 0.975609756097561,
+      "support": 20.0
+    },
+    "STAY": {
+      "precision": 1.0,
+      "recall": 0.6,
+      "f1-score": 0.75,
+      "support": 20.0
+    },
+    "THANK_YOU": {
+      "precision": 0.25,
+      "recall": 0.05,
+      "f1-score": 0.08333333333333333,
+      "support": 20.0
+    },
+    "WAIT": {
+      "precision": 1.0,
+      "recall": 0.8,
+      "f1-score": 0.8888888888888888,
+      "support": 20.0
+    },
+    "WAVE_GREETING": {
+      "precision": 0.625,
+      "recall": 1.0,
+      "f1-score": 0.7692307692307693,
+      "support": 20.0
+    },
+    "WELCOME": {
+      "precision": 0.8333333333333334,
+      "recall": 1.0,
+      "f1-score": 0.9090909090909091,
+      "support": 20.0
+    },
+    "WHAT": {
+      "precision": 0.9523809523809523,
+      "recall": 1.0,
+      "f1-score": 0.975609756097561,
+      "support": 20.0
+    },
+    "WHEN": {
+      "precision": 0.8181818181818182,
+      "recall": 0.45,
+      "f1-score": 0.5806451612903226,
+      "support": 20.0
+    },
+    "WHERE": {
+      "precision": 0.4878048780487805,
+      "recall": 1.0,
+      "f1-score": 0.6557377049180327,
+      "support": 20.0
+    },
+    "WHICH": {
+      "precision": 1.0,
+      "recall": 0.85,
+      "f1-score": 0.918918918918919,
+      "support": 20.0
+    },
+    "WHO": {
+      "precision": 0.475,
+      "recall": 0.95,
+      "f1-score": 0.6333333333333333,
+      "support": 20.0
+    },
+    "WHY": {
+      "precision": 1.0,
+      "recall": 0.8,
+      "f1-score": 0.8888888888888888,
+      "support": 20.0
+    },
+    "YES": {
+      "precision": 0.8636363636363636,
+      "recall": 0.95,
+      "f1-score": 0.9047619047619048,
+      "support": 20.0
+    },
+    "accuracy": 0.815,
+    "macro avg": {
+      "precision": 0.8448712090157569,
+      "recall": 0.8150000000000001,
+      "f1-score": 0.8069654765055315,
+      "support": 400.0
+    },
+    "weighted avg": {
+      "precision": 0.8448712090157571,
+      "recall": 0.815,
+      "f1-score": 0.8069654765055314,
+      "support": 400.0
+    }
+  },
+  "testSampleCount": 400
+}

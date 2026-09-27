@@ -1,0 +1,153 @@
+{
+  "experiment": "gru_p01_p02_train_p03_test_geometry_v3",
+  "runName": "gru_p01_p02_train_p03_test_geometry_v3",
+  "trainingParticipants": [
+    "participant_01",
+    "participant_02"
+  ],
+  "testParticipant": "participant_03",
+  "randomSeed": 42,
+  "epochsLimit": 100,
+  "batchSize": 16,
+  "testLoss": 0.8505486249923706,
+  "testAccuracy": 0.8799999952316284,
+  "macroPrecision": 0.9167867036100568,
+  "macroRecall": 0.8800000000000001,
+  "macroF1": 0.8507018842272134,
+  "classificationReport": {
+    "FAMILY": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 20.0
+    },
+    "FRIEND": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 20.0
+    },
+    "HELLO": {
+      "precision": 0.6666666666666666,
+      "recall": 1.0,
+      "f1-score": 0.8,
+      "support": 20.0
+    },
+    "HELP": {
+      "precision": 1.0,
+      "recall": 0.95,
+      "f1-score": 0.9743589743589743,
+      "support": 20.0
+    },
+    "HOW": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 20.0
+    },
+    "NO": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 20.0
+    },
+    "PLEASE": {
+      "precision": 0.6896551724137931,
+      "recall": 1.0,
+      "f1-score": 0.8163265306122449,
+      "support": 20.0
+    },
+    "SORRY": {
+      "precision": 0.7692307692307693,
+      "recall": 1.0,
+      "f1-score": 0.8695652173913043,
+      "support": 20.0
+    },
+    "STAY": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 20.0
+    },
+    "THANK_YOU": {
+      "precision": 1.0,
+      "recall": 0.05,
+      "f1-score": 0.09523809523809523,
+      "support": 20.0
+    },
+    "WAIT": {
+      "precision": 0.5882352941176471,
+      "recall": 1.0,
+      "f1-score": 0.7407407407407407,
+      "support": 20.0
+    },
+    "WAVE_GREETING": {
+      "precision": 1.0,
+      "recall": 0.3,
+      "f1-score": 0.46153846153846156,
+      "support": 20.0
+    },
+    "WELCOME": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 20.0
+    },
+    "WHAT": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 20.0
+    },
+    "WHEN": {
+      "precision": 0.8,
+      "recall": 1.0,
+      "f1-score": 0.8888888888888888,
+      "support": 20.0
+    },
+    "WHERE": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 20.0
+    },
+    "WHICH": {
+      "precision": 0.9523809523809523,
+      "recall": 1.0,
+      "f1-score": 0.975609756097561,
+      "support": 20.0
+    },
+    "WHO": {
+      "precision": 1.0,
+      "recall": 0.3,
+      "f1-score": 0.46153846153846156,
+      "support": 20.0
+    },
+    "WHY": {
+      "precision": 0.8695652173913043,
+      "recall": 1.0,
+      "f1-score": 0.9302325581395349,
+      "support": 20.0
+    },
+    "YES": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 20.0
+    },
+    "accuracy": 0.88,
+    "macro avg": {
+      "precision": 0.9167867036100568,
+      "recall": 0.8800000000000001,
+      "f1-score": 0.8507018842272134,
+      "support": 400.0
+    },
+    "weighted avg": {
+      "precision": 0.9167867036100565,
+      "recall": 0.88,
+      "f1-score": 0.8507018842272133,
+      "support": 400.0
+    }
+  },
+  "testSampleCount": 400
+}

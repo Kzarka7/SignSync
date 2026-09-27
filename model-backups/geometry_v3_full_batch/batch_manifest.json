@@ -1,0 +1,107 @@
+{
+  "batch": "full_geometry_v3",
+  "includesRepeatedStartingFeatures": true,
+  "featureCount": 238,
+  "runCount": 9,
+  "runs": [
+    {
+      "run": "gru_p01_p02_train_p03_test_geometry_v3",
+      "seed": 42,
+      "model": "models/gru_p01_p02_train_p03_test_geometry_v3/best_model.keras",
+      "preprocessing": "preprocessing/gru_p01_p02_train_p03_test_geometry_v3",
+      "originalModelSha256": "4930b77e7f2ce70905ab6dfa1d18e5da29d7056d6aa357555e8ac920d1f272af",
+      "testParticipant": "participant_03",
+      "accuracy": 0.8799999952316284,
+      "macroF1": 0.8507018842272134,
+      "loss": 0.8505486249923706
+    },
+    {
+      "run": "gru_p01_p02_train_p03_test_geometry_v3_seed43",
+      "seed": 43,
+      "model": "models/gru_p01_p02_train_p03_test_geometry_v3_seed43/best_model.keras",
+      "preprocessing": "preprocessing/gru_p01_p02_train_p03_test_geometry_v3",
+      "originalModelSha256": "3395850b5f9af6a4b312ca392d652401c153d842ece1088de032f366a7590ebd",
+      "testParticipant": "participant_03",
+      "accuracy": 0.8924999833106995,
+      "macroF1": 0.8754284377652649,
+      "loss": 0.4857160151004791
+    },
+    {
+      "run": "gru_p01_p02_train_p03_test_geometry_v3_seed44",
+      "seed": 44,
+      "model": "models/gru_p01_p02_train_p03_test_geometry_v3_seed44/best_model.keras",
+      "preprocessing": "preprocessing/gru_p01_p02_train_p03_test_geometry_v3",
+      "originalModelSha256": "174e6573f441f34f9d881a4d0bd6e23041e612ff746b27b30eca20f7349a6c04",
+      "testParticipant": "participant_03",
+      "accuracy": 0.8575000166893005,
+      "macroF1": 0.8330917961099622,
+      "loss": 0.9424518346786499
+    },
+    {
+      "run": "gru_p01_p03_train_p02_test_geometry_v3",
+      "seed": 42,
+      "model": "models/gru_p01_p03_train_p02_test_geometry_v3/best_model.keras",
+      "preprocessing": "preprocessing/gru_p01_p03_train_p02_test_geometry_v3",
+      "originalModelSha256": "c034ae15461f57324575b7dbd08ff9ca11577b523f674e0e700a9e067f3f6851",
+      "testParticipant": "participant_02",
+      "accuracy": 0.7850000262260437,
+      "macroF1": 0.7416027123796786,
+      "loss": 0.7870451211929321
+    },
+    {
+      "run": "gru_p01_p03_train_p02_test_geometry_v3_seed43",
+      "seed": 43,
+      "model": "models/gru_p01_p03_train_p02_test_geometry_v3_seed43/best_model.keras",
+      "preprocessing": "preprocessing/gru_p01_p03_train_p02_test_geometry_v3",
+      "originalModelSha256": "9120ef17b8a214d444c502d3e0480fc3ab8314defd9339923d6305992b842f19",
+      "testParticipant": "participant_02",
+      "accuracy": 0.7799999713897705,
+      "macroF1": 0.759923861772067,
+      "loss": 0.8970059156417847
+    },
+    {
+      "run": "gru_p01_p03_train_p02_test_geometry_v3_seed44",
+      "seed": 44,
+      "model": "models/gru_p01_p03_train_p02_test_geometry_v3_seed44/best_model.keras",
+      "preprocessing": "preprocessing/gru_p01_p03_train_p02_test_geometry_v3",
+      "originalModelSha256": "b690e6e308a3a9b1dcaa54995feac71e41fffec0dc32fc26e1d49daf91273630",
+      "testParticipant": "participant_02",
+      "accuracy": 0.7799999713897705,
+      "macroF1": 0.7494996546403245,
+      "loss": 1.415297269821167
+    },
+    {
+      "run": "gru_p02_p03_train_p01_test_geometry_v3",
+      "seed": 42,
+      "model": "models/gru_p02_p03_train_p01_test_geometry_v3/best_model.keras",
+      "preprocessing": "preprocessing/gru_p02_p03_train_p01_test_geometry_v3",
+      "originalModelSha256": "b75b88e60fe8db38f5ec6c6f9deb8b4e5ef684692da9cf54575d4a7dd5e06649",
+      "testParticipant": "participant_01",
+      "accuracy": 0.7524999976158142,
+      "macroF1": 0.7473157055903064,
+      "loss": 0.7065595984458923
+    },
+    {
+      "run": "gru_p02_p03_train_p01_test_geometry_v3_seed43",
+      "seed": 43,
+      "model": "models/gru_p02_p03_train_p01_test_geometry_v3_seed43/best_model.keras",
+      "preprocessing": "preprocessing/gru_p02_p03_train_p01_test_geometry_v3",
+      "originalModelSha256": "f4db429befba6b39e978ac59debf784d7db6ff8c22fda218d0e6dcde352d718a",
+      "testParticipant": "participant_01",
+      "accuracy": 0.8149999976158142,
+      "macroF1": 0.8069654765055315,
+      "loss": 0.5995491147041321
+    },
+    {
+      "run": "gru_p02_p03_train_p01_test_geometry_v3_seed44",
+      "seed": 44,
+      "model": "models/gru_p02_p03_train_p01_test_geometry_v3_seed44/best_model.keras",
+      "preprocessing": "preprocessing/gru_p02_p03_train_p01_test_geometry_v3",
+      "originalModelSha256": "5395ea26017ad04cbef87e1c94bc63860ba13d7acd03a162db2bc0cf18ce2b62",
+      "testParticipant": "participant_01",
+      "accuracy": 0.7099999785423279,
+      "macroF1": 0.6874672605819613,
+      "loss": 1.4156864881515503
+    }
+  ]
+}
