@@ -49,6 +49,8 @@ EXPERIMENTS = {
 # Separate handshape experiments use the same architecture and training settings.
 EXPERIMENTS.update({name.replace('_v1', '_handshape_v2'): dict(config)
                     for name, config in list(EXPERIMENTS.items()) if name.endswith('_v1')})
+EXPERIMENTS.update({name.replace('_v1', '_geometry_v3'): dict(config)
+                    for name, config in list(EXPERIMENTS.items()) if name.endswith('_v1')})
 
 parser = argparse.ArgumentParser(
     description="Train a SignSync GRU participant-independent experiment."
@@ -76,6 +78,9 @@ DATASET_FOLDER = PROJECT_FOLDER.parent / "SignSync Dataset"
 PREPROCESSED_FOLDER = DATASET_FOLDER / "processed" / EXPERIMENT_NAME
 RUN_NAME = EXPERIMENT_NAME if RANDOM_SEED == 42 else f"{EXPERIMENT_NAME}_seed{RANDOM_SEED}"
 MODEL_FOLDER = DATASET_FOLDER / "models" / RUN_NAME
+if EXPERIMENT_NAME.endswith('_geometry_v3'):
+    from model_paths import geometry_model_folder
+    MODEL_FOLDER = geometry_model_folder(DATASET_FOLDER / 'models', RUN_NAME)
 
 DATA_PATH = PREPROCESSED_FOLDER / "gru_data.npz"
 METADATA_PATH = PREPROCESSED_FOLDER / "metadata.json"

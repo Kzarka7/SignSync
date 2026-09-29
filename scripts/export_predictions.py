@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+from model_paths import find_model_folder
 
 
 EXPERIMENTS = (
@@ -25,7 +26,21 @@ EXPERIMENTS = (
     "gru_p02_p03_train_p01_test_v1",
 )
 HANDSHAPE_EXPERIMENTS = tuple(name.replace("_v1", "_handshape_v2") for name in EXPERIMENTS)
+GEOMETRY_EXPERIMENTS = tuple(name.replace("_v1", "_geometry_v3") for name in EXPERIMENTS)
 DATASET_FOLDER = Path(__file__).resolve().parent.parent.parent / "SignSync Dataset"
+
+
+def write_excel_csv(path: Path, rows: list[dict]) -> None:
+    """Write a standard comma-separated UTF-8 CSV for Excel."""
+    with path.open("x", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=list(rows[0]),
+            delimiter=",",
+            lineterminator="\r\n",
+        )
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def prediction_rows(metadata, y_test, probabilities, experiment):
@@ -60,7 +75,7 @@ def prediction_rows(metadata, y_test, probabilities, experiment):
 def export_experiment(experiment, output, load_model, seed=42):
     processed = DATASET_FOLDER / "processed" / experiment
     run_name = experiment if seed == 42 else f"{experiment}_seed{seed}"
-    model_folder = DATASET_FOLDER / "models" / run_name
+    model_folder = find_model_folder(DATASET_FOLDER / "models", run_name)
     metadata_path = processed / "metadata.json"
     data_path = processed / "gru_data.npz"
     model_path = model_folder / "best_model.keras"
@@ -91,10 +106,7 @@ def export_experiment(experiment, output, load_model, seed=42):
         saved = evaluation["classificationReport"][label]
         matches &= bool(np.isclose(recall, saved["recall"]) and np.isclose(precision, saved["precision"]) and actual.sum() == saved["support"])
     csv_path = output / f"{run_name}.csv"
-    with csv_path.open("x", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
-        writer.writeheader()
-        writer.writerows(rows)
+    write_excel_csv(csv_path, rows)
     print(f"{run_name}: {correct}/{len(rows)} correct; saved metrics match: {matches}")
     if not matches:
         print("  WARNING: predictions differ from original evaluation metrics. Treat this as a new inference report.")
@@ -142,21 +154,22 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument("--all", action="store_true", help="Export all three participant-held-out experiments")
-    selection.add_argument("--experiment", choices=EXPERIMENTS + HANDSHAPE_EXPERIMENTS)
-    parser.add_argument("--feature-set", choices=("baseline", "handshape"), default="baseline", help="Experiment family for --all (default: baseline)")
+    selection.add_argument("--experiment", choices=EXPERIMENTS + HANDSHAPE_EXPERIMENTS + GEOMETRY_EXPERIMENTS)
+    parser.add_argument("--feature-set", choices=("baseline", "handshape", "geometry"), default="baseline", help="Experiment family for --all (default: baseline)")
     parser.add_argument("--seeds", nargs="+", type=int, default=[42], help="Saved training seeds to export (default: 42); two or more also creates consistency.csv")
     args = parser.parse_args()
     if len(set(args.seeds)) != len(args.seeds) or any(s < 0 or s >= 2**32 for s in args.seeds):
         parser.error("Seeds must be distinct integers between 0 and 4294967295")
     if args.experiment and args.feature_set != "baseline":
         parser.error("Use --feature-set with --all; --experiment already identifies the feature set")
-    experiments = (HANDSHAPE_EXPERIMENTS if args.feature_set == "handshape" else EXPERIMENTS) if args.all else (args.experiment,)
+    families = {"baseline": EXPERIMENTS, "handshape": HANDSHAPE_EXPERIMENTS, "geometry": GEOMETRY_EXPERIMENTS}
+    experiments = families[args.feature_set] if args.all else (args.experiment,)
     # Fail before creating output folders if a requested saved run is missing.
     for experiment in experiments:
         for seed in args.seeds:
             name = experiment if seed == 42 else f"{experiment}_seed{seed}"
             for filename in ("best_model.keras", "evaluation.json"):
-                path = DATASET_FOLDER / "models" / name / filename
+                path = find_model_folder(DATASET_FOLDER / "models", name) / filename
                 if not path.is_file():
                     parser.error(f"Missing saved run file: {path}")
     import tensorflow as tf
@@ -175,10 +188,7 @@ def main():
         if len(args.seeds) > 1:
             consistency.extend(compare_seed_rows(seed_rows))
     if consistency:
-        with (output / "consistency.csv").open("x", encoding="utf-8-sig", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(consistency[0]))
-            writer.writeheader()
-            writer.writerows(consistency)
+        write_excel_csv(output / "consistency.csv", consistency)
         print(f"Across requested seeds: {output / 'consistency.csv'}")
     (output / "summary.json").write_text(json.dumps(summaries, indent=2), encoding="utf-8")
     print("Filter actual_sign=SORRY and correct=no in the CSV to find failed SORRY samples.")

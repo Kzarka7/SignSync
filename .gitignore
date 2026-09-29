@@ -7,3 +7,8 @@
 *.pyc
 .agents/
 skills-lock.json
+
+# Generated model backups and ML binary artifacts; keep source scripts tracked.
+/model-backups/
+*.keras
+*.npz
