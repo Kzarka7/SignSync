@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams } from 'react-router-dom'
 import Sidebar from './components/layout/Sidebar'
 import DashboardPage from './pages/DashboardPage'
 import SessionSetupPage from './pages/SessionSetupPage'
@@ -9,6 +9,11 @@ import HistoryPage from './pages/HistoryPage'
 import FAQPage from './pages/FAQPage'
 import SettingsPage from './pages/SettingsPage'
 import DatasetCollectorPage from './pages/DatasetCollectorPage'
+
+function LegacySummaryRedirect() {
+  const { sessionId } = useParams()
+  return <Navigate to={`/summary/${encodeURIComponent(sessionId ?? '')}`} replace />
+}
 
 export default function App() {
   const [isCollapsed, setIsCollapsed] = useState(
@@ -31,6 +36,8 @@ export default function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/setup" element={<SessionSetupPage />} />
+          <Route path="/session-setup" element={<Navigate to="/setup" replace />} />
+          <Route path="/session-summary/:sessionId" element={<LegacySummaryRedirect />} />
           <Route path="/live" element={<LiveConversationPage />} />
           <Route path="/summary/:sessionId" element={<SessionSummaryPage />} />
           <Route path="/dataset-collector" element={<DatasetCollectorPage />} />

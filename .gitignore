@@ -5,6 +5,13 @@
 **/.venv*/
 **/__pycache__/
 *.pyc
-/model-backups/
+*.tsbuildinfo
 .agents/
 skills-lock.json
+
+# Generated model backups and ML binary artifacts; keep source scripts tracked.
+/model-backups/
+/model-releases/
+*.keras
+*.h5
+*.npz

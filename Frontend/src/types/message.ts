@@ -29,10 +29,27 @@ export interface ConversationMessage {
 
 // The envelope the future WebSocket stream will emit. Kept separate from
 // ConversationMessage so transport-level fields never leak into UI state.
-export interface TranslationSocketEvent {
-  type: 'translation' | 'status' | 'error'
-  payload: ConversationMessage | DeviceStatusEvent | { message: string }
+export interface SignRequest {
+  requestId: string
+  featureOrder: string[]
+  frames: { timestamp: number; features: number[]; valid: boolean }[]
 }
+
+export interface SignPrediction {
+  requestId: string
+  label: string
+  score: number
+  accepted: boolean
+  inferenceMs: number
+  frameCount: number
+  top3: { label: string; score: number }[]
+  model: string
+}
+
+export type TranslationSocketEvent =
+  | { type: 'prediction'; payload: SignPrediction }
+  | { type: 'status'; payload: { state: 'loading' | 'ready' | 'disconnected'; message: string } }
+  | { type: 'error'; payload: { requestId?: string; message: string } }
 
 export interface DeviceStatusEvent {
   camera?: string
