@@ -2,8 +2,9 @@
 **/.env
 **/node_modules/
 **/dist/
-**/.venv/
+**/.venv*/
 **/__pycache__/
 *.pyc
+/model-backups/
 .agents/
 skills-lock.json
