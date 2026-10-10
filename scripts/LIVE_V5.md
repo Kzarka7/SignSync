@@ -23,13 +23,13 @@ npm run dev
 
 Open http://localhost:5173, begin a conversation through Setup, start the camera,
 and wait for recognition to say Ready. Click Record sign; prepare during the
-two-second countdown, perform one complete sign, then click Finish sign.
+selected 1s, 3s, or 5s countdown (default 3s), shown over the camera, perform one complete sign, then click Finish sign.
 Capture automatically finishes after eight seconds or 240 frames. Cancel discards
 the recording. Review the top three predictions, score, and inference time.
 Add sign to conversation inserts it once; intentional repeats require a new recording.
 Ending the session saves the confirmed transcript in existing local history.
 
-Keyboard shortcuts: Space starts the two-second preparation or finishes an active
+Keyboard shortcuts: Space starts the selected preparation delay or finishes an active
 recording; Esc discards a countdown or recording. Holding Space does not toggle
 repeatedly. Shortcuts are ignored while typing, and other buttons keep their
 normal keyboard behavior. Space during the countdown does not skip preparation.

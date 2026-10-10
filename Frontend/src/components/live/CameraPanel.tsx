@@ -15,6 +15,7 @@ const STATUS_DOT: Record<CameraStatus, string> = {
 
 interface CameraPanelProps {
   feed: CameraFeedState
+  countdown?: number | null
   // Speech/avatar activity, owned by LiveConversationPage (same instances
   // AvatarPanel renders from) - passed in rather than re-derived here so
   // there's a single source of truth for what the system is doing.
@@ -38,7 +39,7 @@ function resolveStatus(feed: CameraFeedState, isListening: boolean, isInterpreti
 // useCameraFeed. Hands, face, and light are all real detection now;
 // microphone/speaker/AI status still come from the mocked/REST device
 // snapshot (see DetectionStatusPanel).
-export default function CameraPanel({ feed, isListening, isInterpreting, isPlaying }: CameraPanelProps) {
+export default function CameraPanel({ feed, isListening, isInterpreting, isPlaying, countdown = null }: CameraPanelProps) {
   const handsWarning = feed.enabled && !feed.error && !feed.modelError && !feed.handsDetected
   const lightWarning = feed.enabled && !feed.error && !feed.modelError && feed.lightLevel === 'warning'
   const status = resolveStatus(feed, isListening, isInterpreting, isPlaying)
@@ -91,6 +92,13 @@ export default function CameraPanel({ feed, isListening, isInterpreting, isPlayi
               </div>
             )}
           </>
+        )}
+
+        {countdown !== null && feed.enabled && feed.cameraReady && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 pointer-events-none" role="status" aria-live="polite" aria-atomic="true">
+            <span className="sr-only">Recording starts in </span>
+            <span className="text-white font-bold text-8xl drop-shadow-lg tabular-nums">{countdown}</span>
+          </div>
         )}
 
         {feed.enabled && feed.cameraReady && (

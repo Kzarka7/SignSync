@@ -78,6 +78,7 @@ export default function LiveConversationPage() {
           <div className="flex flex-col gap-4">
             <CameraPanel
               feed={feed}
+              countdown={capture.countdown}
               isListening={speech.isListening}
               isInterpreting={avatar.isRendering}
               isPlaying={avatar.isPlaying}

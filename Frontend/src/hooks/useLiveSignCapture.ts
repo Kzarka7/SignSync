@@ -7,20 +7,23 @@ import type { SignRequest } from '../types/message'
 export function useLiveSignCapture(sendSign: (request: SignRequest) => boolean, ready: boolean) {
   const [phase, setPhase] = useState<'idle' | 'countdown' | 'recording'>('idle')
   const [count, setCount] = useState(0)
+  const [countdown, setCountdown] = useState<number | null>(null)
+  const [countdownSeconds, setCountdownSeconds] = useState(3)
   const [error, setError] = useState<string | null>(null)
   const buffer = useRef<SignRequest['frames']>([])
   const recording = useRef(false)
-  const countdown = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const countdownTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const limit = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const cancel = useCallback(() => {
     recording.current = false
-    if (countdown.current) clearTimeout(countdown.current)
+    if (countdownTimer.current) clearInterval(countdownTimer.current)
     if (limit.current) clearTimeout(limit.current)
-    countdown.current = null
+    countdownTimer.current = null
     limit.current = null
     buffer.current = []
     setPhase('idle')
+    setCountdown(null)
     setCount(0)
   }, [])
 
@@ -52,7 +55,7 @@ export function useLiveSignCapture(sendSign: (request: SignRequest) => boolean, 
   }, [feed.enabled, feed.error, feed.modelError, ready, cancel])
   useEffect(() => () => {
     recording.current = false
-    if (countdown.current) clearTimeout(countdown.current)
+    if (countdownTimer.current) clearInterval(countdownTimer.current)
     if (limit.current) clearTimeout(limit.current)
   }, [])
 
@@ -60,14 +63,24 @@ export function useLiveSignCapture(sendSign: (request: SignRequest) => boolean, 
     if (!ready || !feed.cameraReady || !feed.poseDetected || phase !== 'idle') return
     setError(null)
     setPhase('countdown')
-    countdown.current = setTimeout(() => {
-      countdown.current = null
+    let remaining = countdownSeconds
+    setCountdown(remaining)
+    countdownTimer.current = setInterval(() => {
+      remaining -= 1
+      if (remaining > 0) {
+        setCountdown(remaining)
+        return
+      }
+      if (countdownTimer.current) clearInterval(countdownTimer.current)
+      countdownTimer.current = null
+      setCountdown(null)
       buffer.current = []
       recording.current = true
       setPhase('recording')
       limit.current = setTimeout(() => finishRef.current(), 8000)
-    }, 2000)
+    }, 1000)
   }
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
@@ -91,5 +104,8 @@ export function useLiveSignCapture(sendSign: (request: SignRequest) => boolean, 
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [phase, start, finish, cancel])
 
-  return { feed, phase, count, error, start, finish, cancel }
+  return { feed, phase, count, countdown, countdownSeconds,
+    setCountdownSeconds: (seconds: number) => {
+      if (phase === 'idle' && [1, 3, 5].includes(seconds)) setCountdownSeconds(seconds)
+    }, error, start, finish, cancel }
 }
