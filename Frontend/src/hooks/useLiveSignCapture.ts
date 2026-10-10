@@ -68,5 +68,28 @@ export function useLiveSignCapture(sendSign: (request: SignRequest) => boolean, 
       limit.current = setTimeout(() => finishRef.current(), 8000)
     }, 2000)
   }
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      const target = event.target instanceof HTMLElement ? event.target : null
+      if (target?.isContentEditable || target?.closest('input, textarea, select, [role="textbox"], [role="combobox"], [role="dialog"]')) return
+
+      if (event.code === 'Space' || event.key === ' ') {
+        // Keep native Space behavior on other controls; capture buttons are
+        // handled here to prevent the same keypress also triggering a click.
+        if (target?.closest('button, a, [role="button"], [role="slider"]') && !target.closest('[data-sign-capture-control]')) return
+        event.preventDefault()
+        if (event.repeat) return
+        if (phase === 'idle') start()
+        else if (phase === 'recording') finish()
+      } else if (event.key === 'Escape' && phase !== 'idle') {
+        event.preventDefault()
+        if (!event.repeat) cancel()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [phase, start, finish, cancel])
+
   return { feed, phase, count, error, start, finish, cancel }
 }
