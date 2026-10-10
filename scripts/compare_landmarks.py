@@ -6,8 +6,8 @@ Examples (run from the SignSync project folder):
     python scripts/compare_landmarks.py --label HELP --participants 1 3 --samples 3 7
     python scripts/compare_landmarks.py --label SORRY --sample-a 3 --sample-b 7 --sample-c 2
     python scripts/compare_landmarks.py --label FAMILY --label-c HELP --sample-a 2 --sample-b 5 --sample-c 3
-    python scripts/compare_landmarks.py --label PLEASE --label-b SORRY --samples 1 1 1  
-    python .\scripts\compare_landmarks.py --label HELP --sample-a 6 --sample-b 6 --label-c FAMILY --sample-c 6  
+    python scripts/compare_landmarks.py --label PLEASE --label-b SORRY --samples 1 1 1
+    python .\scripts\compare_landmarks.py --label HELP --sample-a 6 --sample-b 6 --label-c FAMILY --sample-c 6
     python scripts/compare_landmarks.py --label HELP --id-c 015e578e-6e63-4f96-b204-97f66bfd4e4d
     python scripts/compare_landmarks.py --label SORRY --raw-frames
     python scripts/compare_landmarks.py --label WHICH --save-gif which-comparison.gif

@@ -1,81 +1,65 @@
 import asyncio
 import json
 import logging
-
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-
-from app.data.messages import MESSAGES
+from pydantic import ValidationError
+from app.recognition import SignRequest, get_recognizer
 from app.ws.manager import manager
 
 router = APIRouter()
-logger = logging.getLogger("signsync.ws")
-
-# How often a new translated utterance is pushed to the client. Matches
-# the 4-second cadence of the frontend's MockTranslationSocket, purely so
-# the demo "feels" the same once the real socket takes over. Once the ML
-# pipeline exists, replace the timed loop below with pipeline callbacks -
-# push a translation event immediately whenever the model produces one.
-EMIT_INTERVAL_SECONDS = 20
+logger = logging.getLogger('signsync.ws')
 
 
-@router.websocket("/ws/translate")
+@router.websocket('/ws/translate')
 async def translate_socket(websocket: WebSocket):
     await manager.connect(websocket)
-
-    async def send_demo_translations():
-        """Stand-in for the ML pipeline. Loops the same four demo
-        messages the frontend mock uses, forever, so a fresh connection
-        behaves identically to MockTranslationSocket. Delete this
-        function once MediaPipe (sign->text) and a speech-to-text engine
-        are producing real ConversationMessage events - call
-        `await websocket.send_json(...)` from those callbacks instead."""
-        index = 0
-        while True:
-            await asyncio.sleep(EMIT_INTERVAL_SECONDS)
-            message = MESSAGES[index % len(MESSAGES)]
-            event = {"type": "translation", "payload": message.model_dump()}
-            await websocket.send_text(json.dumps(event))
-            index += 1
-
-    async def receive_control_messages():
-        """Handles everything the client sends: today that's
-        { type: 'control', action: 'end-session' | 'export' } from
-        RealTranslationSocket.sendControl(). `action` is intentionally
-        treated as an open string - a future submit-speech action (see
-        the frontend AvatarPanel mic/submit flow) can be handled here by
-        adding another `elif action == "submit-speech":` branch, without
-        changing the message envelope or the frontend socket contract."""
+    try:
+        await websocket.send_json({'type': 'status', 'payload': {'state': 'loading', 'message': 'Loading v5 recognition...'}})
+        try:
+            recognizer = await asyncio.to_thread(get_recognizer)
+        except Exception:
+            logger.exception('Unable to load v5 artifacts')
+            await websocket.send_json({'type': 'error', 'payload': {'message': 'V5 model unavailable. Check backend dependencies and the SignSync Dataset folder.'}})
+            await websocket.close(code=1011)
+            return
+        await websocket.send_json({'type': 'status', 'payload': {
+            'state': 'ready', 'message': 'V5 recognition ready', 'model': 'v5-nine-run-ensemble',
+            'runs': [member[0] for member in recognizer.members],
+        }})
+        seen = set()
         while True:
             raw = await websocket.receive_text()
+            if len(raw) > 2_000_000:
+                await websocket.close(code=1009)
+                return
+            request_id = None
             try:
                 data = json.loads(raw)
-            except json.JSONDecodeError:
-                logger.warning("Received non-JSON WS message: %s", raw)
-                continue
-
-            if data.get("type") != "control":
-                continue
-
-            action = data.get("action")
-            logger.info("Control action received: %s", action)
-
-            if action == "end-session":
-                # Hook point: persist the session, close out ML resources.
-                pass
-            elif action == "export":
-                # Hook point: generate the export artifact (PDF/JSON) and
-                # notify the client, e.g. via a `{ type: 'status', ... }`
-                # event once that's part of the contract.
-                pass
-
-    send_task = asyncio.create_task(send_demo_translations())
-    receive_task = asyncio.create_task(receive_control_messages())
-
-    try:
-        await asyncio.gather(send_task, receive_task)
+                if not isinstance(data, dict):
+                    raise ValueError('Expected a request object.')
+                if data.get('type') == 'control':
+                    if data.get('action') == 'end-session':
+                        await websocket.close(code=1000)
+                        return
+                    continue
+                if data.get('type') != 'sign':
+                    raise ValueError('Unknown recognition request.')
+                request = SignRequest.model_validate(data.get('payload'))
+                request_id = request.requestId
+                if request_id in seen:
+                    raise ValueError('This recording has already been processed.')
+                if len(seen) >= 1000:
+                    raise ValueError('Session limit reached. Start a new conversation.')
+                result = await asyncio.to_thread(recognizer.predict, request)
+                seen.add(request_id)
+                await websocket.send_json({'type': 'prediction', 'payload': result})
+            except ValueError as exc:
+                message = 'Malformed recording. Record the sign again.' if isinstance(exc, ValidationError) else str(exc)
+                await websocket.send_json({'type': 'error', 'payload': {'requestId': request_id, 'message': message}})
+            except Exception:
+                logger.exception('V5 inference failed')
+                await websocket.send_json({'type': 'error', 'payload': {'requestId': request_id, 'message': 'Recognition failed. Please try again.'}})
     except WebSocketDisconnect:
-        logger.info("Client disconnected from /ws/translate")
+        logger.info('Recognition client disconnected')
     finally:
-        send_task.cancel()
-        receive_task.cancel()
         manager.disconnect(websocket)

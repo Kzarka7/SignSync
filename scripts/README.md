@@ -28,3 +28,8 @@ Run the checks with:
 ```powershell
 python -m unittest discover -s scripts -p "test_*.py"
 ```
+
+## Live conversation
+
+See [LIVE_V5.md](LIVE_V5.md) for the v5 camera-to-conversation setup, artifact
+requirements, model choice, development limitations, and integration checks.
