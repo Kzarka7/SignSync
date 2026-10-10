@@ -1,7 +1,7 @@
 """Check that cross-evaluation uses the supplied model's fitted scaling."""
 import unittest
 import numpy as np
-from run_recordings_v2_experiments import standardize_for_model
+from historical.run_recordings_v2_experiments import standardize_for_model
 
 
 class NormalizationTests(unittest.TestCase):

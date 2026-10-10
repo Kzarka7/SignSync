@@ -1,10 +1,10 @@
-"""Train full geometry v3 on the FRIEND/WHERE replacement recordings.
+"""Train full geometry v3 on replacement recordings and compare on identical tests.
 
 Run --prepare-only to build/verify tensors. Otherwise trains nine runs, resumes
-completed evaluations, then compares saved v2 models and retrained models on
-the same v3 samples.
+completed evaluations, then exports old/new predictions on the same v2 samples.
 """
 import argparse
+from collections import Counter
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -13,16 +13,19 @@ from pathlib import Path
 import subprocess
 import sys
 
+SCRIPT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPT_DIR))
+
 import numpy as np
 from prepare_handshape_experiments import ROOT, BASELINES, handshape, resample_shape
 from prepare_handshape_experiments import prepare as prepare_handshape
 from prepare_geometry_experiments import prepare as prepare_geometry
 from gesture_geometry import geometry, resample as resample_geometry, feature_names
 from preprocess_dataset import resample_sequence
-from model_paths import find_model_folder, recordings_v3_model_folder
+from model_paths import find_model_folder, recordings_v2_model_folder
 
-TARGETS = {'FRIEND', 'WHERE'}
-OUTPUT = ROOT/'models'/'geometry_v3_recordings_v3_comparison'
+TARGETS = {'THANK_YOU', 'SORRY', 'PLEASE', 'WAIT', 'WAVE_GREETING'}
+OUTPUT = ROOT/'models'/'geometry_v3_recordings_v2_comparison'
 
 
 def read_json(path):
@@ -35,7 +38,7 @@ def digest(path):
 
 
 def run_script(name, args, log_path):
-    script = Path(__file__).with_name(name)
+    script = SCRIPT_DIR / name
     code = 'import sys,runpy;sys.path[:0]='+repr(sys.path)+';sys.argv='+repr([name, *args])+';runpy.run_path('+repr(str(script))+',run_name="__main__")'
     with log_path.open('w', encoding='utf-8') as log:
         result = subprocess.run([sys.executable, '-u', '-c', code], stdout=log,
@@ -55,13 +58,13 @@ def verify_sources(meta, expected):
 
 
 def prepare(base):
-    reference = base.replace('_v1', '_geometry_v3_recordings_v2')
+    reference = base.replace('_v1', '_geometry_v3')
     old = read_json(ROOT/'processed'/reference/'metadata.json')
-    raw_name = base.replace('_v1', '_recordings_v3')
-    shape_name = base.replace('_v1', '_handshape_v2_recordings_v3')
-    experiment = base.replace('_v1', '_geometry_v3_recordings_v3')
+    raw_name = base.replace('_v1', '_recordings_v2')
+    shape_name = base.replace('_v1', '_handshape_v2_recordings_v2')
+    experiment = reference+'_recordings_v2'
     participants = old['trainingParticipants']+[old['testParticipant']]
-    sources = [(ROOT/'processed'/(p+'-dataset-v3.json')).resolve() for p in participants]
+    sources = [(ROOT/'processed'/(p+'-dataset-v2.json')).resolve() for p in participants]
     hashes = {str(p): digest(p) for p in sources}
     raw_folder = ROOT/'processed'/raw_name
     if not raw_folder.exists():
@@ -87,8 +90,8 @@ def prepare(base):
     old_ids = set().union(*map(set, old['sequenceIds'].values()))
     new_ids = set().union(*map(set, meta['sequenceIds'].values()))
     common = old_ids & new_ids
-    if len(common) != 1120:
-        raise ValueError('Expected 1,120 retained recordings and 80 replacements')
+    if len(common) != 900:
+        raise ValueError('Expected 900 retained recordings and 300 replacements')
     for split, count in [('training', 640), ('validation', 160), ('test', 400)]:
         if len(meta['sequenceIds'][split]) != count:
             raise ValueError('Unexpected split size')
@@ -133,25 +136,25 @@ def metrics(y, probabilities, labels):
 def report_results(rows, predictions_folder):
     (OUTPUT/'comparison.json').write_text(json.dumps(rows, indent=2), encoding='utf-8')
     lines = ['# Replacement recordings: full geometry v3', '',
-             'Saved v2 and retrained v3 models evaluated on identical v3 held-out samples. Each uses its own training-fitted normalization. Architecture, 238 feature definitions and seeds 42/43/44 are unchanged. P1/P2 FRIEND and WHERE were replaced; P3 recordings and other signs remain identical. Retained recordings keep their original splits. This is development evaluation; visual review and manifest updates remain pending.', '',
+             'Old and retrained models evaluated on the identical 400 v2 held-out samples per participant. Each uses its own training-fitted normalization. Architecture, 238 feature definitions and training seeds are unchanged. The 15 retained signs keep their original split assignments. Three participants repeatedly used for development; visual review and manifest updates are pending.', '',
              '| Test participant | Seed | Old model accuracy | Retrained accuracy | Old loss | Retrained loss | Old macro F1 | Retrained macro F1 |',
              '|---|---:|---:|---:|---:|---:|---:|---:|']
     for r in rows:
-        a,b=r['old_on_v3'],r['new_on_v3']
+        a,b=r['old_on_v2'],r['new_on_v2']
         lines.append(f"| {r['participant']} | {r['seed']} | {a['testAccuracy']:.2%} | {b['testAccuracy']:.2%} | {a['testLoss']:.4f} | {b['testLoss']:.4f} | {a['macroF1']:.4f} | {b['macroF1']:.4f} |")
     lines += ['', '## Means across seeds', '', '| Participant | Runs | Old accuracy | Retrained accuracy | Old macro F1 | Retrained macro F1 |', '|---|---:|---:|---:|---:|---:|']
     for p in sorted({r['participant'] for r in rows})+['ALL']:
         subset=[r for r in rows if p=='ALL' or r['participant']==p]
         avg=lambda v,k:sum(r[v][k] for r in subset)/len(subset)
-        lines.append(f"| {p} | {len(subset)} | {avg('old_on_v3','testAccuracy'):.2%} | {avg('new_on_v3','testAccuracy'):.2%} | {avg('old_on_v3','macroF1'):.4f} | {avg('new_on_v3','macroF1'):.4f} |")
+        lines.append(f"| {p} | {len(subset)} | {avg('old_on_v2','testAccuracy'):.2%} | {avg('new_on_v2','testAccuracy'):.2%} | {avg('old_on_v2','macroF1'):.4f} | {avg('new_on_v2','macroF1'):.4f} |")
     lines += ['', '## Every sign, correct out of 20', '', '| Participant | Seed | Sign | Old | Retrained | Change |', '|---|---:|---|---:|---:|---:|']
     for r in rows:
-        for label in sorted(r['old_on_v3']['classificationReport']):
+        for label in sorted(r['old_on_v2']['classificationReport']):
             if label not in r['labels']: continue
-            a,b=[round(r[v]['classificationReport'][label]['recall']*20) for v in ('old_on_v3','new_on_v3')]
+            a,b=[round(r[v]['classificationReport'][label]['recall']*20) for v in ('old_on_v2','new_on_v2')]
             lines.append(f"| {r['participant']} | {r['seed']} | {label} | {a} | {b} | {b-a:+d} |")
     lines += ['', 'Predictions: '+str(predictions_folder), '',
-              'Loss uses sklearn log_loss for both sides. Historical v2-model results are retained in comparison.json for context, but the paired comparison uses identical v3 test samples. Input reconstruction is checked against retained v2 test tensors before saved-model inference.']
+              'Loss uses sklearn log_loss for both sides. Historical old-model results are retained in comparison.json for context, but came from a different test set. Input reconstruction is checked against retained historical test tensors before old-model inference.']
     (OUTPUT/'report.md').write_text('\n'.join(lines)+'\n', encoding='utf-8')
 
 
@@ -164,7 +167,7 @@ def compare(experiments):
     for experiment in experiments:
         folder=ROOT/'processed'/experiment
         meta=read_json(folder/'metadata.json')
-        reference=experiment.removesuffix('_recordings_v3')+'_recordings_v2'
+        reference=experiment.removesuffix('_recordings_v2')
         old_folder=ROOT/'processed'/reference
         old_meta=read_json(old_folder/'metadata.json')
         source=read_json(Path(meta['testSource']))
@@ -179,14 +182,13 @@ def compare(experiments):
             old_x=standardize_for_model(raw,d['feature_mean'],d['feature_std'])
             old_index={sid:i for i,sid in enumerate(old_meta['sequenceIds']['test'])}
             common=[(i,old_index[sid]) for i,sid in enumerate(meta['sequenceIds']['test']) if sid in old_index]
-            expected_common=400 if meta['testParticipant']=='participant_03' else 360
-            if len(common)!=expected_common: raise ValueError('Unexpected unchanged test recording count')
+            if len(common)!=300: raise ValueError('Expected 300 unchanged test recordings')
             np.testing.assert_allclose(old_x[[a for a,b in common]], d['X_test'][[b for a,b in common]], rtol=2e-5, atol=2e-4)
         seed_rows={}
         for seed in (42,43,44):
             suffix='' if seed==42 else f'_seed{seed}'
             run=experiment+suffix
-            new_folder=recordings_v3_model_folder(ROOT/'models',run)
+            new_folder=recordings_v2_model_folder(ROOT/'models',run)
             old_model_folder=find_model_folder(ROOT/'models',reference+suffix)
             old_eval=read_json(old_model_folder/'evaluation.json')
             new_eval=read_json(new_folder/'evaluation.json')
@@ -194,20 +196,20 @@ def compare(experiments):
                 raise ValueError('Saved model preprocessing metadata mismatch')
             row=dict(participant=meta['testParticipant'],seed=seed,labels=labels,
                      old_historical={k:old_eval[k] for k in ('testAccuracy','testLoss','macroF1')})
-            for version,model_folder,x in [('old_on_v3',old_model_folder,old_x),('new_on_v3',new_folder,new_x)]:
+            for version,model_folder,x in [('old_on_v2',old_model_folder,old_x),('new_on_v2',new_folder,new_x)]:
                 model=tf.keras.models.load_model(model_folder/'best_model.keras',compile=False)
                 probs=np.asarray(model.predict(x,batch_size=16,verbose=0))
                 row[version]=metrics(y,probs,labels)
                 row[version]['subsetAccuracy']={group:float(np.mean(probs[mask].argmax(axis=1)==y[mask])) for group,mask in
                     [('replacement_signs',np.isin(y,[meta['labelToIndex'][s] for s in TARGETS])),
                      ('retained_signs',~np.isin(y,[meta['labelToIndex'][s] for s in TARGETS]))]}
-                model_experiment=experiment if version=='new_on_v3' else reference
+                model_experiment=experiment if version=='new_on_v2' else reference
                 model_run=model_experiment+suffix
                 pred=prediction_rows(meta,y,probs,model_experiment)
                 for item in pred: item.update(seed=seed,run_name=model_run)
-                filename=run if version=='new_on_v3' else 'old_on_v3__'+reference+suffix
+                filename=run if version=='new_on_v2' else 'old_on_v2__'+reference+suffix
                 write_excel_csv(predictions_folder/(filename+'.csv'),pred)
-                if version=='new_on_v3':
+                if version=='new_on_v2':
                     matches=all(np.isclose(row[version][k],new_eval[k]) for k in ('testAccuracy','macroF1'))
                     if not matches: raise ValueError('New inference does not reproduce saved metrics')
                     seed_rows[seed]=pred
@@ -215,7 +217,7 @@ def compare(experiments):
                 del model
                 tf.keras.backend.clear_session()
             rows.append(row);report_results(rows,predictions_folder)
-            print('Compared',run,'old/new accuracy',row['old_on_v3']['testAccuracy'],row['new_on_v3']['testAccuracy'],flush=True)
+            print('Compared',run,'old/new accuracy',row['old_on_v2']['testAccuracy'],row['new_on_v2']['testAccuracy'],flush=True)
         consistency.extend(compare_seed_rows(seed_rows))
     write_excel_csv(predictions_folder/'consistency.csv',consistency)
     (predictions_folder/'summary.json').write_text(json.dumps(summaries,indent=2),encoding='utf-8')
@@ -229,10 +231,10 @@ def main():
     OUTPUT.mkdir(exist_ok=True)
     protected={}
     for base in BASELINES:
-        reference=base.replace('_v1','_geometry_v3_recordings_v2')
+        reference=base.replace('_v1','_geometry_v3')
         meta=read_json(ROOT/'processed'/reference/'metadata.json')
         for path,h in meta['sourceSha256'].items():
-            if digest(Path(path))!=h: raise ValueError('V2 source changed: '+path)
+            if digest(Path(path))!=h: raise ValueError('Original source changed: '+path)
             protected[path]=h
         for seed in (42,43,44):
             run=reference+('' if seed==42 else f'_seed{seed}')
@@ -242,10 +244,8 @@ def main():
             for name in ('best_model.keras','evaluation.json'):
                 p=folder/name;protected[str(p)]=digest(p)
     for i in (1,2,3):
-        p=(ROOT/'processed'/f'participant_{i:02d}-dataset-v3.json').resolve()
+        p=(ROOT/'processed'/f'participant_{i:02d}-dataset-v2.json').resolve()
         protected[str(p)]=digest(p)
-    manifest=(ROOT/'manifests'/'samples.csv').resolve()
-    protected[str(manifest)]=digest(manifest)
     provenance=OUTPUT/'source_and_reference_hashes.json'
     if provenance.exists() and read_json(provenance)!=protected: raise ValueError('Experiment source/reference changed since first run')
     provenance.write_text(json.dumps(protected,indent=2),encoding='utf-8')
@@ -255,7 +255,7 @@ def main():
         meta=read_json(ROOT/'processed'/experiment/'metadata.json')
         for seed in (42,43,44):
             run=experiment+('' if seed==42 else f'_seed{seed}')
-            result=recordings_v3_model_folder(ROOT/'models',run)/'evaluation.json'
+            result=recordings_v2_model_folder(ROOT/'models',run)/'evaluation.json'
             if not result.exists():
                 print('Training',run,flush=True)
                 run_script('train_gru.py',['--experiment',experiment,'--seed',str(seed)],OUTPUT/(run+'.log'))

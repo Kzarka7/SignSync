@@ -1,7 +1,7 @@
 """Verify the ablation removes orientation only, including its starting copy."""
 import unittest
 from gesture_geometry import feature_names
-from run_orientation_ablation import retained_indices
+from historical.run_orientation_ablation import retained_indices
 
 
 class OrientationAblationTests(unittest.TestCase):

@@ -31,8 +31,8 @@ Flagged P2 elbow tracking and P3 projected wrist-bend questions remain unresolve
 the user authorized exploratory retraining with this batch on 2026-10-08.
 
 ```powershell
-python .\scripts\run_recordings_v4_experiments.py --prepare-only
-python .\scripts\run_recordings_v4_experiments.py
+python .\scripts\historical\run_recordings_v4_experiments.py --prepare-only
+python .\scripts\historical\run_recordings_v4_experiments.py
 python .\scripts\export_predictions.py --all --feature-set geometry-recordings-v4 --seeds 42 43 44
 ```
 
@@ -59,7 +59,7 @@ From the project root with the GRU Python environment active:
 python .\scripts\prepare_geometry_experiments.py
 
 # Train missing runs, reuse completed runs, and write the nine-run comparison.
-python .\scripts\run_geometry_experiments.py
+python .\scripts\historical\run_geometry_experiments.py
 
 # Export predictions from the saved full-v3 models across all three seeds.
 python .\scripts\export_predictions.py --all --feature-set geometry --seeds 42 43 44
@@ -77,8 +77,8 @@ Source scripts belong in Git. Model checkpoints, NumPy tensors, virtual environm
 `run_orientation_ablation.py` derives 222-channel inputs from the existing full-v3 tensors. It removes the 16 explicit per-frame/first-observed palm-normal channels and their validity flags. Starting handshape and wrist/position features remain; raw landmarks still contain implicit orientation information. Splits, labels and retained normalization are unchanged. It does not overwrite full-v3 models.
 
 ```powershell
-python .\scripts\run_orientation_ablation.py --prepare-only
-python .\scripts\run_orientation_ablation.py
+python .\scripts\historical\run_orientation_ablation.py --prepare-only
+python .\scripts\historical\run_orientation_ablation.py
 python .\scripts\export_predictions.py --all --feature-set geometry-no-orientation --seeds 42 43 44
 ```
 
@@ -89,8 +89,8 @@ Prepared tensors use the `_geometry_v3_no_orientation` experiment suffix. Model 
 This comparison removes only eight added channels: wrist alignment cosine, signed wrist-bend sine, thumb-to-shoulder XY distance and wrist validity for each hand. It retains all starting handshape and orientation channels. Raw landmarks still carry implicit wrist/position information. The input width is 230, with identical retained values, normalization, labels and splits.
 
 ```powershell
-python .\scripts\run_wrist_position_ablation.py --prepare-only
-python .\scripts\run_wrist_position_ablation.py
+python .\scripts\historical\run_wrist_position_ablation.py --prepare-only
+python .\scripts\historical\run_wrist_position_ablation.py
 python .\scripts\export_predictions.py --all --feature-set geometry-no-wrist-position --seeds 42 43 44
 ```
 
@@ -101,8 +101,8 @@ Outputs use the `_geometry_v3_no_wrist_position` suffix and are grouped under `m
 Adds 20 channels to full v3 (258 total): four individual MCP cosines and four DIP cosines per hand, with separate validity flags for each group of four. Existing PIP curl and the averaged MCP feature remain. These are projected XY measurements, not calibrated anatomical angles; thumb geometry is unchanged. Features are computed on original frames before masked resampling and standardized using only the training subset. No extra starting-handshape copies are added. All original 238 values, sample IDs and splits are preserved.
 
 ```powershell
-python .\scripts\run_finger_joint_experiments.py --prepare-only
-python .\scripts\run_finger_joint_experiments.py
+python .\scripts\historical\run_finger_joint_experiments.py --prepare-only
+python .\scripts\historical\run_finger_joint_experiments.py
 python .\scripts\export_predictions.py --all --feature-set geometry-finger-joints --seeds 42 43 44
 ```
 
@@ -113,8 +113,8 @@ Models are grouped under `models/gru_model_train_test_geometry_v3_finger_joints`
 Uses the three `processed/participant_XX-dataset-v2.json` exports: 15 retained signs plus replacement recordings for THANK_YOU, SORRY, PLEASE, WAIT and WAVE_GREETING. Full geometry v3 remains 238 channels. The runner verifies that the retained 900 recordings keep their original splits, and prepares 640 training, 160 validation and 400 test samples for each participant holdout. Training-only normalization is refitted for the new training data. The manifest is not used or modified; this remains preliminary until recording review is complete.
 
 ```powershell
-python .\scripts\run_recordings_v2_experiments.py --prepare-only
-python .\scripts\run_recordings_v2_experiments.py
+python .\scripts\historical\run_recordings_v2_experiments.py --prepare-only
+python .\scripts\historical\run_recordings_v2_experiments.py
 python .\scripts\export_predictions.py --all --feature-set geometry-recordings-v2 --seeds 42 43 44
 ```
 
@@ -127,8 +127,8 @@ Outputs are grouped under `models/gru_model_train_test_geometry_v3_recordings_v2
 The three `processed/participant_XX-dataset-v3.json` exports replace 20 FRIEND and 20 WHERE recordings for P1 and P2. P3 is unchanged. Full geometry v3 retains the same 238 channels and training settings. The 1,120 retained recordings must keep their prior split assignments. The manifest remains on v2 until visual review of the new recordings is finished.
 
 ```powershell
-python .\scripts\run_recordings_v3_experiments.py --prepare-only
-python .\scripts\run_recordings_v3_experiments.py
+python .\scripts\historical\run_recordings_v3_experiments.py --prepare-only
+python .\scripts\historical\run_recordings_v3_experiments.py
 python .\scripts\export_predictions.py --all --feature-set geometry-recordings-v3 --seeds 42 43 44
 ```
 

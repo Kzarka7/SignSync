@@ -4,6 +4,9 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+
+SCRIPT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPT_DIR))
 from prepare_handshape_experiments import ROOT, BASELINES
 from model_paths import find_model_folder, geometry_model_folder
 
@@ -40,7 +43,7 @@ def main():
             result=geometry_model_folder(ROOT/'models',run)/'evaluation.json'
             if not result.exists():
                 print('Training',run,flush=True)
-                code='import sys,runpy; sys.path[:0]='+repr(sys.path)+'; sys.argv='+repr(['train_gru.py','--experiment',experiment,'--seed',str(seed)])+'; runpy.run_path('+repr(str(Path(__file__).with_name('train_gru.py')))+',run_name="__main__")'
+                code='import sys,runpy; sys.path[:0]='+repr(sys.path)+'; sys.argv='+repr(['train_gru.py','--experiment',experiment,'--seed',str(seed)])+'; runpy.run_path('+repr(str(SCRIPT_DIR / 'train_gru.py'))+',run_name="__main__")'
                 with (output/(run+'.log')).open('w',encoding='utf-8') as log:
                     subprocess.run([sys.executable,'-u','-c',code],stdout=log,stderr=subprocess.STDOUT,check=True,env=dict(os.environ,MPLBACKEND='Agg'))
             new=json.loads(result.read_text())

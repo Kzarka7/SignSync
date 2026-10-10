@@ -7,6 +7,9 @@ from pathlib import Path
 import subprocess
 import sys
 
+SCRIPT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPT_DIR))
+
 import numpy as np
 from prepare_finger_joint_experiments import prepare
 from model_paths import find_model_folder, finger_joint_model_folder
@@ -70,7 +73,7 @@ def main():
             result=finger_joint_model_folder(ROOT/'models',run)/'evaluation.json'
             if not result.exists():
                 print('Training',run,flush=True)
-                code='import sys,runpy; sys.path[:0]='+repr(sys.path)+'; sys.argv='+repr(['train_gru.py','--experiment',experiment,'--seed',str(seed)])+'; runpy.run_path('+repr(str(Path(__file__).with_name('train_gru.py')))+',run_name="__main__")'
+                code='import sys,runpy; sys.path[:0]='+repr(sys.path)+'; sys.argv='+repr(['train_gru.py','--experiment',experiment,'--seed',str(seed)])+'; runpy.run_path('+repr(str(SCRIPT_DIR / 'train_gru.py'))+',run_name="__main__")'
                 log_path=output/(run+'.log')
                 with log_path.open('w',encoding='utf-8') as log:
                     completed=subprocess.run([sys.executable,'-u','-c',code],stdout=log,stderr=subprocess.STDOUT,env=dict(os.environ,MPLBACKEND='Agg'))

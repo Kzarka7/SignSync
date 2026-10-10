@@ -1,7 +1,7 @@
 """The wrist/position removal must preserve all orientation and start channels."""
 import unittest
 from gesture_geometry import feature_names
-from run_wrist_position_ablation import retained_indices
+from historical.run_wrist_position_ablation import retained_indices
 
 
 class WristPositionAblationTests(unittest.TestCase):
