@@ -29,6 +29,11 @@ the recording. Review the top three predictions, score, and inference time.
 Add sign to conversation inserts it once; intentional repeats require a new recording.
 Ending the session saves the confirmed transcript in existing local history.
 
+Keyboard shortcuts: Space starts the two-second preparation or finishes an active
+recording; Esc discards a countdown or recording. Holding Space does not toggle
+repeatedly. Shortcuts are ignored while typing, and other buttons keep their
+normal keyboard behavior. Space during the countdown does not skip preparation.
+
 Recognition always connects to `VITE_WS_URL` (default
 `ws://localhost:8000/ws/translate`), independently of `VITE_USE_MOCKS` for the
 other app data. Timed demo translations have been removed. Reconnect is available

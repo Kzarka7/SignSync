@@ -16,16 +16,17 @@ export default function SignRecognitionPanel({ capture, stream }: {
       <p className="text-sm text-text-2">Start the camera, record one sign after the two-second preparation, then finish. Recording stops automatically after eight seconds. Review the result before adding it.</p>
       <div className="flex flex-wrap items-center gap-2">
         {capture.phase === 'idle' ? (
-          <button className="rounded-lg bg-trust px-4 py-2 text-white disabled:opacity-40" disabled={!canStart} onClick={capture.start}>Record sign</button>
+          <button data-sign-capture-control aria-keyshortcuts="Space" className="rounded-lg bg-trust px-4 py-2 text-white disabled:opacity-40" disabled={!canStart} onClick={capture.start}>Record sign</button>
         ) : (
           <>
-            <button className="rounded-lg bg-trust px-4 py-2 text-white disabled:opacity-40" disabled={capture.phase !== 'recording'} onClick={capture.finish}>{capture.phase === 'countdown' ? 'Get readyâ€¦' : 'Finish sign'}</button>
-            <button className="rounded-lg border px-3 py-2" onClick={capture.cancel}>Cancel</button>
+            <button data-sign-capture-control aria-keyshortcuts="Space" className="rounded-lg bg-trust px-4 py-2 text-white disabled:opacity-40" disabled={capture.phase !== 'recording'} onClick={capture.finish}>{capture.phase === 'countdown' ? 'Get readyâ€¦' : 'Finish sign'}</button>
+            <button data-sign-capture-control aria-keyshortcuts="Escape" className="rounded-lg border px-3 py-2" onClick={capture.cancel}>Cancel</button>
             <span className="text-sm" role="status">{capture.phase === 'recording' ? `Recording Â· ${capture.count} frames` : 'Recording begins in two seconds'}</span>
           </>
         )}
         {stream.connection === 'disconnected' && <button className="rounded-lg border px-3 py-2" onClick={stream.reconnect}>Reconnect</button>}
       </div>
+      <p className="text-xs text-text-2">Shortcuts: Space starts or finishes recording; Esc cancels the countdown or recording. Shortcuts pause while typing.</p>
       {capture.feed.cameraReady && !capture.feed.poseDetected && <p className="text-sm">Keep both shoulders in view to enable recognition.</p>}
       {(stream.error || capture.error) && <p role="alert" className="text-sm text-danger">{stream.error || capture.error}</p>}
       {prediction && capture.phase === 'idle' && (
