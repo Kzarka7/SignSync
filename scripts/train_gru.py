@@ -51,6 +51,24 @@ EXPERIMENTS.update({name.replace('_v1', '_handshape_v2'): dict(config)
                     for name, config in list(EXPERIMENTS.items()) if name.endswith('_v1')})
 EXPERIMENTS.update({name.replace('_v1', '_geometry_v3'): dict(config)
                     for name, config in list(EXPERIMENTS.items()) if name.endswith('_v1')})
+EXPERIMENTS.update({name + '_no_orientation': dict(config)
+                    for name, config in list(EXPERIMENTS.items()) if name.endswith('_geometry_v3')})
+EXPERIMENTS.update({name + '_no_wrist_position': dict(config)
+                    for name, config in list(EXPERIMENTS.items()) if name.endswith('_geometry_v3')})
+
+EXPERIMENTS.update({name + '_finger_joints': dict(config)
+                    for name, config in list(EXPERIMENTS.items()) if name.endswith('_geometry_v3')})
+
+EXPERIMENTS.update({name + '_recordings_v2': dict(config)
+                    for name, config in list(EXPERIMENTS.items()) if name.endswith('_geometry_v3')})
+
+EXPERIMENTS.update({name + '_recordings_v3': dict(config)
+                    for name, config in list(EXPERIMENTS.items()) if name.endswith('_geometry_v3')})
+
+EXPERIMENTS.update({name + '_recordings_v4': dict(config)
+                    for name, config in list(EXPERIMENTS.items()) if name.endswith('_geometry_v3')})
+EXPERIMENTS.update({name + '_recordings_v5': dict(config)
+                    for name, config in list(EXPERIMENTS.items()) if name.endswith('_geometry_v3')})
 
 parser = argparse.ArgumentParser(
     description="Train a SignSync GRU participant-independent experiment."
@@ -81,6 +99,34 @@ MODEL_FOLDER = DATASET_FOLDER / "models" / RUN_NAME
 if EXPERIMENT_NAME.endswith('_geometry_v3'):
     from model_paths import geometry_model_folder
     MODEL_FOLDER = geometry_model_folder(DATASET_FOLDER / 'models', RUN_NAME)
+elif EXPERIMENT_NAME.endswith('_geometry_v3_no_orientation'):
+    from model_paths import orientation_ablation_folder
+    MODEL_FOLDER = orientation_ablation_folder(DATASET_FOLDER / 'models', RUN_NAME)
+elif EXPERIMENT_NAME.endswith('_geometry_v3_no_wrist_position'):
+    from model_paths import wrist_position_ablation_folder
+    MODEL_FOLDER = wrist_position_ablation_folder(DATASET_FOLDER / 'models', RUN_NAME)
+
+if EXPERIMENT_NAME.endswith('_geometry_v3_finger_joints'):
+    from model_paths import finger_joint_model_folder
+    MODEL_FOLDER = finger_joint_model_folder(DATASET_FOLDER / 'models', RUN_NAME)
+
+if EXPERIMENT_NAME.endswith('_geometry_v3_recordings_v2'):
+    from model_paths import recordings_v2_model_folder
+    MODEL_FOLDER = recordings_v2_model_folder(DATASET_FOLDER / 'models', RUN_NAME)
+
+if EXPERIMENT_NAME.endswith('_geometry_v3_recordings_v3'):
+    from model_paths import recordings_v3_model_folder
+    MODEL_FOLDER = recordings_v3_model_folder(DATASET_FOLDER / 'models', RUN_NAME)
+
+if EXPERIMENT_NAME.endswith('_geometry_v3_recordings_v4'):
+    from model_paths import recordings_v4_model_folder
+    MODEL_FOLDER = recordings_v4_model_folder(DATASET_FOLDER / 'models', RUN_NAME)
+
+if EXPERIMENT_NAME.endswith('_geometry_v3_recordings_v5'):
+    from model_paths import recordings_v5_model_folder
+    MODEL_FOLDER = recordings_v5_model_folder(DATASET_FOLDER / 'models', RUN_NAME)
+
+CHECKPOINT_NAME = 'best_model.h5' if EXPERIMENT_NAME.endswith(('_geometry_v3_recordings_v4', '_geometry_v3_recordings_v5')) else 'best_model.keras'
 
 DATA_PATH = PREPROCESSED_FOLDER / "gru_data.npz"
 METADATA_PATH = PREPROCESSED_FOLDER / "metadata.json"
@@ -242,7 +288,7 @@ callbacks = [
         verbose=1,
     ),
     tf.keras.callbacks.ModelCheckpoint(
-        filepath=MODEL_FOLDER / "best_model.keras",
+        filepath=MODEL_FOLDER / CHECKPOINT_NAME,
         monitor="val_loss",
         save_best_only=True,
         verbose=1,
@@ -391,7 +437,7 @@ plt.close(figure)
 
 
 print("\nSaved outputs")
-print(MODEL_FOLDER / "best_model.keras")
+print(MODEL_FOLDER / CHECKPOINT_NAME)
 print(MODEL_FOLDER / "evaluation.json")
 print(MODEL_FOLDER / "training_history.png")
 print(MODEL_FOLDER / "confusion_matrix.png")

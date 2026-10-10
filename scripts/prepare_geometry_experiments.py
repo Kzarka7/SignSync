@@ -7,10 +7,10 @@ from prepare_handshape_experiments import ROOT, BASELINES
 from gesture_geometry import geometry, resample, feature_names
 
 
-def prepare(base):
-    previous=base.replace('_v1','_handshape_v2')
+def prepare(base, source_name=None, target_name=None):
+    previous=source_name or base.replace('_v1','_handshape_v2')
     source=ROOT/'processed'/previous
-    target=ROOT/'processed'/base.replace('_v1','_geometry_v3')
+    target=ROOT/'processed'/(target_name or base.replace('_v1','_geometry_v3'))
     if target.exists():
         raise FileExistsError(target)
     meta=json.loads((source/'metadata.json').read_text())

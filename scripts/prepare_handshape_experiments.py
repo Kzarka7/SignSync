@@ -43,9 +43,9 @@ def resample_shape(values, length):
         out[valid,start]=1
     return out
 
-def prepare(base):
+def prepare(base, target_name=None):
     source=ROOT/'processed'/base
-    target=ROOT/'processed'/base.replace('_v1','_handshape_v2')
+    target=ROOT/'processed'/(target_name or base.replace('_v1','_handshape_v2'))
     if target.exists():
         raise FileExistsError(target)
     meta=json.loads((source/'metadata.json').read_text())

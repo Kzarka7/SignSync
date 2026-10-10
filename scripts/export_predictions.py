@@ -27,7 +27,14 @@ EXPERIMENTS = (
 )
 HANDSHAPE_EXPERIMENTS = tuple(name.replace("_v1", "_handshape_v2") for name in EXPERIMENTS)
 GEOMETRY_EXPERIMENTS = tuple(name.replace("_v1", "_geometry_v3") for name in EXPERIMENTS)
+NO_ORIENTATION_EXPERIMENTS = tuple(name + "_no_orientation" for name in GEOMETRY_EXPERIMENTS)
+NO_WRIST_POSITION_EXPERIMENTS = tuple(name + "_no_wrist_position" for name in GEOMETRY_EXPERIMENTS)
 DATASET_FOLDER = Path(__file__).resolve().parent.parent.parent / "SignSync Dataset"
+FINGER_JOINT_EXPERIMENTS = tuple(name + '_finger_joints' for name in GEOMETRY_EXPERIMENTS)
+RECORDINGS_V2_EXPERIMENTS = tuple(name + '_recordings_v2' for name in GEOMETRY_EXPERIMENTS)
+RECORDINGS_V3_EXPERIMENTS = tuple(name + '_recordings_v3' for name in GEOMETRY_EXPERIMENTS)
+RECORDINGS_V4_EXPERIMENTS = tuple(name + '_recordings_v4' for name in GEOMETRY_EXPERIMENTS)
+RECORDINGS_V5_EXPERIMENTS = tuple(name + '_recordings_v5' for name in GEOMETRY_EXPERIMENTS)
 
 
 def write_excel_csv(path: Path, rows: list[dict]) -> None:
@@ -78,7 +85,7 @@ def export_experiment(experiment, output, load_model, seed=42):
     model_folder = find_model_folder(DATASET_FOLDER / "models", run_name)
     metadata_path = processed / "metadata.json"
     data_path = processed / "gru_data.npz"
-    model_path = model_folder / "best_model.keras"
+    model_path = model_folder / ("best_model.h5" if experiment in RECORDINGS_V4_EXPERIMENTS + RECORDINGS_V5_EXPERIMENTS else "best_model.keras")
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     evaluation = json.loads((model_folder / "evaluation.json").read_text(encoding="utf-8"))
     if evaluation.get("randomSeed") != seed:
@@ -154,21 +161,27 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument("--all", action="store_true", help="Export all three participant-held-out experiments")
-    selection.add_argument("--experiment", choices=EXPERIMENTS + HANDSHAPE_EXPERIMENTS + GEOMETRY_EXPERIMENTS)
-    parser.add_argument("--feature-set", choices=("baseline", "handshape", "geometry"), default="baseline", help="Experiment family for --all (default: baseline)")
+    selection.add_argument("--experiment", choices=EXPERIMENTS + HANDSHAPE_EXPERIMENTS + GEOMETRY_EXPERIMENTS + NO_ORIENTATION_EXPERIMENTS + NO_WRIST_POSITION_EXPERIMENTS + FINGER_JOINT_EXPERIMENTS + RECORDINGS_V2_EXPERIMENTS + RECORDINGS_V3_EXPERIMENTS + RECORDINGS_V4_EXPERIMENTS + RECORDINGS_V5_EXPERIMENTS)
+    parser.add_argument("--feature-set", choices=("baseline", "handshape", "geometry", "geometry-no-orientation", "geometry-no-wrist-position", "geometry-finger-joints", "geometry-recordings-v2", "geometry-recordings-v3", "geometry-recordings-v4", "geometry-recordings-v5"), default="baseline", help="Experiment family for --all (default: baseline)")
     parser.add_argument("--seeds", nargs="+", type=int, default=[42], help="Saved training seeds to export (default: 42); two or more also creates consistency.csv")
     args = parser.parse_args()
     if len(set(args.seeds)) != len(args.seeds) or any(s < 0 or s >= 2**32 for s in args.seeds):
         parser.error("Seeds must be distinct integers between 0 and 4294967295")
     if args.experiment and args.feature_set != "baseline":
         parser.error("Use --feature-set with --all; --experiment already identifies the feature set")
-    families = {"baseline": EXPERIMENTS, "handshape": HANDSHAPE_EXPERIMENTS, "geometry": GEOMETRY_EXPERIMENTS}
+    families = {"baseline": EXPERIMENTS, "handshape": HANDSHAPE_EXPERIMENTS, "geometry": GEOMETRY_EXPERIMENTS, "geometry-no-orientation": NO_ORIENTATION_EXPERIMENTS, "geometry-no-wrist-position": NO_WRIST_POSITION_EXPERIMENTS}
+    families["geometry-finger-joints"] = FINGER_JOINT_EXPERIMENTS
+    families["geometry-recordings-v2"] = RECORDINGS_V2_EXPERIMENTS
+    families["geometry-recordings-v3"] = RECORDINGS_V3_EXPERIMENTS
+    families["geometry-recordings-v4"] = RECORDINGS_V4_EXPERIMENTS
+    families["geometry-recordings-v5"] = RECORDINGS_V5_EXPERIMENTS
     experiments = families[args.feature_set] if args.all else (args.experiment,)
     # Fail before creating output folders if a requested saved run is missing.
     for experiment in experiments:
         for seed in args.seeds:
             name = experiment if seed == 42 else f"{experiment}_seed{seed}"
-            for filename in ("best_model.keras", "evaluation.json"):
+            checkpoint = "best_model.h5" if experiment in RECORDINGS_V4_EXPERIMENTS + RECORDINGS_V5_EXPERIMENTS else "best_model.keras"
+            for filename in (checkpoint, "evaluation.json"):
                 path = find_model_folder(DATASET_FOLDER / "models", name) / filename
                 if not path.is_file():
                     parser.error(f"Missing saved run file: {path}")
