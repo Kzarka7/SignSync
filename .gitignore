@@ -5,6 +5,7 @@
 **/.venv*/
 **/__pycache__/
 *.pyc
+*.tsbuildinfo
 .agents/
 skills-lock.json
 

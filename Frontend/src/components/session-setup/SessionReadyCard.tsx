@@ -26,7 +26,7 @@ export default function SessionReadyCard({
           ? 'Camera and microphone access are required to begin a conversation. Please allow access and try again.'
           : devicesChecking
           ? 'We’re checking your camera and microphone. This only takes a moment.'
-          : 'Once you begin, the camera starts watching for signs automatically. Speech recognition starts when you tap the microphone.'}
+          : 'Once you begin, start the camera and record one sign at a time. Speech recognition starts when you tap the microphone.'}
           </p>
         </div>
       </div>
