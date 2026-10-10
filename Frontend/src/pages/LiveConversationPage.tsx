@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslationStream } from '../hooks/useTranslationStream'
-import { useCameraFeed } from '../hooks/useCameraFeed'
+import { useLiveSignCapture } from '../hooks/useLiveSignCapture'
+import SignRecognitionPanel from '../components/live/SignRecognitionPanel'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { useAvatarRenderer } from '../hooks/useAvatarRenderer'
 import { useSessionSetupStore } from '../store/sessionSetupStore'
@@ -27,10 +28,12 @@ export default function LiveConversationPage() {
     }
   }, [isReadyToBegin, navigate])
 
-  const { messages, endSession, exportSession, submitSpeech, submitPhrase } = useTranslationStream()
+  const stream = useTranslationStream()
+  const { messages, endSession, exportSession, submitSpeech, submitPhrase } = stream
   const lastMessage = messages[messages.length - 1]
   const lastSpokenOrPhraseMessage = [...messages].reverse().find((m) => m.source === 'speech' || m.source === 'phrase')
-  const feed = useCameraFeed()
+  const capture = useLiveSignCapture(stream.sendSign, stream.connection === 'ready' && !stream.busy)
+  const { feed } = capture
   const speech = useSpeechRecognition()
   const avatar = useAvatarRenderer()
   function handleEnd() {
@@ -79,6 +82,7 @@ export default function LiveConversationPage() {
               isInterpreting={avatar.isRendering}
               isPlaying={avatar.isPlaying}
             />
+            <SignRecognitionPanel capture={capture} stream={stream} />
             <SpeechSubtitle message={lastMessage ?? null} />
             <QuickPhraseRow onSelectPhrase={submitPhrase} />
           </div>

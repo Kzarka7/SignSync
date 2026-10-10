@@ -135,7 +135,7 @@ export default function SessionSummaryPage() {
       </div>
       
         <SummaryActions
-          onStartNewConversation={() => navigate("/session-setup")}
+          onStartNewConversation={() => navigate("/setup")}
           onDone={() => navigate("/history")}
         />
     </main>

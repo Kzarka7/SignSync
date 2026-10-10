@@ -2,6 +2,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    dataset_root: str | None = None
     # Matches VITE_API_BASE_URL / VITE_WS_URL in the frontend's .env.example.
     cors_origins: list[str] = [
         "http://localhost:5173",
