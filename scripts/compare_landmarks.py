@@ -1,4 +1,4 @@
-"""Review up to three participants side by side with smooth landmark playback.
+r"""Review up to three participants side by side with smooth landmark playback.
 
 Examples (run from the SignSync project folder):
 
@@ -12,6 +12,8 @@ Examples (run from the SignSync project folder):
     python scripts/compare_landmarks.py --label SORRY --raw-frames
     python scripts/compare_landmarks.py --label WHICH --save-gif which-comparison.gif
     python scripts/compare_landmarks.py --label SORRY --samples 1 1 1
+    python scripts/compare_landmarks.py --dataset-version v2 --participants 3 --id-c d63561e7 --raw-frames
+    python scripts/compare_landmarks.py --dataset-version v5 --raw-frames --label STAY --samples 1 1 1
 
 Controls:
     Space       pause/resume
@@ -27,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -186,6 +189,7 @@ def presence_summary(sequence: dict) -> str:
 def main() -> None:
     dataset_folder = Path(__file__).resolve().parent.parent.parent / "SignSync Dataset" / "processed"
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--dataset-version", default="baseline", help="Participant dataset version: baseline (default) or a saved suffix such as v2")
     parser.add_argument("--label", default="FRIEND", help="Default sign for all participants; --label-a/b/c override it")
     parser.add_argument("--participants", nargs="+", type=int, choices=(1, 2, 3), default=[1, 2, 3], help="Participants in display order (default: 1 2 3)")
     parser.add_argument("--samples", nargs="+", type=int, help="Sample numbers in the same order as --participants")
@@ -199,6 +203,8 @@ def main() -> None:
     parser.add_argument("--mirror", action="store_true")
     parser.add_argument("--save-gif", type=Path)
     arguments = parser.parse_args()
+    if arguments.dataset_version != "baseline" and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", arguments.dataset_version):
+        parser.error("--dataset-version must be baseline or a simple version suffix such as v2")
     if arguments.display_frames < 2:
         parser.error("--display-frames must be at least 2")
     if not np.isfinite(arguments.fps) or arguments.fps <= 0:
@@ -219,7 +225,10 @@ def main() -> None:
             parser.error(f"--id-{letter} requires participant {participant} in --participants")
     for panel_index, (participant, sample) in enumerate(zip(arguments.participants, samples)):
         label = participant_labels[participant]
-        path = dataset_folder / f"participant_{participant:02d}-dataset.json"
+        suffix = "" if arguments.dataset_version == "baseline" else f"-{arguments.dataset_version}"
+        path = dataset_folder / f"participant_{participant:02d}-dataset{suffix}.json"
+        if not path.is_file():
+            parser.error(f"Participant {participant:02d} dataset was not found: {path}")
         dataset = load_dataset(path)
         sequence_id = getattr(arguments, f"id_{'abc'[participant - 1]}")
         try:
@@ -232,7 +241,7 @@ def main() -> None:
         except ValueError as error:
             parser.error(f"Participant {participant:02d}: {error}")
         sequences.append(sequence)
-        print(f"Participant {participant:02d} | {label} | sample {sample}")
+        print(f"Participant {participant:02d} | {label} | sample {sample} | {path.name}")
         print(f"  Sequence ID: {sequence['id']}")
         print(f"  {presence_summary(sequence)}")
 
@@ -249,7 +258,7 @@ def main() -> None:
     axes = grid[0]
     mode = "Recorded frames" if arguments.raw_frames else "Interpolated playback (display only)"
     compared_labels = " / ".join(dict.fromkeys(sequence["label"] for sequence in sequences))
-    figure.suptitle(f"{compared_labels}: normalized-time comparison | {mode}")
+    figure.suptitle(f"{compared_labels}: normalized-time comparison | {mode} | {arguments.dataset_version}")
     figure.text(0.5, 0.025, "Space: pause/play | Left/Right: step | Shift+Left/Right: jump 10 | Up/Down: speed | Home/End: endpoints | Esc: close", ha="center", fontsize=9)
     figure.subplots_adjust(top=0.82, bottom=0.13, wspace=0.15)
     groups = []
