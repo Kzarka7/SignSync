@@ -70,6 +70,16 @@ EXPERIMENTS.update({name + '_recordings_v4': dict(config)
 EXPERIMENTS.update({name + '_recordings_v5': dict(config)
                     for name, config in list(EXPERIMENTS.items()) if name.endswith('_geometry_v3')})
 
+# Four-participant development evaluation, with a separate unseen signer per fold.
+for held_out in range(1, 5):
+    training = [i for i in range(1, 5) if i != held_out]
+    name = 'gru_' + '_'.join(f'p{i:02d}' for i in training)
+    name += f'_train_p{held_out:02d}_test_geometry_v3_recordings_v6'
+    EXPERIMENTS[name] = {
+        'trainingParticipants': [f'participant_{i:02d}' for i in training],
+        'testParticipant': f'participant_{held_out:02d}',
+    }
+
 parser = argparse.ArgumentParser(
     description="Train a SignSync GRU participant-independent experiment."
 )
@@ -81,6 +91,7 @@ parser.add_argument(
 )
 parser.add_argument("--check-only", action="store_true", help="Validate the experiment without training or writing outputs")
 parser.add_argument("--seed", type=int, default=42, help="Training randomness seed; preprocessing splits stay unchanged (default: 42)")
+parser.add_argument("--dataset-root", type=Path, help="Dataset location when running from a worktree")
 arguments = parser.parse_args()
 if not 0 <= arguments.seed < 2**32:
     parser.error("--seed must be between 0 and 4294967295")
@@ -92,7 +103,7 @@ TRAINING_PARTICIPANTS = experiment["trainingParticipants"]
 TEST_PARTICIPANT = experiment["testParticipant"]
 
 PROJECT_FOLDER = Path(__file__).resolve().parent.parent
-DATASET_FOLDER = PROJECT_FOLDER.parent / "SignSync Dataset"
+DATASET_FOLDER = arguments.dataset_root or PROJECT_FOLDER.parent / "SignSync Dataset"
 PREPROCESSED_FOLDER = DATASET_FOLDER / "processed" / EXPERIMENT_NAME
 RUN_NAME = EXPERIMENT_NAME if RANDOM_SEED == 42 else f"{EXPERIMENT_NAME}_seed{RANDOM_SEED}"
 MODEL_FOLDER = DATASET_FOLDER / "models" / RUN_NAME
@@ -126,7 +137,10 @@ if EXPERIMENT_NAME.endswith('_geometry_v3_recordings_v5'):
     from model_paths import recordings_v5_model_folder
     MODEL_FOLDER = recordings_v5_model_folder(DATASET_FOLDER / 'models', RUN_NAME)
 
-CHECKPOINT_NAME = 'best_model.h5' if EXPERIMENT_NAME.endswith(('_geometry_v3_recordings_v4', '_geometry_v3_recordings_v5')) else 'best_model.keras'
+if EXPERIMENT_NAME.endswith('_geometry_v3_recordings_v6'):
+    MODEL_FOLDER = DATASET_FOLDER / 'models' / 'gru_model_train_test_geometry_v3_recordings_v6' / RUN_NAME
+
+CHECKPOINT_NAME = 'best_model.h5' if EXPERIMENT_NAME.endswith(('_geometry_v3_recordings_v4', '_geometry_v3_recordings_v5', '_geometry_v3_recordings_v6')) else 'best_model.keras'
 
 DATA_PATH = PREPROCESSED_FOLDER / "gru_data.npz"
 METADATA_PATH = PREPROCESSED_FOLDER / "metadata.json"
@@ -373,6 +387,12 @@ with (MODEL_FOLDER / "evaluation.json").open(
     encoding="utf-8",
 ) as file:
     json.dump(evaluation, file, indent=2)
+
+np.savez_compressed(MODEL_FOLDER / 'predictions.npz',
+                    probabilities=probabilities, y_true=y_test,
+                    sequence_ids=np.asarray(metadata['sequenceIds']['test']))
+with (MODEL_FOLDER / 'history.json').open('w', encoding='utf-8') as file:
+    json.dump(history.history, file, indent=2)
 
 
 # ---------------------------------------------------------------------------
