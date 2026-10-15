@@ -1,9 +1,28 @@
 import { Circle, Square, Timer, Trash2, X } from 'lucide-react'
+import { useEffect, useState, type MutableRefObject } from 'react'
 import Button from '../shared/Button'
+
+function LiveFps({ processedFramesRef }: { processedFramesRef: MutableRefObject<number> }) {
+  const [fps, setFps] = useState<number | null>(null)
+  useEffect(() => {
+    let previousCount = processedFramesRef.current
+    let previousTime = performance.now()
+    const timer = window.setInterval(() => {
+      const now = performance.now()
+      const count = processedFramesRef.current
+      setFps((count - previousCount) * 1000 / (now - previousTime))
+      previousCount = count
+      previousTime = now
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [processedFramesRef])
+  return <span className="tabular-nums" title="Completed detection frames per second, updated every second">{fps === null ? '—' : fps.toFixed(1)} FPS</span>
+}
 
 interface RecordingControlsProps {
   isRecording: boolean
   frameCount: number
+  processedFramesRef: MutableRefObject<number>
   canRecord: boolean
   countdown: number | null
   countdownSeconds: number
@@ -19,6 +38,7 @@ const COUNTDOWN_OPTIONS = [1, 3, 5]
 export default function RecordingControls({
   isRecording,
   frameCount,
+  processedFramesRef,
   canRecord,
   countdown,
   countdownSeconds,
@@ -83,7 +103,7 @@ export default function RecordingControls({
           </Button>
           <span className="flex items-center gap-1.5 text-sm font-medium text-danger">
             <span className="w-2 h-2 rounded-full bg-danger animate-pulse" />
-            Recording · {frameCount} frames
+            Recording · {frameCount} frames · <LiveFps processedFramesRef={processedFramesRef} />
           </span>
         </>
       )}

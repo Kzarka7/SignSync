@@ -1,17 +1,20 @@
 import JSZip from 'jszip'
 import { DatasetExportFile, ExportedSequence, LabeledSequence } from '../../types/dataset'
 import { buildFeatureSchema, toFeatureVector } from '../landmarks/normalize'
+import { normalizeIdleSequence } from './idleCollection'
 
 // Applies the normalization pipeline to every stored (raw) frame and
 // assembles the full export payload - this is the one place raw landmarks
 // become the fixed-length feature vectors a GRU/LSTM training script
 // expects, per ExportedFrame.
 export function buildDatasetExport(sequences: LabeledSequence[]): DatasetExportFile {
-  const exportedSequences: ExportedSequence[] = sequences.map((seq) => ({
+  const normalizedSequences = sequences.map(normalizeIdleSequence)
+  const exportedSequences: ExportedSequence[] = normalizedSequences.map((seq) => ({
     id: seq.id,
     label: seq.label,
     createdAt: seq.createdAt,
     durationMs: seq.durationMs,
+    ...(seq.collection ? { collection: { ...seq.collection } } : {}),
     frameCount: seq.frames.length,
     frames: seq.frames.map((frame) => {
       const { features, valid } = toFeatureVector(frame.raw)
@@ -22,7 +25,7 @@ export function buildDatasetExport(sequences: LabeledSequence[]): DatasetExportF
   return {
     schemaVersion: 1,
     exportedAt: new Date().toISOString(),
-    labels: Array.from(new Set(sequences.map((s) => s.label))).sort(),
+    labels: Array.from(new Set(normalizedSequences.map((s) => s.label))).sort(),
     sequenceCount: sequences.length,
     featureSchema: buildFeatureSchema(),
     sequences: exportedSequences,
@@ -44,13 +47,19 @@ function dateTimeStamp(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`
 }
 
-function triggerDownload(blob: Blob, filename: string): void {
+export function triggerDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
   link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
+  document.body.appendChild(link)
+  try {
+    link.click()
+  } finally {
+    link.remove()
+    // Let the browser consume the URL before releasing it, including retries.
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  }
 }
 
 // Triggers a browser download of the dataset as JSON - same
@@ -85,10 +94,10 @@ export function downloadDatasetExport(sequences: LabeledSequence[], label?: stri
 // knows how to read it back with zero changes: merging N of these
 // one-sequence files is identical to merging N whole exports, just with
 // one sequence in each instead of twenty.
-export async function downloadPerSampleZipExport(
+export async function buildPerSampleZipExport(
   sequences: LabeledSequence[],
   label?: string,
-): Promise<void> {
+): Promise<{ blob: Blob; filename: string }> {
   const zip = new JSZip()
   const slug = slugify(label) || 'sample'
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -118,7 +127,8 @@ export async function downloadPerSampleZipExport(
     }
 
     const shortId = contentId.slice(0, 8)
-    const filename = `${slug}-${pad(index + 1)}-${shortId}.json`
+    const sampleSlug = slugify(singleSampleExport.sequences[0].label) || 'sample'
+    const filename = `${sampleSlug}-${pad(index + 1)}-${shortId}.json`
 
     // Sanity check, kept cheap and inline so it runs on every real export
     // rather than only in a test someone has to remember to run: the ID
@@ -144,5 +154,5 @@ export async function downloadPerSampleZipExport(
 
   const blob = await zip.generateAsync({ type: 'blob' })
   const zipFilename = `signsync-dataset-${slug}-${sequences.length}x-${dateTimeStamp()}-samples.zip`
-  triggerDownload(blob, zipFilename)
+  return { blob, filename: zipFilename }
 }

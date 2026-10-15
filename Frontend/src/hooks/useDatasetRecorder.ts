@@ -1,19 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCameraFeed } from './useCameraFeed'
+import type { DetectionInputWidth } from '../services/detectionInput'
 import type { LandmarkFrameSample } from '../types/landmarks'
-import type { DatasetFrame, LabeledSequence } from '../types/dataset'
+import type { DatasetFrame, IdleCollectionMetadata, LabeledSequence } from '../types/dataset'
 import {
   clearSequences,
   deleteSequence as deleteStoredSequence,
   getSequences,
   saveSequence,
 } from '../services/dataset/datasetStorage'
-import { downloadDatasetExport, downloadPerSampleZipExport } from '../services/dataset/datasetExport'
+import { downloadDatasetExport, buildPerSampleZipExport, triggerDownload } from '../services/dataset/datasetExport'
 
-// Seeds the label picker - the examples from the product brief. Any
-// custom label typed into the collector joins this list for the rest of
-// the session (see knownLabels below), so this is a starting point, not a
-// fixed enum.
+// Standard signs, supplemented by labels in previously saved recordings.
 export const DEFAULT_SIGN_LABELS = ['HELLO', 'WAVE_GREETING', 'THANK_YOU', 'PLEASE', 'SORRY', 'YES', 'NO', 'HELP', 'WELCOME', 'FRIEND', 'FAMILY', 'STAY', 'WAIT', 'WHAT', 'WHY', 'WHERE', 'WHEN', 'WHO', 'WHICH', 'HOW']
 
 function createSequenceId(): string {
@@ -28,12 +26,34 @@ function createSequenceId(): string {
 // to localStorage via datasetStorage. Camera/detection themselves are
 // entirely useCameraFeed's - this hook only adds "what to do with each
 // frame while the record button is held down."
-export function useDatasetRecorder() {
+interface RecorderOptions {
+  collection?: IdleCollectionMetadata
+  recordingAllowed?: boolean
+  durationLimitMs?: number
+}
+
+export function useDatasetRecorder({ collection, recordingAllowed = true, durationLimitMs }: RecorderOptions = {}) {
+  const [detectionInputWidth, setDetectionInputWidth] = useState<DetectionInputWidth>(640)
   const [sequences, setSequences] = useState<LabeledSequence[]>([])
   const [selectedLabel, setSelectedLabel] = useState<string>(DEFAULT_SIGN_LABELS[0])
   const [isRecording, setIsRecording] = useState(false)
   const [frameCount, setFrameCount] = useState(0)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [isExportingZip, setIsExportingZip] = useState(false)
+  const [zipExport, setZipExport] = useState<{ blob: Blob; filename: string } | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const exportGeneration = useRef(0)
+  const exportingRef = useRef(false)
+
+  useEffect(() => {
+    // Never offer a ZIP built from an older selection or deleted recordings.
+    exportGeneration.current += 1
+    exportingRef.current = false
+    setZipExport(null)
+    setIsExportingZip(false)
+    setExportError(null)
+    return () => { exportGeneration.current += 1 }
+  }, [sequences, selectedLabel])
   // How long Start Recording waits before frames actually start buffering -
   // gives you time to get both hands into position (especially for
   // two-handed signs, where clicking Start with your hands already up
@@ -47,6 +67,8 @@ export function useDatasetRecorder() {
   // every single MediaPipe tick; only the *count* is mirrored into state
   // for the live "N frames" readout.
   const bufferRef = useRef<DatasetFrame[]>([])
+  // Count completed detection callbacks without rendering for every frame.
+  const processedFramesRef = useRef(0)
   // Mirrors isRecording for the onFrame callback, which is created once
   // and reads this on every tick - reading React state directly there
   // would close over a stale value.
@@ -64,6 +86,9 @@ export function useDatasetRecorder() {
   // begins - separate from frameCountIntervalRef since the two never run
   // at the same time (countdown finishes, *then* recording starts).
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const finishRecordingRef = useRef<(discard: boolean) => void>(() => {})
+  const recordingContextRef = useRef<{ label: string; collection?: IdleCollectionMetadata }>({ label: '' })
 
   useEffect(() => {
     setSequences(getSequences())
@@ -79,21 +104,25 @@ export function useDatasetRecorder() {
       if (countdownIntervalRef.current !== null) {
         clearInterval(countdownIntervalRef.current)
       }
+      if (recordingTimeoutRef.current !== null) clearTimeout(recordingTimeoutRef.current)
+      isRecordingRef.current = false
     }
   }, [])
 
   const handleFrame = useCallback((sample: LandmarkFrameSample) => {
+    processedFramesRef.current += 1
     if (!isRecordingRef.current) return
     bufferRef.current.push({ timestamp: sample.timestamp, raw: sample })
   }, [])
 
-  const feed = useCameraFeed({ onFrame: handleFrame })
+  const feed = useCameraFeed({ onFrame: handleFrame, detectionInputWidth })
 
   // The actual recording - buffering frames, tracking frame count - starts
   // here, only once the countdown (if any) has finished. Camera detection
   // itself never stops or pauses during the countdown; only whether
   // handleFrame keeps what it sees is gated by isRecordingRef.
   const beginActualRecording = useCallback(() => {
+    feed.startPerformanceProfile()
     bufferRef.current = []
     setFrameCount(0)
     setSaveError(null)
@@ -103,12 +132,17 @@ export function useDatasetRecorder() {
     frameCountIntervalRef.current = setInterval(() => {
       setFrameCount(bufferRef.current.length)
     }, 200)
-  }, [])
+    if (durationLimitMs && durationLimitMs > 0) {
+      recordingTimeoutRef.current = setTimeout(() => finishRecordingRef.current(false), durationLimitMs)
+    }
+  }, [feed.startPerformanceProfile, durationLimitMs])
 
   const startRecording = useCallback(() => {
+    if (!recordingAllowed || isRecordingRef.current) return
     if (!feed.enabled || !feed.cameraReady) return
     if (!selectedLabel.trim()) return
     if (countdownIntervalRef.current !== null) return // already counting down
+    recordingContextRef.current = { label: selectedLabel.trim(), collection: collection ? { ...collection } : undefined }
 
     let remaining = countdownSeconds
     if (remaining <= 0) {
@@ -130,7 +164,7 @@ export function useDatasetRecorder() {
         setCountdown(remaining)
       }
     }, 1000)
-  }, [selectedLabel, countdownSeconds, beginActualRecording, feed.enabled, feed.cameraReady])
+  }, [selectedLabel, countdownSeconds, beginActualRecording, feed.enabled, feed.cameraReady, collection, recordingAllowed])
 
   // Backs out of a countdown before it finishes - e.g. you clicked Start
   // too early and want to reset. No frames were ever buffered during a
@@ -148,40 +182,38 @@ export function useDatasetRecorder() {
   // up empty (e.g. stopped a frame after starting).
   const finishRecording = useCallback(
     (discard: boolean) => {
+      if (!isRecordingRef.current) return
+      if (recordingTimeoutRef.current !== null) {
+        clearTimeout(recordingTimeoutRef.current)
+        recordingTimeoutRef.current = null
+      }
       if (frameCountIntervalRef.current !== null) {
         clearInterval(frameCountIntervalRef.current)
         frameCountIntervalRef.current = null
       }
+      feed.stopPerformanceProfile()
       isRecordingRef.current = false
       setIsRecording(false)
-      const rawFrames = bufferRef.current
+      const frames = bufferRef.current
       bufferRef.current = []
-      setFrameCount(rawFrames.length) // final, exact count (pre-trim, matches what was live-displayed)
+      setFrameCount(frames.length) // final, exact count, including every captured frame
 
-      if (discard || rawFrames.length === 0) return
-
-      // Drop trailing frames before saving: by the time Stop is pressed,
-      // the hands are already lowering out of the sign rather than still
-      // holding it, so the tail of the buffer is motion-toward-rest, not
-      // the sign itself. Scaled to length rather than a fixed count - a
-      // longer recording has a proportionally longer "coming down" tail -
-      // 1 dropped frame per 10 total frames (10 frames -> drop 1, 30-39
-      // frames -> drop 3, etc). Only trims when there's enough buffer left
-      // to still make a usable sample - a short/glitchy take shouldn't get
-      // trimmed down to nothing.
-      const trailingFramesToDrop = Math.floor(rawFrames.length / 10)
-      const frames =
-        trailingFramesToDrop > 0 && rawFrames.length > trailingFramesToDrop
-          ? rawFrames.slice(0, rawFrames.length - trailingFramesToDrop)
-          : rawFrames
-
-      if (frames.length === 0) return
+      if (discard) return
+      if (frames.length === 0) {
+        setSaveError('No frames were captured. Check the camera and record again.')
+        return
+      }
 
       const durationMs =
         frames.length > 1 ? frames[frames.length - 1].timestamp - frames[0].timestamp : 0
+      if (recordingContextRef.current.collection?.kind === 'idle' && durationMs < 2000) {
+        setSaveError('Idle clips need at least 2 seconds of captured frames. This clip was not saved; please record again.')
+        return
+      }
       const sequence: LabeledSequence = {
         id: createSequenceId(),
-        label: selectedLabel.trim(),
+        label: recordingContextRef.current.label,
+        ...(recordingContextRef.current.collection ? { collection: recordingContextRef.current.collection } : {}),
         createdAt: new Date().toISOString(),
         durationMs,
         frames,
@@ -197,8 +229,10 @@ export function useDatasetRecorder() {
         )
       }
     },
-    [selectedLabel],
+    [feed.stopPerformanceProfile],
   )
+
+  useEffect(() => { finishRecordingRef.current = finishRecording }, [finishRecording])
 
   const stopRecording = useCallback(() => finishRecording(false), [finishRecording])
   const discardRecording = useCallback(() => finishRecording(true), [finishRecording])
@@ -209,24 +243,18 @@ export function useDatasetRecorder() {
   // for these: getting into position for a two-handed sign is easier
   // without needing a free hand on the mouse right as you start.
   //
-  // Skipped while focus is in a text input/textarea (so typing a custom
-  // label with a space in it works normally) or while any recorded
-  // sample's delete button etc. has focus is NOT specially handled here -
-  // if you've tabbed to a button and press Space, this still intercepts
-  // it rather than letting that button handle its own native click. A
-  // reasonable trade-off for a tool that's primarily used hands-off-
-  // keyboard (positioning for a sign) rather than keyboard-navigated, but
-  // worth knowing if you ever drive this page by Tab+Space instead of a
-  // mouse.
+  // Preserve typing and native selection/button activation. Escape still
+  // cancels/discards when a recording-control button has focus.
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.repeat) return
 
       const target = event.target as HTMLElement | null
       const tag = target?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return
 
       if (event.code === 'Space') {
+        if (tag === 'BUTTON' || tag === 'SUMMARY' || tag === 'A') return
         event.preventDefault()
         if (isRecording) {
           stopRecording()
@@ -259,15 +287,50 @@ export function useDatasetRecorder() {
   }, [])
 
   const exportDataset = useCallback(() => {
-    downloadDatasetExport(sequences, selectedLabel)
+    setExportError(null)
+    try {
+      const labels = new Set(sequences.map(s => s.label))
+      downloadDatasetExport(sequences, labels.size === 1 ? sequences[0]?.label : undefined)
+    } catch {
+      setExportError('Could not export JSON. Your recordings are still saved; please try again.')
+    }
   }, [sequences, selectedLabel])
 
   // Same data as exportDataset, split one file per sample and zipped -
   // for triaging (delete a weak sample's file, then merge_dataset.py
   // reassembles what's left) instead of hand-editing one combined JSON.
-  const exportPerSampleZip = useCallback(() => {
-    downloadPerSampleZipExport(sequences, selectedLabel)
+  const exportPerSampleZip = useCallback(async () => {
+    if (exportingRef.current || sequences.length === 0) return
+    exportingRef.current = true
+    const generation = ++exportGeneration.current
+    setIsExportingZip(true)
+    setExportError(null)
+    try {
+      const labels = new Set(sequences.map(s => s.label))
+      const archive = await buildPerSampleZipExport(sequences, labels.size === 1 ? sequences[0]?.label : undefined)
+      if (generation === exportGeneration.current) setZipExport(archive)
+    } catch {
+      if (generation === exportGeneration.current) {
+        setExportError('Could not prepare ZIP. Your recordings are still saved; please try again.')
+      }
+    } finally {
+      if (generation === exportGeneration.current) {
+        exportingRef.current = false
+        setIsExportingZip(false)
+      }
+    }
   }, [sequences, selectedLabel])
+
+  const downloadZip = useCallback(() => {
+    if (!zipExport) return
+    setExportError(null)
+    try {
+      // Called directly from the Download button to keep the browser gesture.
+      triggerDownload(zipExport.blob, zipExport.filename)
+    } catch {
+      setExportError('Download did not start. Try Download ZIP again and check browser download permissions.')
+    }
+  }, [zipExport])
 
   // Defaults first (so the picker always offers the seed examples), plus
   // any label that's actually been recorded, deduplicated. Memoized so
@@ -281,7 +344,10 @@ export function useDatasetRecorder() {
   )
 
   return {
+    detectionInputWidth,
+    setDetectionInputWidth,
     feed,
+    processedFramesRef,
     sequences,
     knownLabels,
     selectedLabel,
@@ -300,5 +366,9 @@ export function useDatasetRecorder() {
     clearAll,
     exportDataset,
     exportPerSampleZip,
+    downloadZip,
+    isExportingZip,
+    zipReady: zipExport !== null,
+    exportError,
   }
 }

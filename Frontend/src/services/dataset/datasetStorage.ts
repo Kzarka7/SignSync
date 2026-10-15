@@ -1,4 +1,5 @@
 import { LabeledSequence } from '../../types/dataset'
+import { normalizeIdleSequence } from './idleCollection'
 
 // Single seam between localStorage and the rest of the app, same pattern
 // as sessionHistoryStorage.ts - only this file needs to change once a real
@@ -28,7 +29,7 @@ function writeAll(sequences: LabeledSequence[]): void {
 
 // Newest first, by createdAt.
 export function getSequences(): LabeledSequence[] {
-  return readAll().sort(
+  return readAll().map(normalizeIdleSequence).sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   )
 }

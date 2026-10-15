@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { createCameraProfile } from "../services/cameraProfile";
+import { createDetectionInput, type DetectionInputWidth } from "../services/detectionInput";
 import {
   FilesetResolver,
   HandLandmarker,
@@ -113,6 +115,7 @@ type VisionFileset = Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>;
 
 async function createHandLandmarker(
   fileset: VisionFileset,
+  report: (delegate: string, fallback?: string) => void,
 ): Promise<HandLandmarker> {
   const options = {
     runningMode: "VIDEO" as const,
@@ -122,24 +125,29 @@ async function createHandLandmarker(
     minTrackingConfidence: 0.4,
   };
   try {
-    return await HandLandmarker.createFromOptions(fileset, {
+    const model = await HandLandmarker.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate: "GPU" },
       ...options,
     });
+    report("GPU");
+    return model;
   } catch (gpuErr) {
     console.warn(
       "[useCameraFeed] GPU delegate unavailable for hand model, falling back to CPU:",
       gpuErr,
     );
-    return HandLandmarker.createFromOptions(fileset, {
+    const model = await HandLandmarker.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate: "CPU" },
       ...options,
     });
+    report("CPU", String(gpuErr));
+    return model;
   }
 }
 
 async function createPoseLandmarker(
   fileset: VisionFileset,
+  report: (delegate: string, fallback?: string) => void,
 ): Promise<PoseLandmarker> {
   const options = {
     runningMode: "VIDEO" as const,
@@ -149,19 +157,23 @@ async function createPoseLandmarker(
     minTrackingConfidence: 0.5,
   };
   try {
-    return await PoseLandmarker.createFromOptions(fileset, {
+    const model = await PoseLandmarker.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate: "GPU" },
       ...options,
     });
+    report("GPU");
+    return model;
   } catch (gpuErr) {
     console.warn(
       "[useCameraFeed] GPU delegate unavailable for pose model, falling back to CPU:",
       gpuErr,
     );
-    return PoseLandmarker.createFromOptions(fileset, {
+    const model = await PoseLandmarker.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate: "CPU" },
       ...options,
     });
+    report("CPU", String(gpuErr));
+    return model;
   }
 }
 
@@ -206,9 +218,13 @@ export interface CameraFeedState {
   // they read it; use the onFrame callback below if you need to react to
   // every frame instead.
   getLatestFrame: () => LandmarkFrameSample | null;
+  startPerformanceProfile: () => void;
+  stopPerformanceProfile: () => void;
+  getPerformanceReport: () => string;
 }
 
 export interface UseCameraFeedOptions {
+  detectionInputWidth?: DetectionInputWidth;
   // Fired once per detection tick with synchronized hand + pose landmarks
   // for that frame. This is the hook for a future dataset collector to
   // record samples from - left undefined today since nothing consumes it
@@ -227,6 +243,30 @@ export interface UseCameraFeedOptions {
 // confirmed device readiness and pressed "Begin Conversation") instead of
 // requiring a further manual Start click.
 export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
+  const profileRef = useRef(createCameraProfile());
+  const profileInfoRef = useRef({
+    capture: {} as { width?: number; height?: number; configuredFps?: number },
+    detectionInput: {} as { width?: number; height?: number; mode?: string },
+    handDelegate: "not initialized", poseDelegate: "not initialized",
+    handFallback: "", poseFallback: "", scheduling: "not started",
+  });
+  const recordedProfileInfoRef = useRef<typeof profileInfoRef.current | null>(null);
+  const startPerformanceProfile = useCallback(() => {
+    recordedProfileInfoRef.current = null;
+    profileRef.current.start();
+  }, []);
+  const stopPerformanceProfile = useCallback(() => profileRef.current.stop(), []);
+  const getPerformanceReport = useCallback(() => JSON.stringify({
+    version: 2,
+    ...(recordedProfileInfoRef.current ?? profileInfoRef.current),
+    ...profileRef.current.snapshot(),
+    notes: [
+      "Timings are wall-clock API-call durations, not GPU utilization or GPU-only execution times.",
+      "GPU means the GPU delegate initialized; this does not identify the physical adapter or rule out software rendering.",
+      "Configured FPS is a track setting. Browser-presented FPS is compositor cadence, not proof of distinct phone images or camera delivery rate.",
+      "Processing totals exclude waiting between callbacks and deferred painting. Hidden-tab runs are not comparable.",
+    ],
+  }, null, 2), []);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -256,6 +296,9 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
   // restarting the camera/model setup on every render.
   const onFrameRef = useRef(options?.onFrame);
   onFrameRef.current = options?.onFrame;
+  const detectionInputWidthRef = useRef(options?.detectionInputWidth ?? null);
+  detectionInputWidthRef.current = options?.detectionInputWidth ?? null;
+  const prepareDetectionInputRef = useRef(createDetectionInput());
 
   const [enabled, setEnabled] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
@@ -282,7 +325,9 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
 
     let stream: MediaStream | null = null;
     let rafId: number | null = null;
+    let videoFrameId: number | null = null;
     let cancelled = false;
+    let lastLightSample = 0;
 
     async function setup() {
       setError(null);
@@ -292,15 +337,8 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       // to show - hide the video and report it honestly.
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          // Lowered from 1280x720: MediaPipe resizes its input internally
-          // regardless of source resolution, so capturing at 720p mostly
-          // added decode/color-convert overhead per frame without
-          // improving landmark accuracy - overhead that showed up as a
-          // real bottleneck on recorded datasets (effective detection
-          // rate as low as ~3-5fps even on a laptop, worse on mobile,
-          // per exported dataset analysis). 640x480 is still comfortably
-          // enough resolution for MediaPipe's hand/pose models.
-          video: { width: 1920, height: 1080 },
+          // Request 720p capture; actual settings depend on the camera.
+          video: { width: 1280, height: 720, frameRate: { ideal: 30 } },
         });
         if (cancelled) {
           // Effect was cleaned up (a fast Stop click, or leaving the page)
@@ -313,6 +351,8 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
           return;
         }
 
+        const settings = stream.getVideoTracks()[0]?.getSettings();
+        profileInfoRef.current.capture = { width: settings?.width, height: settings?.height, configuredFps: settings?.frameRate };
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
@@ -344,7 +384,10 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       try {
         if (!landmarkerRef.current) {
           const fileset = await FilesetResolver.forVisionTasks(WASM_BASE_URL);
-          landmarkerRef.current = await createHandLandmarker(fileset);
+          landmarkerRef.current = await createHandLandmarker(fileset, (delegate, fallback = "") => {
+            profileInfoRef.current.handDelegate = delegate;
+            profileInfoRef.current.handFallback = fallback;
+          });
 
           // Pose is loaded in its own nested try/catch: if it fails
           // entirely (both GPU and CPU delegate attempts), hand detection
@@ -353,8 +396,12 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
           // sample until a later reload succeeds. Same fileset/WASM
           // runtime as the hand model - only the model asset differs.
           try {
-            poseLandmarkerRef.current = await createPoseLandmarker(fileset);
+            poseLandmarkerRef.current = await createPoseLandmarker(fileset, (delegate, fallback = "") => {
+              profileInfoRef.current.poseDelegate = delegate;
+              profileInfoRef.current.poseFallback = fallback;
+            });
           } catch (poseErr) {
+            profileInfoRef.current.poseDelegate = "unavailable";
             console.error("[useCameraFeed] Pose model loading error:", poseErr);
           }
         }
@@ -365,16 +412,29 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
           sampleCanvasRef.current.height = BRIGHTNESS_SAMPLE_SIZE;
         }
 
-        detectLoop();
+        scheduleNextFrame();
       } catch (err) {
         console.error("[useCameraFeed] Model loading error:", err);
+        profileInfoRef.current.handDelegate = "unavailable";
         setModelError(
           "Hand detection isn't available right now (the detection model failed to load). Your camera is still working.",
         );
       }
     }
 
-    function detectLoop() {
+    function scheduleNextFrame() {
+      const video = videoRef.current;
+      if (cancelled || !video) return;
+      if (typeof video.requestVideoFrameCallback === "function") {
+        profileInfoRef.current.scheduling = "requestVideoFrameCallback";
+        videoFrameId = video.requestVideoFrameCallback(detectLoop);
+      } else {
+        profileInfoRef.current.scheduling = "requestAnimationFrame (compositor cadence unavailable)";
+        rafId = requestAnimationFrame(detectLoop);
+      }
+    }
+
+    function detectLoop(_now: number, metadata?: VideoFrameCallbackMetadata) {
       if (cancelled || !videoRef.current || !landmarkerRef.current) return;
 
       const video = videoRef.current;
@@ -383,28 +443,59 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
         // across stop/start - see lastTimestampRef comment above. The same
         // timestamp is fed to both models so their results describe the
         // same instant.
-        let timestamp = performance.now();
+        const processingStart = performance.now();
+        let timestamp = processingStart;
         if (timestamp <= lastTimestampRef.current) {
           timestamp = lastTimestampRef.current + 1;
         }
         lastTimestampRef.current = timestamp;
 
+        const resizeStart = performance.now();
+        const input = prepareDetectionInputRef.current(video, detectionInputWidthRef.current);
+        const resizeMs = performance.now() - resizeStart;
+        profileInfoRef.current.detectionInput = {
+          width: input === video ? video.videoWidth : input.width,
+          height: input === video ? video.videoHeight : input.height,
+          mode: input === video ? "original" : "reduced",
+        };
+        const handStart = performance.now();
         const handResult: HandLandmarkerResult =
-          landmarkerRef.current.detectForVideo(video, timestamp);
+          landmarkerRef.current.detectForVideo(input, timestamp);
+        const handEnd = performance.now();
         const poseResult: PoseLandmarkerResult | null =
-          poseLandmarkerRef.current?.detectForVideo(video, timestamp) ?? null;
+          poseLandmarkerRef.current?.detectForVideo(input, timestamp) ?? null;
+        const poseEnd = performance.now();
 
         setHandsDetected(handResult.landmarks.length > 0);
         setPoseDetected(!!poseResult && poseResult.landmarks.length > 0);
+        const overlayStart = performance.now();
         drawOverlay(handResult, poseResult);
-        updateLightLevel(video);
+        const overlayEnd = performance.now();
+        if (timestamp - lastLightSample >= 500) {
+          updateLightLevel(video);
+          lastLightSample = timestamp;
+        }
 
         const sample = buildFrameSample(timestamp, handResult, poseResult);
         latestFrameRef.current = sample;
         onFrameRef.current?.(sample);
+        const completedAt = performance.now();
+        const handMs = handEnd - handStart;
+        const poseMs = poseEnd - handEnd;
+        const overlayMs = overlayEnd - overlayStart;
+        const totalMs = completedAt - processingStart;
+        if (profileRef.current.isActive() && !recordedProfileInfoRef.current) {
+          recordedProfileInfoRef.current = { ...profileInfoRef.current, capture: { ...profileInfoRef.current.capture } };
+        }
+        profileRef.current.add({
+          handMs, poseMs, overlayMs, resizeMs, totalMs, completedAt,
+          otherMs: totalMs - handMs - poseMs - overlayMs - resizeMs,
+          presentedFrames: metadata?.presentedFrames,
+          hidden: document.hidden,
+        });
       }
 
-      rafId = requestAnimationFrame(detectLoop);
+      scheduleNextFrame();
     }
 
     // Reduces one HandLandmarker detection into the left/right hand shape
@@ -485,8 +576,10 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       const video = videoRef.current;
       if (!canvas || !video) return;
 
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      // Assigning width or height clears the canvas and reallocates its
+      // drawing buffer, so only resize when the camera dimensions change.
+      if (canvas.width !== video.videoWidth) canvas.width = video.videoWidth;
+      if (canvas.height !== video.videoHeight) canvas.height = video.videoHeight;
 
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
@@ -595,7 +688,11 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     // close landmarkerRef - see the dedicated unmount-only effect below.
     return () => {
       cancelled = true;
+      profileRef.current.stop();
       if (rafId) cancelAnimationFrame(rafId);
+      if (videoFrameId !== null && videoRef.current) {
+        videoRef.current.cancelVideoFrameCallback(videoFrameId);
+      }
       stream?.getTracks().forEach((track) => track.stop());
       if (videoRef.current) videoRef.current.srcObject = null;
     };
@@ -623,5 +720,8 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     enabled,
     toggleCamera,
     getLatestFrame,
+    startPerformanceProfile,
+    stopPerformanceProfile,
+    getPerformanceReport,
   };
 }

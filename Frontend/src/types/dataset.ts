@@ -10,6 +10,19 @@ export interface DatasetFrame {
   raw: LandmarkFrameSample
 }
 
+export interface IdleCollectionMetadata {
+  kind: 'idle'
+  protocol: 'idle-v1'
+  // Preserve older annotations when present. New idle clips do not assign
+  // participant, session, hand configuration, posture or palm orientation.
+  participantId?: string
+  sessionId?: string
+  hands?: 'left' | 'right' | 'both'
+  posture?: 'beside_torso' | 'near_waist' | 'in_front'
+  palmOrientation?: 'natural'
+  targetDurationMs: number
+}
+
 // One recorded example of a single sign: a labeled, time-ordered sequence
 // of frames from a single Start -> Stop recording.
 export interface LabeledSequence {
@@ -18,6 +31,7 @@ export interface LabeledSequence {
   createdAt: string // ISO timestamp
   durationMs: number
   frames: DatasetFrame[]
+  collection?: IdleCollectionMetadata
 }
 
 // --- Export shape (what gets written to the downloaded dataset file) -----
@@ -44,6 +58,7 @@ export interface ExportedSequence {
   durationMs: number
   frameCount: number
   frames: ExportedFrame[]
+  collection?: IdleCollectionMetadata
 }
 
 // Documents exactly how `features` in every ExportedFrame is laid out, so
