@@ -93,7 +93,7 @@ class V5Recognizer:
         score = float(probabilities[ranked[0]])
         margin = score - float(probabilities[ranked[1]])
         return {"requestId": request.requestId, "label": self.labels[ranked[0]], "score": score,
-                "accepted": score >= .7 and margin >= .15,
+                "accepted": score >= .63 and margin >= .15,
                 "inferenceMs": round((perf_counter() - started) * 1000), "frameCount": len(request.frames),
                 "top3": [{"label": self.labels[i], "score": float(probabilities[i])} for i in ranked[:3]],
                 "model": "v5-nine-run-ensemble"}
