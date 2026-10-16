@@ -67,9 +67,20 @@ This is explicitly segmented, isolated-sign testing. The model has 20 sign class
 and no idle/unknown class. Do not interpret arbitrary movements as supported signs.
 At least 8 frames, 0.4–10 seconds, valid normalization in 80% of frames, and a
 visible hand in 50% of frames are required. These are provisional quality gates.
-A result can be added only when its mean score is at least 0.70 and the lead over
+A result can be added only when its mean score is at least 0.63 and the lead over
 the second class is at least 0.15. These provisional thresholds are not calibrated
-accuracy estimates. Continuous sign boundaries and P4 evaluation remain future work.
+accuracy estimates. Manual confirmation remains required; accepted predictions are
+not automatically added to the transcript. Continuous sign boundaries remain future work.
+
+The 0.63 threshold is a controlled live-test candidate selected on 400 P4 recordings.
+Compared with 0.70 (margin 0.15 unchanged), accepted mistakes increased from 4 to 5
+and rejected correct predictions decreased from 75 to 44. P3 replay recovered 12
+correct predictions without additional mistakes, but six live ensemble members used
+P3 for training/validation. A separate P3-held-out three-model ensemble recovered
+16 correct predictions with two additional accepted mistakes. These checks do not
+establish independent validation of the full live ensemble's new threshold.
+At confidence 0.63, the 0.15 margin is redundant for normalized probabilities,
+since the runner-up cannot exceed 0.37. Reevaluate acceptance after any model change.
 
 ```powershell
 .\.venv-gru\Scripts\python.exe -m pip install -r Backend/requirements-test.txt

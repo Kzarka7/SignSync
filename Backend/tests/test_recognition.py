@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+from threading import Lock
 import sys
 import unittest
 from unittest.mock import patch
@@ -10,7 +11,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.recognition import (FEATURE_ORDER, EXPERIMENTS, REPO, SignRequest,
+from app.recognition import (FEATURE_ORDER, EXPERIMENTS, REPO, SignRequest, V5Recognizer,
                              get_recognizer, raw_geometry_features,
                              standardize_for_model, validate_capture)
 from app.main import app
@@ -57,6 +58,23 @@ class CaptureTests(unittest.TestCase):
         data["frames"] *= 21
         with self.assertRaises(ValidationError):
             SignRequest.model_validate(data)
+
+
+class AcceptanceTests(unittest.TestCase):
+    def test_live_acceptance_confidence_boundary(self):
+        recognizer = V5Recognizer.__new__(V5Recognizer)
+        recognizer.lock = Lock()
+        recognizer.labels = [f"SIGN_{i}" for i in range(20)]
+        request = SignRequest.model_validate(capture())
+        for score, accepted in ((.6299, False), (.63, True), (.65, True), (.8, True)):
+            with self.subTest(score=score):
+                probabilities = np.array([[score, 1 - score] + [0.] * 18])
+                recognizer.members = [("test", lambda x, training: probabilities, None, None)]
+                with patch("app.recognition.raw_geometry_features", return_value=np.zeros((40, 238))), \
+                     patch("app.recognition.standardize_for_model", side_effect=lambda raw, mean, std: raw):
+                    result = recognizer.predict(request)
+                self.assertEqual(result["accepted"], accepted)
+                self.assertEqual(result["label"], "SIGN_0")
 
 
 class SocketTests(unittest.TestCase):
