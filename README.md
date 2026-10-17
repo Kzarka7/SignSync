@@ -17,6 +17,7 @@ python -m venv .venv
 .\.venv-gru\Scripts\Activate.ps1
 pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+.\.venv-gru\Scripts\python.exe -m uvicorn app.main:app --app-dir Backend --host 127.0.0.1 --port 8000
 
 uvicorn app.main:app --reload --port 8000
 ```
