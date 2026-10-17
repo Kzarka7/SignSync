@@ -46,7 +46,7 @@ export default function BoundarySampleCollector({ onLocked }: { onLocked: (locke
   const target = tasks.reduce((sum, item) => sum + (item.target ?? 0), 0)
 
   return <div className="space-y-4">
-    <PageHeader title="Boundary Collector" description="Collect resting postures and idle movements for training alongside your existing sign recordings. Select a category and task, then start recording." />
+    <PageHeader title="Rest and Idle Collector" description="Collect resting postures and idle movements for training alongside your existing sign recordings. Select a category and task, then start recording." />
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,7fr)_minmax(320px,3fr)] gap-4 items-start">
       <div className="min-w-0 space-y-4">
         <CollectorCameraPreview feed={recorder.feed} countdown={recorder.countdown} />
