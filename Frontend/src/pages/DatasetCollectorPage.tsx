@@ -10,7 +10,7 @@ export default function DatasetCollectorPage() {
       {(['sign', 'boundary'] as const).map(value => <button key={value} disabled={locked}
         aria-pressed={view === value} onClick={() => setView(value)}
         className={`border rounded-lg p-3 disabled:opacity-50 ${view === value ? 'border-signal bg-signal-light' : 'border-border'}`}>
-        {value === 'sign' ? 'Sign Language Collector' : 'Boundary Collector'}
+        {value === 'sign' ? 'Sign Language Collector' : 'Rest and Idle Collector'}
       </button>)}
     </div>
     {view === 'sign' ? <SignSampleCollector onLocked={setLocked} /> : <BoundarySampleCollector onLocked={setLocked} />}
