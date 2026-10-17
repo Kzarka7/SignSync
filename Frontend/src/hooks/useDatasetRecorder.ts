@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { buildEvaluationZip, downloadEvaluation } from '../services/dataset/boundaryEvaluation'
 import { useCameraFeed } from './useCameraFeed'
 import type { DetectionInputWidth } from '../services/detectionInput'
 import type { LandmarkFrameSample } from '../types/landmarks'
-import type { DatasetFrame, IdleCollectionMetadata, LabeledSequence } from '../types/dataset'
+import type { DatasetFrame, IdleCollectionMetadata, LabeledSequence, TrainingCategory } from '../types/dataset'
 import {
   clearSequences,
   deleteSequence as deleteStoredSequence,
@@ -27,14 +28,29 @@ function createSequenceId(): string {
 // entirely useCameraFeed's - this hook only adds "what to do with each
 // frame while the record button is held down."
 interface RecorderOptions {
+  training?: LabeledSequence['training']
+  trainingBatchId?: string
+  trainingCategory?: TrainingCategory
+  legacyOnly?: boolean
+  signsOnly?: boolean
+  scope?: 'training' | 'evaluation'
+  evaluationGroup?: 'pilot' | 'idle'
+  evaluation?: LabeledSequence['evaluation']
   collection?: IdleCollectionMetadata
   recordingAllowed?: boolean
   durationLimitMs?: number
 }
 
-export function useDatasetRecorder({ collection, recordingAllowed = true, durationLimitMs }: RecorderOptions = {}) {
+export function useDatasetRecorder({ collection, recordingAllowed = true, durationLimitMs, scope = 'training', evaluation, evaluationGroup, training, trainingBatchId, trainingCategory, legacyOnly = false, signsOnly = false }: RecorderOptions = {}) {
   const [detectionInputWidth, setDetectionInputWidth] = useState<DetectionInputWidth>(640)
-  const [sequences, setSequences] = useState<LabeledSequence[]>([])
+  const [allSequences, setSequences] = useState<LabeledSequence[]>([])
+  const [lastSavedSequence, setLastSavedSequence] = useState<LabeledSequence | null>(null)
+  const sequences = useMemo(() => allSequences.filter(s =>
+    (scope !== 'evaluation' || !evaluationGroup || (s.evaluation?.taskId.startsWith('no-sign-extra-') === (evaluationGroup === 'idle')))
+    && (!trainingBatchId || s.training?.batchId === trainingBatchId)
+    && (!trainingCategory || s.training?.category === trainingCategory)
+    && (!legacyOnly || !s.training)
+    && (!signsOnly || (s.training ? s.training.category === 'sign' : !s.collection && !['REST', 'IDLE', 'IDLE_MOVEMENT', 'NO_SIGN', 'INTERRUPTION'].includes(s.label) && !s.label.startsWith('IDLE_')))), [allSequences, scope, evaluationGroup, trainingBatchId, trainingCategory, legacyOnly, signsOnly])
   const [selectedLabel, setSelectedLabel] = useState<string>(DEFAULT_SIGN_LABELS[0])
   const [isRecording, setIsRecording] = useState(false)
   const [frameCount, setFrameCount] = useState(0)
@@ -53,13 +69,13 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, durati
     setIsExportingZip(false)
     setExportError(null)
     return () => { exportGeneration.current += 1 }
-  }, [sequences, selectedLabel])
+  }, [sequences, selectedLabel, scope])
   // How long Start Recording waits before frames actually start buffering -
   // gives you time to get both hands into position (especially for
   // two-handed signs, where clicking Start with your hands already up
   // means you're holding the pose awkwardly while reaching for the mouse).
   // null = not currently counting down; a number = seconds remaining.
-  const [countdownSeconds, setCountdownSeconds] = useState(3)
+  const [countdownSeconds, setCountdownSeconds] = useState(0)
   const [countdown, setCountdown] = useState<number | null>(null)
 
   // Frames accumulate here during a recording rather than in state -
@@ -88,11 +104,13 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, durati
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const finishRecordingRef = useRef<(discard: boolean) => void>(() => {})
-  const recordingContextRef = useRef<{ label: string; collection?: IdleCollectionMetadata }>({ label: '' })
+  const recordingContextRef = useRef<{ label: string; collection?: IdleCollectionMetadata; evaluation?: LabeledSequence['evaluation']; training?: LabeledSequence['training']; scope: 'training' | 'evaluation' }>({ label: '', scope: 'training' })
 
   useEffect(() => {
-    setSequences(getSequences())
-  }, [])
+    setSequences(getSequences(scope))
+    setZipExport(null)
+    setSaveError(null)
+  }, [scope])
 
   // Unmount-only: stop any running interval if the component goes away
   // mid-countdown or mid-recording.
@@ -142,7 +160,7 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, durati
     if (!feed.enabled || !feed.cameraReady) return
     if (!selectedLabel.trim()) return
     if (countdownIntervalRef.current !== null) return // already counting down
-    recordingContextRef.current = { label: selectedLabel.trim(), collection: collection ? { ...collection } : undefined }
+    recordingContextRef.current = { label: selectedLabel.trim(), collection: collection ? { ...collection } : undefined, evaluation: evaluation ? { ...evaluation } : undefined, training: training ? { ...training } : undefined, scope }
 
     let remaining = countdownSeconds
     if (remaining <= 0) {
@@ -164,7 +182,7 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, durati
         setCountdown(remaining)
       }
     }, 1000)
-  }, [selectedLabel, countdownSeconds, beginActualRecording, feed.enabled, feed.cameraReady, collection, recordingAllowed])
+  }, [scope, evaluation, training, selectedLabel, countdownSeconds, beginActualRecording, feed.enabled, feed.cameraReady, collection, recordingAllowed])
 
   // Backs out of a countdown before it finishes - e.g. you clicked Start
   // too early and want to reset. No frames were ever buffered during a
@@ -210,18 +228,26 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, durati
         setSaveError('Idle clips need at least 2 seconds of captured frames. This clip was not saved; please record again.')
         return
       }
+      const trainingContext = recordingContextRef.current.training
+      if (trainingContext && (frames.length < 8 || durationMs < 400)) {
+        setSaveError('Not enough captured frames or recording time. Please record this task again.')
+        return
+      }
       const sequence: LabeledSequence = {
+        ...(recordingContextRef.current.training ? { training: recordingContextRef.current.training } : {}),
         id: createSequenceId(),
         label: recordingContextRef.current.label,
         ...(recordingContextRef.current.collection ? { collection: recordingContextRef.current.collection } : {}),
+        ...(recordingContextRef.current.evaluation ? { evaluation: recordingContextRef.current.evaluation } : {}),
         createdAt: new Date().toISOString(),
         durationMs,
         frames,
       }
 
       try {
-        saveSequence(sequence)
+        saveSequence(sequence, recordingContextRef.current.scope)
         setSequences((prev) => [sequence, ...prev])
+        setLastSavedSequence(sequence)
       } catch (err) {
         console.error('[useDatasetRecorder] Failed to save sequence:', err)
         setSaveError(
@@ -277,24 +303,31 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, durati
   }, [isRecording, countdown, startRecording, stopRecording, discardRecording, cancelCountdown])
 
   const removeSequence = useCallback((id: string) => {
-    deleteStoredSequence(id)
+    deleteStoredSequence(id, scope)
     setSequences((prev) => prev.filter((s) => s.id !== id))
-  }, [])
+  }, [scope])
 
   const clearAll = useCallback(() => {
-    clearSequences()
-    setSequences([])
-  }, [])
+    if ((scope === 'evaluation' && evaluationGroup) || trainingBatchId || trainingCategory || legacyOnly || signsOnly) {
+      clearSequences(scope, sequences.map(s => s.id))
+      const removed = new Set(sequences.map(s => s.id))
+      setSequences(prev => prev.filter(s => !removed.has(s.id)))
+    } else {
+      clearSequences(scope)
+      setSequences([])
+    }
+  }, [scope, evaluationGroup, trainingBatchId, trainingCategory, legacyOnly, signsOnly, sequences])
 
   const exportDataset = useCallback(() => {
     setExportError(null)
     try {
       const labels = new Set(sequences.map(s => s.label))
+      if (scope === 'evaluation') { downloadEvaluation(sequences); return }
       downloadDatasetExport(sequences, labels.size === 1 ? sequences[0]?.label : undefined)
     } catch {
       setExportError('Could not export JSON. Your recordings are still saved; please try again.')
     }
-  }, [sequences, selectedLabel])
+  }, [sequences, selectedLabel, scope])
 
   // Same data as exportDataset, split one file per sample and zipped -
   // for triaging (delete a weak sample's file, then merge_dataset.py
@@ -307,7 +340,7 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, durati
     setExportError(null)
     try {
       const labels = new Set(sequences.map(s => s.label))
-      const archive = await buildPerSampleZipExport(sequences, labels.size === 1 ? sequences[0]?.label : undefined)
+      const archive = scope === 'evaluation' ? await buildEvaluationZip(sequences) : await buildPerSampleZipExport(sequences, labels.size === 1 ? sequences[0]?.label : undefined)
       if (generation === exportGeneration.current) setZipExport(archive)
     } catch {
       if (generation === exportGeneration.current) {
@@ -319,7 +352,7 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, durati
         setIsExportingZip(false)
       }
     }
-  }, [sequences, selectedLabel])
+  }, [sequences, selectedLabel, scope])
 
   const downloadZip = useCallback(() => {
     if (!zipExport) return
@@ -344,6 +377,7 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, durati
   )
 
   return {
+    lastSavedSequence,
     detectionInputWidth,
     setDetectionInputWidth,
     feed,

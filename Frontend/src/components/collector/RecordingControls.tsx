@@ -27,6 +27,8 @@ interface RecordingControlsProps {
   countdown: number | null
   countdownSeconds: number
   onChangeCountdownSeconds: (seconds: number) => void
+  durationLimitMs: number | undefined
+  onChangeDurationLimitMs: (duration: number | undefined) => void
   onStart: () => void
   onCancelCountdown: () => void
   onStop: () => void
@@ -43,6 +45,8 @@ export default function RecordingControls({
   countdown,
   countdownSeconds,
   onChangeCountdownSeconds,
+  durationLimitMs,
+  onChangeDurationLimitMs,
   onStart,
   onCancelCountdown,
   onStop,
@@ -72,7 +76,8 @@ export default function RecordingControls({
             <kbd className="px-1 py-0.5 rounded border border-border bg-sky font-mono">Esc</kbd> discard
           </span>
 
-          <div className="flex items-center gap-1.5 text-sm text-text-2">
+          <div className="flex w-full flex-col items-start gap-3">
+          <div className="flex items-center gap-1.5 text-sm text-text-2" role="group" aria-label="Recording delay">
             <Timer size={14} />
             <span>Delay:</span>
             <div className="flex gap-1">
@@ -80,7 +85,8 @@ export default function RecordingControls({
                 <button
                   key={seconds}
                   type="button"
-                  onClick={() => onChangeCountdownSeconds(seconds)}
+                  aria-pressed={countdownSeconds === seconds}
+                  onClick={() => onChangeCountdownSeconds(countdownSeconds === seconds ? 0 : seconds)}
                   className={`px-2 py-0.5 rounded-md text-xs font-medium border transition-colors ${
                     countdownSeconds === seconds
                       ? 'bg-signal text-white border-signal'
@@ -91,6 +97,25 @@ export default function RecordingControls({
                 </button>
               ))}
             </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5 text-sm text-text-2" role="group" aria-label="Sample duration">
+            <Timer size={14} />
+            <span>Duration:</span>
+            <div className="flex gap-1">
+              {COUNTDOWN_OPTIONS.map(seconds => (
+                <button key={seconds} type="button"
+                  aria-pressed={durationLimitMs === seconds * 1000}
+                  onClick={() => onChangeDurationLimitMs(durationLimitMs === seconds * 1000 ? undefined : seconds * 1000)}
+                  className={`px-2 py-0.5 rounded-md text-xs font-medium border transition-colors ${
+                    durationLimitMs === seconds * 1000
+                      ? 'bg-signal text-white border-signal'
+                      : 'bg-white text-text-2 border-border hover:border-signal'
+                  }`}>
+                  {seconds}s
+                </button>
+              ))}
+            </div>
+          </div>
           </div>
         </>
       ) : (

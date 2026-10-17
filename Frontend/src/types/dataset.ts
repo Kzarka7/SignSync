@@ -10,9 +10,21 @@ export interface DatasetFrame {
   raw: LandmarkFrameSample
 }
 
+export type TrainingCategory = 'sign' | 'rest' | 'idle_movement'
+export interface TrainingCollectionMetadata {
+  protocol: 'separate-training-v1'
+  batchId?: string
+  participantId?: string
+  category: TrainingCategory
+  taskId: string
+  taskTitle: string
+  variantId?: string
+  pace?: string
+}
+
 export interface IdleCollectionMetadata {
-  kind: 'idle'
-  protocol: 'idle-v1'
+  kind: 'idle' | 'rest'
+  protocol: 'idle-v1' | 'rest-v1'
   // Preserve older annotations when present. New idle clips do not assign
   // participant, session, hand configuration, posture or palm orientation.
   participantId?: string
@@ -26,11 +38,13 @@ export interface IdleCollectionMetadata {
 // One recorded example of a single sign: a labeled, time-ordered sequence
 // of frames from a single Start -> Stop recording.
 export interface LabeledSequence {
+  training?: TrainingCollectionMetadata
   id: string
   label: string
   createdAt: string // ISO timestamp
   durationMs: number
   frames: DatasetFrame[]
+  evaluation?: { protocol: 'boundary-pilot-v1'; taskId: string; participantId: string; sessionId: string; notes: string }
   collection?: IdleCollectionMetadata
 }
 
@@ -52,12 +66,14 @@ export interface ExportedFrame {
 }
 
 export interface ExportedSequence {
+  training?: TrainingCollectionMetadata
   id: string
   label: string
   createdAt: string
   durationMs: number
   frameCount: number
   frames: ExportedFrame[]
+  evaluation?: { protocol: 'boundary-pilot-v1'; taskId: string; participantId: string; sessionId: string; notes: string }
   collection?: IdleCollectionMetadata
 }
 

@@ -6,9 +6,12 @@ import { normalizeIdleSequence } from './idleCollection'
 // backend exists for the dataset.
 const STORAGE_KEY = 'daloy:dataset-sequences'
 
-function readAll(): LabeledSequence[] {
+export type DatasetScope = 'training' | 'evaluation'
+const storageKey = (scope: DatasetScope) => scope === 'evaluation' ? 'signsync:boundary-evaluation-v1' : STORAGE_KEY
+
+function readAll(scope: DatasetScope): LabeledSequence[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(storageKey(scope))
     if (!raw) return []
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? (parsed as LabeledSequence[]) : []
@@ -19,31 +22,38 @@ function readAll(): LabeledSequence[] {
   }
 }
 
-function writeAll(sequences: LabeledSequence[]): void {
+function writeAll(sequences: LabeledSequence[], scope: DatasetScope): void {
   // Deliberately not swallowed here (unlike sessionHistoryStorage) - a
   // failed write most likely means the quota is full, and losing a
   // just-recorded sample silently would be a bad surprise. Callers decide
   // how to surface it (see useDatasetRecorder's saveError).
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sequences))
+  localStorage.setItem(storageKey(scope), JSON.stringify(sequences))
 }
 
 // Newest first, by createdAt.
-export function getSequences(): LabeledSequence[] {
-  return readAll().map(normalizeIdleSequence).sort(
+export function getSequences(scope: DatasetScope = 'training'): LabeledSequence[] {
+  return readAll(scope).map(normalizeIdleSequence).sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   )
 }
 
-export function saveSequence(sequence: LabeledSequence): void {
-  const all = readAll()
+export function saveSequence(sequence: LabeledSequence, scope: DatasetScope = 'training'): void {
+  if ((scope === 'evaluation') !== !!sequence.evaluation) throw new Error('Recording purpose does not match storage.')
+  if (sequence.training && (scope !== 'training' || !sequence.training.taskId
+    || (sequence.training.participantId !== undefined && !sequence.training.participantId.trim())
+    || (sequence.training.batchId !== undefined && !sequence.training.batchId.trim()))) {
+    throw new Error('Invalid training metadata or recording purpose.')
+  }
+  const all = readAll(scope)
   all.push(sequence)
-  writeAll(all)
+  writeAll(all, scope)
 }
 
-export function deleteSequence(id: string): void {
-  writeAll(readAll().filter((s) => s.id !== id))
+export function deleteSequence(id: string, scope: DatasetScope = 'training'): void {
+  writeAll(readAll(scope).filter((s) => s.id !== id), scope)
 }
 
-export function clearSequences(): void {
-  writeAll([])
+export function clearSequences(scope: DatasetScope = 'training', ids?: string[]): void {
+  const selected = ids && new Set(ids)
+  writeAll(selected ? readAll(scope).filter(s => !selected.has(s.id)) : [], scope)
 }

@@ -8,6 +8,7 @@ import { normalizeIdleSequence } from './idleCollection'
 // become the fixed-length feature vectors a GRU/LSTM training script
 // expects, per ExportedFrame.
 export function buildDatasetExport(sequences: LabeledSequence[]): DatasetExportFile {
+  if (sequences.some(s => s.evaluation)) throw new Error('Evaluation recordings cannot be exported as training samples.')
   const normalizedSequences = sequences.map(normalizeIdleSequence)
   const exportedSequences: ExportedSequence[] = normalizedSequences.map((seq) => ({
     id: seq.id,
@@ -15,6 +16,7 @@ export function buildDatasetExport(sequences: LabeledSequence[]): DatasetExportF
     createdAt: seq.createdAt,
     durationMs: seq.durationMs,
     ...(seq.collection ? { collection: { ...seq.collection } } : {}),
+    ...(seq.training ? { training: { ...seq.training } } : {}),
     frameCount: seq.frames.length,
     frames: seq.frames.map((frame) => {
       const { features, valid } = toFeatureVector(frame.raw)
@@ -34,6 +36,11 @@ export function buildDatasetExport(sequences: LabeledSequence[]): DatasetExportF
 
 function slugify(label?: string): string {
   return (label ?? '').trim().toLowerCase().replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '')
+}
+
+function exportSlug(sequences: LabeledSequence[], label?: string): string {
+  const training = sequences[0]?.training
+  return slugify(training ? [training.participantId, training.category, training.batchId].filter(Boolean).join('-') : label)
 }
 
 // Readable and filesystem-safe (colons aren't valid in Windows filenames,
@@ -76,7 +83,7 @@ export function triggerDownload(blob: Blob, filename: string): void {
 export function downloadDatasetExport(sequences: LabeledSequence[], label?: string): void {
   const payload = buildDatasetExport(sequences)
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-  const slug = slugify(label)
+  const slug = exportSlug(sequences, label)
   const filename = slug
     ? `signsync-dataset-${slug}-${sequences.length}x-${dateTimeStamp()}.json`
     : `signsync-dataset-${sequences.length}x-${dateTimeStamp()}.json`
@@ -99,7 +106,7 @@ export async function buildPerSampleZipExport(
   label?: string,
 ): Promise<{ blob: Blob; filename: string }> {
   const zip = new JSZip()
-  const slug = slugify(label) || 'sample'
+  const slug = exportSlug(sequences, label) || 'sample'
   const pad = (n: number) => String(n).padStart(2, '0')
 
   // Tracks every filename actually placed in this zip so far. Not just a

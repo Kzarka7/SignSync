@@ -1,3 +1,4 @@
+import { getEvaluationTaskTitle } from '../../services/dataset/boundaryEvaluation'
 import { memo } from 'react'
 import { Download, FolderArchive, Loader2, Trash2 } from 'lucide-react'
 import Card from '../shared/Card'
@@ -40,7 +41,7 @@ function SequenceList({ sequences, onDelete, onExport, onExportZip, onDownloadZi
             onClick={zipReady ? onDownloadZip : onExportZip}
             disabled={sequences.length === 0 || isExportingZip}
             aria-busy={isExportingZip}
-            title="All saved samples, with one JSON file per sample"
+            title="Export all saved samples in this mode"
           >
             {isExportingZip ? <Loader2 size={13} className="animate-spin" /> : <FolderArchive size={13} />}
             {isExportingZip ? 'Preparing ZIP…' : zipReady ? 'Download ZIP' : 'Prepare ZIP'}
@@ -72,7 +73,9 @@ function SequenceList({ sequences, onDelete, onExport, onExportZip, onDownloadZi
               className="flex items-center justify-between px-3 py-2 rounded-lg bg-sky border border-border"
             >
               <div>
-                <div className="text-sm font-semibold">{seq.label}</div>
+                <div className="text-sm font-semibold">{seq.label === 'IDLE_MOVEMENT' ? 'IDLE' : seq.label}</div>
+                {seq.training && <div className="text-xs text-text-2">{seq.training.taskTitle}{seq.training.participantId && ` | ${seq.training.participantId}`}</div>}
+                {seq.evaluation && <div className="text-xs text-text-2">{getEvaluationTaskTitle(seq.evaluation.taskId)}</div>}
                 {seq.collection?.hands && seq.collection.posture && (
                   <div className="text-xs text-text-2">
                     {seq.collection.hands === 'both' ? 'Both hands' : seq.collection.hands === 'left' ? 'Left hand only' : 'Right hand only'}
