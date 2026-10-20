@@ -1,8 +1,8 @@
 import type { LandmarkFrameSample, LandmarkPoint } from '../../types/landmarks'
 import { normalizeFrame } from './normalize'
 
-// Offline prototype only. No classifier, socket or conversation dependency.
-// These settings are hypotheses to evaluate on continuous pilot recordings.
+// Shared by offline replay and the opt-in P4 continuous camera test.
+// Provisional motion/rest thresholds; evaluate them during live testing.
 export const BOUNDARY_DEFAULTS = {
   calibrationMs: 1000, preRollMs: 350, startMs: 150, endMs: 750,
   postRollMs: 150, rearmMs: 500, maxGapMs: 300, lostTrackingMs: 400,
@@ -54,7 +54,7 @@ function atRest(current: Observation, reference: Observation, threshold: number)
   return true
 }
 
-export function createSignBoundaryDetector(overrides: Partial<BoundarySettings> = {}) {
+export function createSignBoundaryDetector(overrides: Partial<BoundarySettings> = {}, options: { noHandsAsRest?: boolean } = {}) {
   const settings = { ...BOUNDARY_DEFAULTS, ...overrides }
   if (Object.values(settings).some(v => !Number.isFinite(v) || v <= 0) || settings.quietSpeed >= settings.startSpeed) {
     throw new Error('Boundary settings must be positive; quietSpeed must be below startSpeed.')
@@ -114,7 +114,12 @@ export function createSignBoundaryDetector(overrides: Partial<BoundarySettings> 
         return discard('tracking-interruption', now)
       }
       const quiet = speed !== null && speed <= settings.quietSpeed
+      const noHands = options.noHandsAsRest && !current.hands.some(Boolean)
       if (phase === 'calibrating') {
+        if (noHands) {
+          reference = current; phase = 'ready'
+          return []
+        }
         if (!quiet) calmSince = null
         else {
           calmSince ??= now
@@ -122,7 +127,10 @@ export function createSignBoundaryDetector(overrides: Partial<BoundarySettings> 
         }
         return []
       }
-      const resting = quiet && reference !== null && atRest(current, reference, settings.restDistance)
+      // A reference established with hidden hands cannot also treat a visible
+      // held sign at the same wrist height as rest; that would duplicate it.
+      const hiddenReference = options.noHandsAsRest && reference !== null && !reference.hands.some(Boolean)
+      const resting = noHands || (!hiddenReference && quiet && reference !== null && atRest(current, reference, settings.restDistance))
       if (phase === 'rearming') {
         if (!resting) restSince = null
         else {
@@ -132,7 +140,9 @@ export function createSignBoundaryDetector(overrides: Partial<BoundarySettings> 
         return []
       }
       if (phase === 'ready' || phase === 'possible-start') {
-        if (speed !== null && speed >= settings.startSpeed && current.hands.some(Boolean)) {
+        if (noHands) { reference = current; movingSince = null; phase = 'ready'; return [] }
+        const entering = options.noHandsAsRest && reference !== null && !reference.hands.some(Boolean)
+        if ((entering || (speed !== null && speed >= settings.startSpeed)) && current.hands.some(Boolean)) {
           movingSince ??= now
           phase = 'possible-start'
           if (now - movingSince >= settings.startMs) {
@@ -146,7 +156,7 @@ export function createSignBoundaryDetector(overrides: Partial<BoundarySettings> 
       if (now - capture[0].timestamp >= settings.maxCaptureMs || capture.length >= 240) return discard('capture-limit', now)
       // Disappearance away from the calibrated rest pose is ambiguous: do not
       // silently treat a lost signing hand as a completed gesture.
-      const missing = armedHands.some((armed, side) => armed && !current.hands[side]
+      const missing = !noHands && armedHands.some((armed, side) => armed && !current.hands[side]
         && (!!reference?.hands[side] || !resting))
       if (missing) {
         lostSince ??= now; restSince = null

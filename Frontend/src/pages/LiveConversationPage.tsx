@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslationStream } from '../hooks/useTranslationStream'
-import { useLiveSignCapture } from '../hooks/useLiveSignCapture'
-import SignRecognitionPanel from '../components/live/SignRecognitionPanel'
+import { useContinuousLiveRecognition } from '../hooks/useContinuousLiveRecognition'
+import Button from '../components/shared/Button'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { useAvatarRenderer } from '../hooks/useAvatarRenderer'
 import { useSessionSetupStore } from '../store/sessionSetupStore'
@@ -28,15 +28,16 @@ export default function LiveConversationPage() {
     }
   }, [isReadyToBegin, navigate])
 
-  const stream = useTranslationStream()
+  const stream = useTranslationStream(true)
   const { messages, endSession, exportSession, submitSpeech, submitPhrase } = stream
   const lastMessage = messages[messages.length - 1]
   const lastSpokenOrPhraseMessage = [...messages].reverse().find((m) => m.source === 'speech' || m.source === 'phrase')
-  const capture = useLiveSignCapture(stream.sendSign, stream.connection === 'ready' && !stream.busy)
+  const capture = useContinuousLiveRecognition(stream.appendConfirmedSign)
   const { feed } = capture
   const speech = useSpeechRecognition()
   const avatar = useAvatarRenderer()
   function handleEnd() {
+    capture.stop()
     endSession()
 
     const { sessionId, startedAt, elapsedSeconds } = useSessionStore.getState()
@@ -83,7 +84,28 @@ export default function LiveConversationPage() {
               isInterpreting={avatar.isRendering}
               isPlaying={avatar.isPlaying}
             />
-            <SignRecognitionPanel capture={capture} stream={stream} />
+            <section className="rounded-xl border border-border bg-white p-4 space-y-3" aria-label="Sign recognition">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="font-semibold">Live sign recognition <span className="text-xs text-text-2">· P4 experimental</span></h2>
+                <span className="text-sm" role="status">{capture.status}</span>
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+              <Button data-sign-capture-control aria-keyshortcuts="Space Escape" variant={capture.running || capture.loading || capture.countdown!==null ? 'danger-solid' : 'primary'}
+                disabled={!capture.running && !capture.loading && capture.countdown===null && (!feed.cameraReady || !feed.poseDetected)}
+                onClick={capture.running || capture.loading || capture.countdown!==null ? capture.stop : capture.start}>
+                {capture.loading || capture.countdown!==null ? 'Cancel' : capture.running ? 'Stop recognition' : 'Start recognition'}
+              </Button>
+              <span className="text-xs text-text-2"><kbd className="px-1 py-0.5 rounded border border-border bg-sky font-mono">Space</kbd> start/stop · <kbd className="px-1 py-0.5 rounded border border-border bg-sky font-mono">Esc</kbd> cancel</span>
+              <div className="flex items-center gap-1.5 text-sm text-text-2" role="group" aria-label="Recognition start delay">
+                <span>Delay:</span>
+                {[1,3,5].map(seconds=><button key={seconds} type="button" aria-pressed={capture.countdownSeconds===seconds}
+                  disabled={capture.running || capture.loading || capture.countdown!==null} onClick={()=>capture.setCountdownSeconds(capture.countdownSeconds===seconds ? 0 : seconds)}
+                  className={`px-2 py-0.5 rounded-md text-xs font-medium border disabled:opacity-50 ${capture.countdownSeconds===seconds ? 'bg-signal text-white border-signal' : 'bg-white text-text-2 border-border hover:border-signal'}`}>{seconds}s</button>)}
+              </div>
+              </div>
+              {feed.cameraReady && !feed.poseDetected && <p className="text-sm">Keep both shoulders in view.</p>}
+              {capture.error && <p role="alert" className="text-sm text-danger">{capture.error}</p>}
+            </section>
             <SpeechSubtitle message={lastMessage ?? null} />
             <QuickPhraseRow onSelectPhrase={submitPhrase} />
           </div>

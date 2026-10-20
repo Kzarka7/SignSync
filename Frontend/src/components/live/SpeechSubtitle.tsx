@@ -1,6 +1,9 @@
 import { HandMetal, Mic, MessageSquareText } from "lucide-react";
 import { ConversationMessage } from "../../types/message";
 import Card from "../shared/Card";
+import ConfidenceBar from '../shared/ConfidenceBar'
+import Badge from '../shared/Badge'
+import { CONFIDENCE_CATEGORY_LABELS } from '../../utils/confidence'
 import { useSessionStore } from '../../store/sessionStore'
 import { formatElapsedTime, elapsedSecondsBetween } from '../../utils/time'
 
@@ -63,6 +66,17 @@ export default function SpeechSubtitle({ message, sessionStartedAt } : SpeechSub
       <div className={`text-2xl leading-relaxed break-words whitespace-normal ${hasMessage ? 'text-[#1E293B] font-bold' : 'text-text-3 font-medium mt-1.5'}`}>
         {hasMessage ? message.text : 'Waiting for signed or spoken input...'}
       </div>
+      {hasMessage && typeof message.confidence==='number' && <div className="mt-2 space-y-1.5">
+        <ConfidenceBar bar={message} rate={message.confidence>=90 ? 'ok' : 'med'} />
+        <div className="flex flex-wrap gap-1.5">
+          {Object.entries(message.confidenceBreakdown ?? {}).filter(([,value])=>typeof value==='number').map(([category,value])=>(
+            <Badge key={category} className="text-xs" tone={value!>=90 ? 'ok' : 'med'}>
+              {CONFIDENCE_CATEGORY_LABELS[category as keyof typeof CONFIDENCE_CATEGORY_LABELS]}: {value}% confidence
+            </Badge>
+          ))}
+        </div>
+        <Badge className="text-sm" tone={message.confidence>=90 ? 'ok' : 'med'}>Overall: {message.confidence}% confidence</Badge>
+      </div>}
     </Card>
   );
 }

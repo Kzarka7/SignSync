@@ -4,22 +4,22 @@ const fs = require('node:fs')
 const vm = require('node:vm')
 const ts = require('typescript')
 
-function setup() {
+function setup(mode, diagnostics = false) {
   class Socket {
     static OPEN = 1
     readyState = 0
     bufferedAmount = 0
     sent = []
-    constructor() { Socket.latest = this }
+    constructor(url) { this.url = String(url); Socket.latest = this }
     send(data) { this.sent.push(JSON.parse(data)) }
     close() { this.readyState = 3 }
   }
   const source = fs.readFileSync('src/services/ws/translationSocket.ts', 'utf8')
     .replaceAll('import.meta.env', '({})')
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText
-  const context = { exports: {}, WebSocket: Socket, console }
+  const context = { exports: {}, WebSocket: Socket, URL, console }
   vm.runInNewContext(code, context)
-  const transport = context.exports.createTranslationSocket()
+  const transport = context.exports.createTranslationSocket(mode, diagnostics)
   const events = []
   transport.connect(event => events.push(event))
   return { transport, socket: Socket.latest, events }
@@ -56,4 +56,15 @@ test('cleanup removes handlers so old sockets cannot update the next session', (
   assert.equal(socket.onclose, null)
   assert.equal(socket.onerror, null)
   assert.equal(transport.sendSign({ requestId: 'stale' }), false)
+})
+
+ test('model selection is explicit and defaults to v5', () => {
+  assert.equal(new URL(setup().socket.url).searchParams.get('model'), 'v5')
+  assert.equal(new URL(setup('p4-candidate').socket.url).searchParams.get('model'), 'p4-candidate')
+})
+
+test('graph execution is opt-in only for the diagnostic connection', () => {
+  assert.equal(new URL(setup('p4-candidate').socket.url).searchParams.get('diagnostics'), null)
+  assert.equal(new URL(setup().socket.url).searchParams.get('diagnostics'), null)
+  assert.equal(new URL(setup('p4-candidate', true).socket.url).searchParams.get('diagnostics'), '1')
 })
