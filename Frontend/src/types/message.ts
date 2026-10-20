@@ -2,6 +2,7 @@
 // sign-detection pipeline, the speech-to-text pipeline, or a manually
 // selected quick phrase.
 export type MessageSource = 'sign' | 'speech' | 'phrase'
+export type RecognitionMode = 'v5' | 'p4-candidate'
 
 // One score per recognition/translation pipeline stage. Which keys show
 // up depends on the message's source - a 'sign' message never carries
@@ -36,6 +37,7 @@ export interface SignRequest {
 }
 
 export interface SignPrediction {
+  rejectionReason?: 'insufficient_hand_visibility'
   requestId: string
   label: string
   score: number
@@ -48,7 +50,8 @@ export interface SignPrediction {
 
 export type TranslationSocketEvent =
   | { type: 'prediction'; payload: SignPrediction }
-  | { type: 'status'; payload: { state: 'loading' | 'ready' | 'disconnected'; message: string } }
+  | { type: 'status'; payload: { state: 'loading' | 'ready' | 'disconnected'; message: string;
+      diagnosticsProtocol?: number; recognizerId?: string; execution?: string; runs?: string[] } }
   | { type: 'error'; payload: { requestId?: string; message: string } }
 
 export interface DeviceStatusEvent {

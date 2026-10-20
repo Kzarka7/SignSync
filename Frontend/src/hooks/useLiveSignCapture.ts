@@ -2,9 +2,30 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCameraFeed } from './useCameraFeed'
 import { FEATURE_ORDER, toFeatureVector } from '../services/landmarks/normalize'
 import type { LandmarkFrameSample } from '../types/landmarks'
+import { createContinuousSignCapture } from '../services/landmarks/continuousSignCapture'
 import type { SignRequest } from '../types/message'
 
-export function useLiveSignCapture(sendSign: (request: SignRequest) => boolean, ready: boolean) {
+export function useLiveSignCapture(sendSign: (request: SignRequest) => boolean, ready: boolean, candidate = false, connected = ready) {
+  const [continuous, setContinuous] = useState(false)
+  const [boundaryPhase, setBoundaryPhase] = useState('calibrating')
+  const [queued, setQueued] = useState(0)
+  const automatic = useRef<ReturnType<typeof createContinuousSignCapture> | null>(null)
+  const queue = useRef<SignRequest[]>([])
+  const transport = useRef({ sendSign, ready })
+  transport.current = { sendSign, ready }
+  const stopContinuous = useCallback(() => {
+    automatic.current = null
+    queue.current = []
+    setQueued(0)
+    setContinuous(false)
+  }, [])
+  const flush = useCallback(() => {
+    if (transport.current.ready && queue.current.length && transport.current.sendSign(queue.current[0])) {
+      queue.current.shift()
+      setQueued(queue.current.length)
+    }
+  }, [])
+  useEffect(() => { if (ready) flush() }, [ready, flush])
   const [phase, setPhase] = useState<'idle' | 'countdown' | 'recording'>('idle')
   const [count, setCount] = useState(0)
   const [countdown, setCountdown] = useState<number | null>(null)
@@ -43,24 +64,53 @@ export function useLiveSignCapture(sendSign: (request: SignRequest) => boolean, 
   const finishRef = useRef(finish)
   finishRef.current = finish
   const onFrame = useCallback((sample: LandmarkFrameSample) => {
+    if (automatic.current) {
+      for (const { event, frames } of automatic.current.push(sample)) {
+        if (event.type === 'segment') {
+          if (queue.current.length >= 6) {
+            setError('Recognition queue is full. Pause signing until pending signs finish.')
+          } else {
+            setError(null)
+            queue.current.push({ requestId: crypto.randomUUID(), featureOrder: FEATURE_ORDER, frames })
+            setQueued(queue.current.length)
+          }
+        } else setError('Capture discarded: ' + event.reason.replace(/-/g, ' ') + '. Return to rest before signing again.')
+      }
+      setBoundaryPhase(automatic.current.phase)
+      flush()
+      return
+    }
     if (!recording.current) return
     buffer.current.push({ timestamp: sample.timestamp, ...toFeatureVector(sample) })
     setCount(buffer.current.length)
     if (buffer.current.length >= 240) finishRef.current()
-  }, [])
+  }, [flush])
   const feed = useCameraFeed({ onFrame })
 
+  useEffect(() => {
+    if (!candidate || !connected || !feed.enabled || feed.error || feed.modelError) stopContinuous()
+  }, [candidate, connected, feed.enabled, feed.error, feed.modelError, stopContinuous])
+  const startContinuous = () => {
+    if (!candidate || !ready || !feed.cameraReady || !feed.poseDetected) return
+    cancel()
+    setError(null)
+    automatic.current = createContinuousSignCapture()
+    setBoundaryPhase('calibrating')
+    setContinuous(true)
+  }
   useEffect(() => {
     if (!feed.enabled || !ready || feed.error || feed.modelError) cancel()
   }, [feed.enabled, feed.error, feed.modelError, ready, cancel])
   useEffect(() => () => {
     recording.current = false
+    automatic.current = null
+    queue.current = []
     if (countdownTimer.current) clearInterval(countdownTimer.current)
     if (limit.current) clearTimeout(limit.current)
   }, [])
 
   const start = () => {
-    if (!ready || !feed.cameraReady || !feed.poseDetected || phase !== 'idle') return
+    if (automatic.current || !ready || !feed.cameraReady || !feed.poseDetected || phase !== 'idle') return
     setError(null)
     setPhase('countdown')
     let remaining = countdownSeconds
@@ -87,6 +137,10 @@ export function useLiveSignCapture(sendSign: (request: SignRequest) => boolean, 
       const target = event.target instanceof HTMLElement ? event.target : null
       if (target?.isContentEditable || target?.closest('input, textarea, select, [role="textbox"], [role="combobox"], [role="dialog"]')) return
 
+      if (automatic.current) {
+        if (event.key === 'Escape') { event.preventDefault(); stopContinuous() }
+        return
+      }
       if (event.code === 'Space' || event.key === ' ') {
         // Keep native Space behavior on other controls; capture buttons are
         // handled here to prevent the same keypress also triggering a click.
@@ -102,9 +156,9 @@ export function useLiveSignCapture(sendSign: (request: SignRequest) => boolean, 
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [phase, start, finish, cancel])
+  }, [phase, start, finish, cancel, stopContinuous])
 
-  return { feed, phase, count, countdown, countdownSeconds,
+  return { feed, phase, count, countdown, countdownSeconds, continuous, boundaryPhase, queued, startContinuous, stopContinuous,
     setCountdownSeconds: (seconds: number) => {
       if (phase === 'idle' && [1, 3, 5].includes(seconds)) setCountdownSeconds(seconds)
     }, error, start, finish, cancel }

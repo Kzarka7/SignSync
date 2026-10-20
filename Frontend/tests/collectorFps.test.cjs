@@ -9,6 +9,7 @@ const { renderToStaticMarkup } = require('react-dom/server')
 
 function loadComponent(name, globals = {}, react = React) {
   function load(file) {
+    if (!fs.existsSync(file) && file.endsWith('.tsx')) file = file.slice(0, -1)
     const exports = {}
     const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
       compilerOptions: {

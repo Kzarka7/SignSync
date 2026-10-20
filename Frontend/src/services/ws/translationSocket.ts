@@ -1,6 +1,7 @@
-import { TranslationSocketEvent, SignRequest } from '../../types/message'
+import { TranslationSocketEvent, SignRequest, RecognitionMode } from '../../types/message'
 
 export interface ITranslationSocket {
+  readonly endpoint?: string
   connect(onEvent: (event: TranslationSocketEvent) => void): void
   disconnect(): void
   sendControl(action: 'end-session' | 'export'): void
@@ -8,11 +9,18 @@ export interface ITranslationSocket {
 }
 
 class RealTranslationSocket implements ITranslationSocket {
+  constructor(private mode: RecognitionMode = 'v5', private diagnostics = false) {}
   private socket: WebSocket | null = null
 
+  get endpoint() {
+    const url = new URL(import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000/ws/translate')
+    url.searchParams.set('model', this.mode)
+    if (this.diagnostics) url.searchParams.set('diagnostics', '1')
+    return url.toString()
+  }
+
   connect(onEvent: (event: TranslationSocketEvent) => void) {
-    const url = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000/ws/translate'
-    const socket = new WebSocket(url)
+    const socket = new WebSocket(this.endpoint)
     this.socket = socket
     socket.onmessage = (msg) => {
       try {
@@ -49,6 +57,6 @@ class RealTranslationSocket implements ITranslationSocket {
 }
 
 // Recognition always uses the real backend, independently of dashboard mocks.
-export function createTranslationSocket(): ITranslationSocket {
-  return new RealTranslationSocket()
+export function createTranslationSocket(mode: RecognitionMode = 'v5', diagnostics = false): ITranslationSocket {
+  return new RealTranslationSocket(mode, diagnostics)
 }
