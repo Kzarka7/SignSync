@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.recognition import (FEATURE_ORDER, EXPERIMENTS, REPO, SignRequest, V5Recognizer,
-                             get_recognizer, raw_geometry_features,
+                             P4CandidateRecognizer, get_recognizer, raw_geometry_features,
                              standardize_for_model, validate_capture)
 from app.main import app
 
@@ -77,6 +77,75 @@ class AcceptanceTests(unittest.TestCase):
                 self.assertEqual(result["label"], "SIGN_0")
 
 
+class CandidateTests(unittest.TestCase):
+    def test_candidate_allows_no_hands_but_requires_pose(self):
+        data = capture()
+        for frame in data['frames']:
+            frame['features'][36] = 0
+        validate_capture(SignRequest.model_validate(data), allow_no_hands=True)
+        for frame in data['frames']:
+            frame['valid'] = False
+        with self.assertRaises(ValueError):
+            validate_capture(SignRequest.model_validate(data), allow_no_hands=True)
+
+    def test_rest_and_idle_are_never_accepted_as_signs(self):
+        recognizer = P4CandidateRecognizer.__new__(P4CandidateRecognizer)
+        recognizer.lock = Lock()
+        recognizer.labels = ['REST', 'IDLE_MOVEMENT'] + [f'SIGN_{i}' for i in range(20)]
+        for top in (0, 1, 2):
+            prob = np.zeros((1, 22)); prob[0, top] = 1
+            recognizer.members = [('test', lambda x, training: prob, None, None)]
+            with patch('app.recognition.raw_geometry_features', return_value=np.zeros((40, 238))), patch('app.recognition.standardize_for_model', side_effect=lambda raw, mean, std: raw):
+                result = recognizer.predict(SignRequest.model_validate(capture()))
+            self.assertEqual(result['accepted'], top == 2)
+            self.assertEqual(result['model'], P4CandidateRecognizer.model_id)
+
+    def test_candidate_visibility_gate_preserves_non_sign_results(self):
+        recognizer = P4CandidateRecognizer.__new__(P4CandidateRecognizer)
+        recognizer.lock = Lock()
+        recognizer.labels = ['REST', 'IDLE_MOVEMENT', 'WHAT']
+        for label_index in (0, 1, 2):
+            for hand_index in (36, 100):
+                for visible_frames in (0, 5, 6, 12):
+                    with self.subTest(label=label_index, hand=hand_index, visible=visible_frames):
+                        data = capture()
+                        for i, frame in enumerate(data['frames']):
+                            frame['features'][36] = 0
+                            frame['features'][hand_index] = int(i < visible_frames)
+                        prob = np.zeros((1, 3)); prob[0, label_index] = 1
+                        recognizer.members = [('test', lambda x, training: prob, None, None)]
+                        with patch('app.recognition.raw_geometry_features', return_value=np.zeros((40, 238))), patch('app.recognition.standardize_for_model', side_effect=lambda raw, mean, std: raw):
+                            result = recognizer.predict(SignRequest.model_validate(data))
+                        self.assertEqual(result['label'], recognizer.labels[label_index])
+                        self.assertEqual(result['accepted'], label_index == 2 and visible_frames >= 6)
+                        self.assertEqual(result.get('rejectionReason'), 'insufficient_hand_visibility' if label_index == 2 and visible_frames < 6 else None)
+
+    def test_invalid_frames_do_not_count_as_visible_hands(self):
+        data = capture()
+        for i, frame in enumerate(data['frames']):
+            frame['features'][36] = int(i < 6)
+        data['frames'][0]['valid'] = False
+        recognizer = P4CandidateRecognizer.__new__(P4CandidateRecognizer)
+        with patch.object(V5Recognizer, 'predict', return_value={'label': 'WHAT', 'accepted': True}):
+            result = recognizer.predict(SignRequest.model_validate(data))
+        self.assertFalse(result['accepted'])
+        self.assertEqual(result['rejectionReason'], 'insufficient_hand_visibility')
+
+    def test_socket_routes_candidate_and_rejects_unknown_mode(self):
+        class Recognizer:
+            members = [('candidate',)]
+        with patch('app.ws.translate.get_recognizer', return_value=Recognizer()) as loader, TestClient(app) as client:
+            for query, expected in (('', 'v5'), ('?model=p4-candidate', 'p4-candidate')):
+                with client.websocket_connect('/ws/translate' + query) as socket:
+                    socket.receive_json()
+                    self.assertEqual(socket.receive_json()['payload']['model'], expected)
+                    loader.assert_called_with(expected)
+            loader.reset_mock()
+            with client.websocket_connect('/ws/translate?model=unknown') as socket:
+                self.assertEqual(socket.receive_json()['type'], 'error')
+            loader.assert_not_called()
+
+
 class SocketTests(unittest.TestCase):
     def test_prediction_duplicate_and_bad_input(self):
         class Recognizer:
@@ -110,6 +179,38 @@ class SocketTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("SIGNSYNC_TEST_ARTIFACTS") == "1", "Requires local v5 dataset and models")
 class ArtifactTests(unittest.TestCase):
+    def test_p4_candidate_scalers_and_real_predictions(self):
+        root = REPO.parent / 'SignSync Dataset'
+        release = root / 'experiments' / 'sign_rest_idle_p4_signs_v1_2026_10_18'
+        recognizer = get_recognizer('p4-candidate')
+        self.assertEqual(len(recognizer.members), 9)
+        requests = []
+        for folder in sorted((release / 'folds').iterdir()):
+            meta = json.loads((folder / 'metadata.json').read_text())
+            source = json.loads((release / 'datasets' / (meta['testParticipant'] + '-sign-rest-idle-v1.json')).read_text())
+            seqs = {seq['id']: seq for seq in source['sequences']}
+            labels = sorted(meta['labelToIndex'], key=meta['labelToIndex'].get)
+            with np.load(folder / 'gru_data.npz', allow_pickle=False) as data:
+                for label in ('HELLO', 'REST', 'IDLE_MOVEMENT'):
+                    i = int(np.flatnonzero(data['y_test'] == labels.index(label))[0])
+                    seq = seqs[meta['sequenceIds']['test'][i]]
+                    raw = raw_geometry_features(seq, FEATURE_ORDER, 40)[None, ...]
+                    rebuilt = standardize_for_model(raw, data['feature_mean'], data['feature_std'])
+                    np.testing.assert_allclose(rebuilt[0], data['X_test'][i], atol=2e-4, rtol=2e-5)
+                    if len(requests) < 3:
+                        requests.append(SignRequest.model_validate(dict(requestId=seq['id'], featureOrder=FEATURE_ORDER, frames=seq['frames'])))
+        with TestClient(app) as client, client.websocket_connect('/ws/translate?model=p4-candidate') as socket:
+            socket.receive_json()
+            self.assertEqual(socket.receive_json()['payload']['model'], 'p4-candidate')
+            for request in requests:
+                socket.send_json({'type': 'sign', 'payload': request.model_dump()})
+                event = socket.receive_json()
+                self.assertEqual(event['type'], 'prediction', event)
+                self.assertEqual(event['payload']['model'], recognizer.model_id)
+                if event['payload']['label'] in ('REST', 'IDLE_MOVEMENT'):
+                    self.assertFalse(event['payload']['accepted'])
+                print('Real candidate socket result:', event['payload'], flush=True)
+
     def test_saved_tensor_parity_and_real_socket(self):
         root = REPO.parent / "SignSync Dataset"
         valid_sequence = None

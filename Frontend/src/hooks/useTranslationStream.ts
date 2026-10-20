@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ConfidenceBreakdown, ConversationMessage, SignPrediction, SignRequest } from '../types/message'
+import { ConfidenceBreakdown, ConversationMessage, SignPrediction, SignRequest, RecognitionMode } from '../types/message'
 import { createTranslationSocket, ITranslationSocket } from '../services/ws/translationSocket'
 import { averageConfidence } from '../utils/confidence'
 import { useSessionStore } from '../store/sessionStore'
 
-export function useTranslationStream() {
+export function useTranslationStream(externalRecognition = false) {
+  const [mode, setMode] = useState<RecognitionMode>('v5')
   const [messages, setMessages] = useState<ConversationMessage[]>([])
   const [connection, setConnection] = useState<'loading' | 'ready' | 'disconnected'>('loading')
   const [error, setError] = useState<string | null>(null)
@@ -24,7 +25,8 @@ export function useTranslationStream() {
   }, [])
 
   useEffect(() => {
-    const socket = createTranslationSocket()
+    if (externalRecognition) return
+    const socket = createTranslationSocket(mode)
     socketRef.current = socket
     setConnection('loading')
     setError(null)
@@ -39,6 +41,18 @@ export function useTranslationStream() {
         clearPending()
       } else if (event.type === 'prediction' && event.payload.requestId === pending.current) {
         setPrediction(event.payload)
+        const result = event.payload
+        if (mode === 'p4-candidate' && result.accepted && !result.rejectionReason
+            && !['REST', 'IDLE', 'IDLE_MOVEMENT'].includes(result.label)
+            && !added.current.has(result.requestId)) {
+          added.current.add(result.requestId)
+          const confidence = Math.round(result.score * 1000) / 10
+          setMessages(prev => [...prev, {
+            id: result.requestId, sessionId: useSessionStore.getState().sessionId ?? 'live',
+            source: 'sign', text: result.label.replace(/_/g, ' '), timestamp: new Date().toISOString(),
+            confidence, confidenceBreakdown: { handSignRecognition: confidence },
+          }])
+        }
         clearPending()
       }
     })
@@ -47,7 +61,16 @@ export function useTranslationStream() {
       if (timer.current) clearTimeout(timer.current)
       pending.current = null
     }
-  }, [attempt, clearPending])
+  }, [attempt, clearPending, mode, externalRecognition])
+
+  const appendConfirmedSign = useCallback((entry: {requestId: string; label: string; score: number}) => {
+    if (!externalRecognition || added.current.has(entry.requestId) || ['REST','IDLE','IDLE_MOVEMENT'].includes(entry.label)) return
+    added.current.add(entry.requestId)
+    const confidence = Math.round(entry.score * 1000) / 10
+    setMessages(prev => [...prev, {id:entry.requestId, sessionId:useSessionStore.getState().sessionId ?? 'live',
+      source:'sign',text:entry.label.replace(/_/g,' '),timestamp:new Date().toISOString(),
+      confidence,confidenceBreakdown:{handSignRecognition:confidence}}])
+  }, [externalRecognition])
 
   const sendSign = useCallback((request: SignRequest) => {
     if (connection !== 'ready' || pending.current) return false
@@ -70,7 +93,7 @@ export function useTranslationStream() {
   }, [connection, clearPending])
 
   const addPrediction = () => {
-    if (!prediction?.accepted || added.current.has(prediction.requestId)) return
+    if (mode !== 'v5' || !prediction?.accepted || added.current.has(prediction.requestId)) return
     added.current.add(prediction.requestId)
     const confidence = Math.round(prediction.score * 100)
     setMessages(prev => [...prev, {
@@ -107,6 +130,15 @@ export function useTranslationStream() {
       timestamp: new Date().toISOString(),
     }])
   }
-  return { messages, endSession, exportSession, submitSpeech, submitPhrase, connection, error,
+  const selectMode = (next: RecognitionMode) => {
+    if (next === mode || busy) return
+    socketRef.current?.disconnect()
+    clearPending()
+    setConnection('loading')
+    setPrediction(null)
+    setError(null)
+    setMode(next)
+  }
+  return { messages, endSession, exportSession, submitSpeech, submitPhrase, connection, error, mode, selectMode, appendConfirmedSign,
     prediction, busy, sendSign, addPrediction, reconnect: () => setAttempt(a => a + 1) }
 }
