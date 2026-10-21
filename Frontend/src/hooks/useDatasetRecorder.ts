@@ -377,6 +377,7 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, durati
   )
 
   return {
+    refreshSequences: () => setSequences(getSequences(scope)),
     lastSavedSequence,
     detectionInputWidth,
     setDetectionInputWidth,

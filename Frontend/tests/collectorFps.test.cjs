@@ -42,6 +42,31 @@ test('saved FPS uses frame intervals, including short and invalid samples', () =
   }
 })
 
+test('preserved video uses shared controls with elapsed time and a save-video action instead of inferred-frame counts', () => {
+  const RecordingControls = loadComponent('RecordingControls')
+  const html = renderToStaticMarkup(React.createElement(RecordingControls, {
+    isRecording: true, countdown: null, frameCount: 0, processedFramesRef: { current: 0 },
+    stopLabel: 'Stop & save video', recordingStatus: 'Recording · 2.0s',
+  }))
+  assert.match(html, /Stop &amp; save video/)
+  assert.match(html, /Recording · 2.0s/)
+  assert.doesNotMatch(html, /0 frames|FPS/)
+  assert.match(html, /Discard/)
+})
+
+test('pending camera videos share Recorded samples without appearing as approved exports or another card', () => {
+  const SequenceList = loadComponent('SequenceList')
+  const html = renderToStaticMarkup(React.createElement(SequenceList, {
+    sequences: [], collapsible: true,
+    pendingVideos: [{ id: 'pending', file: { name: 'HELLO.webm' }, label: 'HELLO', fps: 30 }],
+  }))
+  assert.match(html, /Recorded samples \(1\)/)
+  assert.match(html, /Waiting to process/)
+  assert.match(html, /Process all/)
+  assert.doesNotMatch(html, /Recorded videos|No saved samples yet|Prepare training package|Export JSON/)
+  assert.equal((html.match(/bg-white border border-border rounded-xl2 p-5/g) ?? []).length, 1)
+})
+
 test('live FPS counts completed callbacks over elapsed wall time, ticks once a second and cleans up', () => {
   let now = 100, tick, interval, cleared, cleanup, state = null
   const fakeReact = {

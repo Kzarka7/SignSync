@@ -45,6 +45,9 @@ export function saveSequence(sequence: LabeledSequence, scope: DatasetScope = 't
     throw new Error('Invalid training metadata or recording purpose.')
   }
   const all = readAll(scope)
+  if (sequence.videoImport && all.some(s => s.videoImport?.fingerprint === sequence.videoImport?.fingerprint)) {
+    throw new Error('This source video has already been saved.')
+  }
   all.push(sequence)
   writeAll(all, scope)
 }

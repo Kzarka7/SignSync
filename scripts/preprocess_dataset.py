@@ -54,6 +54,20 @@ def load_export(path: Path) -> dict:
     return data
 
 
+def assert_video_source_split_isolation(partitions: dict[str, list[dict]]) -> None:
+    """Retain legacy camera behavior; refuse source-video leakage when provenance exists."""
+    owners = {}
+    for split, samples in partitions.items():
+        for sample in samples:
+            fingerprint = sample.get('videoImport', {}).get('fingerprint')
+            if not fingerprint:
+                continue
+            fingerprint = fingerprint.lower()
+            if fingerprint in owners and owners[fingerprint] != split:
+                raise ValueError(f'Source video {fingerprint[:12]} crosses {owners[fingerprint]} and {split}; keep all intervals from one source in one split.')
+            owners[fingerprint] = split
+
+
 def resample_sequence(frames: list[dict], target_frames: int, sequence_id: str) -> np.ndarray:
     """Linearly resample one complete sign performance to target_frames."""
     if not frames:
@@ -184,6 +198,12 @@ def main() -> None:
     x_all, y_all = np.concatenate(tensors), np.concatenate(labels)
     train_indices, validation_indices = np.concatenate(training_parts), np.concatenate(validation_parts)
     x_test, y_test, test_ids = prepare_sequences(test_data, label_to_index, args.frames)
+    by_id = {sample['id']: sample for data in train_datasets + [test_data] for sample in data['sequences']}
+    assert_video_source_split_isolation({
+        'training': [by_id[train_ids[index]] for index in train_indices],
+        'validation': [by_id[train_ids[index]] for index in validation_indices],
+        'test': [by_id[sample_id] for sample_id in test_ids],
+    })
 
     # Standardize from training data only. Applying its statistics to validation
     # and unseen-participant test data prevents evaluation leakage.

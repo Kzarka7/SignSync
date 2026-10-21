@@ -1,5 +1,5 @@
 import { Circle, Square, Timer, Trash2, X } from 'lucide-react'
-import { useEffect, useState, type MutableRefObject } from 'react'
+import { useEffect, useState, type MutableRefObject, type ReactNode } from 'react'
 import Button from '../shared/Button'
 
 function LiveFps({ processedFramesRef }: { processedFramesRef: MutableRefObject<number> }) {
@@ -20,6 +20,8 @@ function LiveFps({ processedFramesRef }: { processedFramesRef: MutableRefObject<
 }
 
 interface RecordingControlsProps {
+  stopLabel?: string
+  recordingStatus?: ReactNode
   isRecording: boolean
   frameCount: number
   processedFramesRef: MutableRefObject<number>
@@ -38,6 +40,8 @@ interface RecordingControlsProps {
 const COUNTDOWN_OPTIONS = [1, 3, 5]
 
 export default function RecordingControls({
+  stopLabel = 'Stop & save',
+  recordingStatus,
   isRecording,
   frameCount,
   processedFramesRef,
@@ -121,14 +125,14 @@ export default function RecordingControls({
       ) : (
         <>
           <Button variant="danger-solid" onClick={onStop}>
-            <Square size={14} className="fill-current" /> Stop &amp; save
+            <Square size={14} className="fill-current" /> {stopLabel}
           </Button>
           <Button variant="default" onClick={onDiscard}>
             <Trash2 size={14} /> Discard
           </Button>
           <span className="flex items-center gap-1.5 text-sm font-medium text-danger">
             <span className="w-2 h-2 rounded-full bg-danger animate-pulse" />
-            Recording · {frameCount} frames · <LiveFps processedFramesRef={processedFramesRef} />
+            {recordingStatus ?? <>Recording · {frameCount} frames · <LiveFps processedFramesRef={processedFramesRef} /></>}
           </span>
         </>
       )}
