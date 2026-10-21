@@ -6,8 +6,101 @@ import type { LandmarkFrameSample } from './landmarks'
 // export time (see services/landmarks/normalize.ts), so the pipeline can
 // change later without needing to re-record every existing sample.
 export interface DatasetFrame {
+  sourceTimestampMs?: number
+  sourceDurationMs?: number
   timestamp: number
   raw: LandmarkFrameSample
+}
+
+export interface VideoQualityWindow {
+  protocol: 'gesture-context-v1'
+  startMs: number
+  endMs: number
+  basis: 'automatic-hand-activity'
+}
+
+export interface VideoQuality {
+  gesture?: { startMs: number; endMs: number; usableFrames: number; totalFrames: number; longestGapMs: number }
+  context?: { beforeFrames: number; afterFrames: number; noHandFrames: number; findings: string[] }
+  result: 'Pass' | 'Review' | 'Retake'
+  findings: string[]
+  usableFrames: number
+  totalFrames: number
+  longestGapMs: number
+  coverage?: {
+    leftHandFrames: number; rightHandFrames: number; bothHandsFrames: number
+    noHandsFrames: number; shoulderFrames: number
+    noHandIntervalsMs: { start: number; end: number }[]
+  }
+}
+
+export interface VideoImportMetadata {
+  samplePurpose?: 'rest' | 'idle_movement'
+  qualityWindow?: VideoQualityWindow
+  origin?: 'uploaded-file' | 'camera-recording'
+  sampling?: {
+    method: 'decoded-source-frames-v1'
+    requestedFps: number
+    effectiveTargetFps: number
+    sourceAverageFps: number
+    sourceMedianFps: number
+    variableFrameRate: boolean
+    sourceTimeOriginSeconds: number
+    achievedFps: number
+    decodedFrames: number
+    selectedFrames: number
+    skippedForTarget: number
+    duplicateTimestamps: number
+    processingMs: number
+    processingFps: number
+  }
+  intervalReview?: {
+    protocol: 'video-interval-review-v1'
+    choice: 'full-recording' | 'selected-interval'
+    startMs: number
+    endMs: number
+    confirmedAt: string
+    selectionMethod?: 'manual' | 'automatic'
+  }
+  kind: 'video-upload'
+  participantId?: string
+  filename: string
+  fingerprint: string
+  trimStartMs: number
+  trimEndMs: number
+  sourceDurationMs: number
+  width: number
+  height: number
+  sampleFps: number
+  processingVersion: string
+  quality: VideoQuality
+  reviewedAt: string
+  inputWidth?: number
+  inputHeight?: number
+  maxDimension?: number
+  fullClipQuality?: VideoQuality
+  expectedHands?: 'either' | 'both'
+  review?: {
+    samplePurpose?: 'rest' | 'idle_movement'
+    training?: TrainingCollectionMetadata
+    completeSample?: true
+    qualityWindow?: VideoQualityWindow
+    protocol: 'video-training-review-v1'
+    label: string
+    trimStartMs: number
+    trimEndMs: number
+    processingVersion: string
+    expectedHands: 'either' | 'both'
+    completeSign?: true
+    qualityFindingsAccepted: true
+  }
+  preprocessing?: {
+    orientation: 'browser-displayed' | 'source-display-transform'
+    mirroring: 'source-unchanged'
+    handedness: 'mediapipe-assignment'
+    missingHands: 'null-with-presence-flags'
+    interpolation: 'none'
+  }
 }
 
 export type TrainingCategory = 'sign' | 'rest' | 'idle_movement'
@@ -38,6 +131,7 @@ export interface IdleCollectionMetadata {
 // One recorded example of a single sign: a labeled, time-ordered sequence
 // of frames from a single Start -> Stop recording.
 export interface LabeledSequence {
+  videoImport?: VideoImportMetadata
   training?: TrainingCollectionMetadata
   id: string
   label: string
@@ -55,6 +149,8 @@ export interface LabeledSequence {
 // original raw landmarks in case a different normalization is wanted
 // later without re-recording.
 export interface ExportedFrame {
+  sourceTimestampMs?: number
+  sourceDurationMs?: number
   timestamp: number
   // Fixed-length numeric vector - see DatasetExportFile.featureSchema for
   // exactly what each index means. Zero-filled (with valid: false) for
@@ -66,6 +162,7 @@ export interface ExportedFrame {
 }
 
 export interface ExportedSequence {
+  videoImport?: VideoImportMetadata
   training?: TrainingCollectionMetadata
   id: string
   label: string

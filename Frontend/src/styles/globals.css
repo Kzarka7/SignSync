@@ -43,3 +43,15 @@
     background: transparent;
   }
 }
+/* Collector controls stay readable without input zoom on touch devices. */
+@media (pointer: coarse) {
+  [data-collector-page] input:not([type='checkbox']):not([type='range']),
+  [data-collector-page] select {
+    font-size: 16px;
+  }
+}
+
+[data-collector-page] button,
+[data-collector-page] summary {
+  touch-action: manipulation;
+}

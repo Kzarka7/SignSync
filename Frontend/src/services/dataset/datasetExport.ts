@@ -15,12 +15,14 @@ export function buildDatasetExport(sequences: LabeledSequence[]): DatasetExportF
     label: seq.label,
     createdAt: seq.createdAt,
     durationMs: seq.durationMs,
+    ...(seq.videoImport ? { videoImport: seq.videoImport } : {}),
     ...(seq.collection ? { collection: { ...seq.collection } } : {}),
     ...(seq.training ? { training: { ...seq.training } } : {}),
     frameCount: seq.frames.length,
     frames: seq.frames.map((frame) => {
       const { features, valid } = toFeatureVector(frame.raw)
-      return { timestamp: frame.timestamp, features, valid, raw: frame.raw }
+      return { timestamp: frame.timestamp, features, valid, raw: frame.raw,
+        ...(frame.sourceTimestampMs !== undefined ? { sourceTimestampMs: frame.sourceTimestampMs, sourceDurationMs: frame.sourceDurationMs } : {}) }
     }),
   }))
 
