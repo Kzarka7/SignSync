@@ -2,8 +2,10 @@ import { AlertTriangle, Loader2, Play, Square, VideoOff } from 'lucide-react'
 import { CameraFeedState } from '../../hooks/useCameraFeed'
 
 interface CollectorCameraPreviewProps {
-  feed: CameraFeedState
+  feed: Pick<CameraFeedState, 'enabled' | 'toggleCamera' | 'cameraReady' | 'handsDetected' | 'poseDetected' | 'error' | 'modelError' | 'videoRef' | 'canvasRef'>
   countdown?: number | null
+  showTrackingStatus?: boolean
+  cameraToggleDisabled?: boolean
 }
 
 // A deliberately minimal sibling of live/CameraPanel.tsx, not a reuse of
@@ -12,12 +14,13 @@ interface CollectorCameraPreviewProps {
 // requirement is to leave the live-conversation UI untouched rather than
 // bend it to a second purpose. This shows the same video+skeleton overlay
 // with just camera/hand/pose status, which is all the collector needs.
-export default function CollectorCameraPreview({ feed, countdown = null }: CollectorCameraPreviewProps) {
+export default function CollectorCameraPreview({ feed, countdown = null, showTrackingStatus = true, cameraToggleDisabled = false }: CollectorCameraPreviewProps) {
   return (
     <div className="relative rounded-xl2 overflow-hidden bg-[#0F1B2B]" style={{ aspectRatio: '16 / 9' }}>
       <div className="absolute top-3 left-3 right-3 flex justify-between z-10">
         <button
           onClick={feed.toggleCamera}
+          disabled={cameraToggleDisabled}
           title={feed.enabled ? 'Stop camera' : 'Start camera'}
           className="bg-black/45 backdrop-blur-sm text-white text-sm font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-black/60 transition-colors"
         >
@@ -25,7 +28,7 @@ export default function CollectorCameraPreview({ feed, countdown = null }: Colle
           {feed.enabled ? 'Stop camera' : 'Start camera'}
         </button>
 
-        {feed.enabled && feed.cameraReady && (
+        {showTrackingStatus && feed.enabled && feed.cameraReady && (
           <div className="flex gap-1.5">
             <span
               className={`text-xs font-semibold px-2 py-1 rounded-md transition-colors ${
@@ -58,7 +61,7 @@ export default function CollectorCameraPreview({ feed, countdown = null }: Colle
       ) : (
         <>
           <video ref={feed.videoRef} muted playsInline className="absolute inset-0 w-full h-full" />
-          <canvas ref={feed.canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+          {showTrackingStatus && <canvas ref={feed.canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />}
           {!feed.cameraReady && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0F1B2B]/95 text-white/70">
               <Loader2 size={28} className="animate-spin" />
