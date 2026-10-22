@@ -54,14 +54,14 @@ test('preserved video uses shared controls with elapsed time and a save-video ac
   assert.match(html, /Discard/)
 })
 
-test('saved samples offer Export as ZIP beside Clear all without a merged JSON export', () => {
+test('saved samples offer Prepare ZIP then Export as ZIP beside Clear all without a merged JSON export', () => {
   const SequenceList = loadComponent('SequenceList')
   for (const zipReady of [false, true]) {
     const html = renderToStaticMarkup(React.createElement(SequenceList, {
       sequences: [{ id: 'sample', label: 'HELLO', frames: [], durationMs: 0, createdAt: '2026-10-22T00:00:00Z' }],
       zipReady, isExportingZip: false,
     }))
-    assert.match(html, /Export as ZIP<\/button><button[^>]*>Clear all<\/button><\/div>/)
+    assert.match(html, new RegExp(`${zipReady ? 'Export as ZIP' : 'Prepare ZIP'}<\\/button><button[^>]*>Clear all<\\/button><\\/div>`))
     assert.match(html, /one JSON file per sample/)
     assert.doesNotMatch(html, /Export merged JSON|Other exports and storage|Download sample ZIP|Prepare training package|Download training package|Training package/)
   }
