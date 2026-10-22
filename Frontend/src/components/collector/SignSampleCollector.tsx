@@ -103,7 +103,6 @@ export default function SignSampleCollector({
       }}
       sequences={recorder.sequences}
       onDelete={recorder.removeSequence}
-      onExport={recorder.exportDataset}
       onExportZip={recorder.exportPerSampleZip}
       onDownloadZip={recorder.downloadZip}
       isExportingZip={recorder.isExportingZip}

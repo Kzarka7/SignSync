@@ -30,11 +30,9 @@ function writeAll(sequences: LabeledSequence[], scope: DatasetScope): void {
   localStorage.setItem(storageKey(scope), JSON.stringify(sequences))
 }
 
-// Newest first, by createdAt.
+// Preserve save order so the first saved take stays at the top, matching batch review.
 export function getSequences(scope: DatasetScope = 'training'): LabeledSequence[] {
-  return readAll(scope).map(normalizeIdleSequence).sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  )
+  return readAll(scope).map(normalizeIdleSequence)
 }
 
 export function saveSequence(sequence: LabeledSequence, scope: DatasetScope = 'training'): void {
