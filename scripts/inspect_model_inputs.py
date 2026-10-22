@@ -3,6 +3,7 @@
 python scripts/inspect_model_inputs.py --experiment gru_p01_p03_train_p02_test_v1 --ids FULL_ID
 Writes diagnostic JSON, Markdown, and PNGs under private documentation/input-inspections.
 """
+from processed_paths import processed_artifact_path, resolve_artifact_path
 import argparse
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -56,12 +57,12 @@ def main():
     args = parser.parse_args()
     if Path(args.experiment).name != args.experiment:
         parser.error("Use an experiment folder name")
-    folder = ROOT / "processed" / args.experiment
+    folder = processed_artifact_path(ROOT / "processed", args.experiment)
     meta = json.loads((folder / "metadata.json").read_text())
     sequences, participants = {}, {}
     order = None
     for path in meta["trainSources"] + [meta["testSource"]]:
-        payload = Path(path).read_bytes()
+        payload = resolve_artifact_path(path).read_bytes()
         if hashlib.sha256(payload).hexdigest() != meta["sourceSha256"][path]:
             raise ValueError(f"Source changed since preprocessing: {path}")
         data = json.loads(payload)

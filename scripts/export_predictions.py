@@ -4,10 +4,12 @@ Run: python scripts/export_predictions.py --all
 All seeds: python scripts/export_predictions.py --all --seeds 42 43 44
 Handshape: python scripts/export_predictions.py --all --feature-set handshape --seeds 42 43 44
 Or:  python scripts/export_predictions.py --experiment gru_p01_p02_train_p03_test_v1
-Reports are private CSV files under SignSync Dataset/models/prediction-reports/.
+Reports are private CSV files under SignSync Dataset/models/reports/predictions/.
 """
 
 from __future__ import annotations
+from processed_paths import processed_artifact_path
+from model_paths import model_artifact_folder
 
 import argparse
 import csv
@@ -80,7 +82,7 @@ def prediction_rows(metadata, y_test, probabilities, experiment):
 
 
 def export_experiment(experiment, output, load_model, seed=42):
-    processed = DATASET_FOLDER / "processed" / experiment
+    processed = processed_artifact_path(DATASET_FOLDER / "processed", experiment)
     run_name = experiment if seed == 42 else f"{experiment}_seed{seed}"
     model_folder = find_model_folder(DATASET_FOLDER / "models", run_name)
     metadata_path = processed / "metadata.json"
@@ -187,7 +189,7 @@ def main():
                     parser.error(f"Missing saved run file: {path}")
     import tensorflow as tf
 
-    output = DATASET_FOLDER / "models" / "prediction-reports" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    output = model_artifact_folder(DATASET_FOLDER / 'models', 'prediction-reports') / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     output.mkdir(parents=True, exist_ok=False)
     summaries = []
     consistency = []

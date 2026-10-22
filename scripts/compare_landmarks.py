@@ -25,6 +25,7 @@ Controls:
 """
 
 from __future__ import annotations
+from processed_paths import processed_artifact_path
 
 import argparse
 import json
@@ -226,7 +227,7 @@ def main() -> None:
     for panel_index, (participant, sample) in enumerate(zip(arguments.participants, samples)):
         label = participant_labels[participant]
         suffix = "" if arguments.dataset_version == "baseline" else f"-{arguments.dataset_version}"
-        path = dataset_folder / f"participant_{participant:02d}-dataset{suffix}.json"
+        path = processed_artifact_path(dataset_folder, f"participant_{participant:02d}-dataset{suffix}.json")
         if not path.is_file():
             parser.error(f"Participant {participant:02d} dataset was not found: {path}")
         dataset = load_dataset(path)

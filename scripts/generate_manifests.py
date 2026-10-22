@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Generate SignSync sample and exclusion manifests from merged datasets."""
+"""Refresh the sign-folder training manifest; old export generator is --legacy."""
 
 from __future__ import annotations
+from processed_paths import processed_artifact_path
 
 import csv
 import json
@@ -17,12 +18,6 @@ PROCESSED_FOLDER = DATASET_FOLDER / "processed"
 MANIFEST_FOLDER = DATASET_FOLDER / "manifests"
 SAMPLES_PATH = MANIFEST_FOLDER / "samples.csv"
 EXCLUDED_PATH = MANIFEST_FOLDER / "excluded-samples.csv"
-
-PARTICIPANT_DATASETS = {
-    "participant_01": PROCESSED_FOLDER / "participant_01-dataset.json",
-    "participant_02": PROCESSED_FOLDER / "participant_02-dataset.json",
-    "participant_03": PROCESSED_FOLDER / "participant_03-dataset.json",
-}
 
 EXCLUDED_SAMPLES = [
     ("74f464dd-2251-4657-9293-104d114d80f8", "THANK_YOU", "long internal hand-detection gap", "b0a3c6f5-21f7-4924-955b-7039067f0c3b"),
@@ -59,13 +54,17 @@ def recording_date(created_at: str) -> str:
     return created_at[:10] if created_at else ""
 
 
-def main() -> None:
+def legacy_main() -> None:
+    participant_datasets = {
+        participant: processed_artifact_path(PROCESSED_FOLDER, participant + '-dataset.json')
+        for participant in ('participant_01', 'participant_02', 'participant_03')
+    }
     existing = read_existing_rows(SAMPLES_PATH)
     excluded = read_existing_rows(EXCLUDED_PATH)
     rows: list[dict[str, str]] = []
     selected_ids: set[str] = set()
 
-    for participant_id, dataset_path in PARTICIPANT_DATASETS.items():
+    for participant_id, dataset_path in participant_datasets.items():
         with dataset_path.open("r", encoding="utf-8") as file:
             dataset = json.load(file)
 
@@ -171,5 +170,25 @@ def main() -> None:
     print(f"Previous manifests backed up to {backup}")
 
 
-if __name__ == "__main__":
+def main() -> None:
+    import argparse
+    from sample_pipeline import main as sample_main
+    import sys
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--legacy', action='store_true', help='Historical merged-export generator')
+    parser.add_argument('--check-only', action='store_true')
+    parser.add_argument('--dataset-root', type=Path, default=DATASET_FOLDER)
+    args = parser.parse_args()
+    if args.legacy:
+        if args.check_only or args.dataset_root != DATASET_FOLDER:
+            parser.error('--legacy does not support --check-only or --dataset-root')
+        legacy_main()
+        return
+    sys.argv = [sys.argv[0], '--dataset-root', str(args.dataset_root), 'index']
+    if not args.check_only:
+        sys.argv.append('--write')
+    sample_main()
+
+
+if __name__ == '__main__':
     main()

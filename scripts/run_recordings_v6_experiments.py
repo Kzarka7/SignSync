@@ -4,6 +4,8 @@ P1-P3 retain their v5 recordings; P4 uses the reviewed merge-input-v5 folder.
 Each fold trains on three participants and holds the fourth out of training
 and validation. Existing split settings, architecture, and seeds are retained.
 """
+from processed_paths import processed_artifact_path, processed_glob, resolve_artifact_path
+from model_paths import model_artifact_folder
 import argparse
 from collections import Counter
 from datetime import datetime, timezone
@@ -26,10 +28,12 @@ SEEDS = (42, 43, 44)
 
 
 def read(path):
+    path = resolve_artifact_path(path)
     return json.loads(path.read_text(encoding='utf-8'))
 
 
 def sha(path):
+    path = resolve_artifact_path(path)
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
@@ -43,7 +47,7 @@ def prepare(root, output):
     p4, warnings, scanned = merge(input_folder)
     if warnings or scanned != 400 or len(p4['sequences']) != 400:
         raise ValueError('P4 merge failed: '+str(warnings))
-    p4_path = root/'processed'/'participant_04-dataset-v6.json'
+    p4_path = processed_artifact_path(root/'processed', 'participant_04-dataset-v6.json')
     if p4_path.exists():
         old = read(p4_path)
         if any(old[k] != p4[k] for k in ('featureSchema','labels','sequenceCount','sequences')):
@@ -51,7 +55,7 @@ def prepare(root, output):
     else:
         p4_path.write_text(json.dumps(p4, indent=2), encoding='utf-8')
 
-    paths = {p: root/'processed'/(p+'-dataset-v5.json') for p in PARTICIPANTS[:3]}
+    paths = {p: processed_artifact_path(root/'processed', p+'-dataset-v5.json') for p in PARTICIPANTS[:3]}
     paths['participant_04'] = p4_path
     sources = {p:load_export(path) for p,path in paths.items()}
     schema = sources['participant_01']['featureSchema']
@@ -76,7 +80,7 @@ def prepare(root, output):
 
     # Confirm compatibility with already prepared v5 tensors before training.
     parity = []
-    for folder in sorted((root/'processed').glob('gru_*_geometry_v3_recordings_v5')):
+    for folder in sorted(processed_glob(root/'processed', 'gru_*_geometry_v3_recordings_v5')):
         meta = read(folder/'metadata.json')
         p = meta['testParticipant']
         positions = {sid:i for i,sid in enumerate(ids[p])}
@@ -89,7 +93,7 @@ def prepare(root, output):
     for held_out in PARTICIPANTS:
         train_participants = [p for p in PARTICIPANTS if p != held_out]
         name = experiment_name(held_out)
-        folder = root/'processed'/name
+        folder = processed_artifact_path(root/'processed', name)
         split_raw, split_y, split_ids, split_participants = {}, {}, {}, {}
         for split, take_validation in [('training',False),('validation',True)]:
             xs, ys, sids, members = [], [], [], []
@@ -131,7 +135,7 @@ def prepare(root, output):
                 for key,value in arrays.items():
                     np.testing.assert_array_equal(saved[key],value)
         else:
-            folder.mkdir()
+            folder.mkdir(parents=True)
             np.savez_compressed(folder/'gru_data.npz',**arrays)
             (folder/'metadata.json').write_text(json.dumps(meta,indent=2),encoding='utf-8')
         print('Prepared',name,'960 training / 240 validation / 400 test',flush=True)
@@ -146,7 +150,7 @@ def summarize(root,output):
         name = experiment_name(held_out)
         for seed in SEEDS:
             run = name if seed==42 else name+f'_seed{seed}'
-            folder = root/'models'/'gru_model_train_test_geometry_v3_recordings_v6'/run
+            folder = model_artifact_folder(root / 'models', 'gru_model_train_test_geometry_v3_recordings_v6')/run
             path = folder/'evaluation.json'
             if path.exists():
                 data = read(path)
@@ -167,7 +171,7 @@ def summarize(root,output):
     for p in PARTICIPANTS:
         group = [r for r in rows if r['participant']==p]
         old = []
-        for path in (root/'models'/'gru_model_train_test_geometry_v3_recordings_v5').glob('*/evaluation.json'):
+        for path in (model_artifact_folder(root / 'models', 'gru_model_train_test_geometry_v3_recordings_v5')).glob('*/evaluation.json'):
             data = read(path)
             if data['testParticipant']==p:
                 old.append(data['testAccuracy'])
@@ -191,8 +195,8 @@ def main():
     parser.add_argument('--prepare-only',action='store_true')
     args = parser.parse_args()
     root = args.dataset_root.resolve()
-    output = root/'models'/'geometry_v3_recordings_v6_comparison'
-    output.mkdir(exist_ok=True)
+    output = model_artifact_folder(root / 'models', 'geometry_v3_recordings_v6_comparison')
+    output.mkdir(parents=True, exist_ok=True)
     prepare(root,output)
     if args.prepare_only:
         return
@@ -203,7 +207,7 @@ def main():
         name = experiment_name(participant)
         for seed in SEEDS:
             run = name if seed==42 else name+f'_seed{seed}'
-            folder = root/'models'/'gru_model_train_test_geometry_v3_recordings_v6'/run
+            folder = model_artifact_folder(root / 'models', 'gru_model_train_test_geometry_v3_recordings_v6')/run
             evaluation = folder/'evaluation.json'
             if evaluation.exists() and all((folder/x).exists() for x in ('best_model.h5','history.json','predictions.npz','training_history.png','confusion_matrix.png')):
                 print('Already completed',run,flush=True)

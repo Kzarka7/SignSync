@@ -1,4 +1,6 @@
 """Isolated v6 feature ablation using identical IDs, labels, seeds and trainer."""
+from processed_paths import processed_artifact_path, resolve_artifact_path
+from model_paths import model_artifact_folder
 import argparse
 import hashlib
 import json
@@ -13,10 +15,12 @@ from run_recordings_v6_experiments import PARTICIPANTS, experiment_name
 
 
 def read(path):
+    path = resolve_artifact_path(path)
     return json.loads(path.read_text(encoding='utf-8'))
 
 
 def digest(path):
+    path = resolve_artifact_path(path)
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
@@ -29,8 +33,8 @@ def main():
     if root == output or root in output.parents and 'experiments' not in output.parts:
         raise ValueError('Use a distinct experiments output directory')
     output.mkdir(parents=True, exist_ok=False)
-    (output / 'logs').mkdir()
-    (output / 'source').mkdir()
+    (output / 'logs').mkdir(parents=True)
+    (output / 'source').mkdir(parents=True)
     scripts = Path(__file__).resolve().parent
     for file in scripts.glob('*.py'):
         (output / 'source' / file.name).write_bytes(file.read_bytes())
@@ -41,14 +45,14 @@ def main():
                     limitations='P4-informed development hypothesis, not independent confirmation. Clip reference uses the complete captured clip, no cross-clip/test fitting. No annotation relabeling or sample removal.')
     (output / 'protocol.json').write_text(json.dumps(protocol, indent=2))
     frozen = {}
-    for folder in sorted((root / 'models' / 'gru_model_train_test_geometry_v3_recordings_v6').iterdir()):
+    for folder in sorted((model_artifact_folder(root / 'models', 'gru_model_train_test_geometry_v3_recordings_v6')).iterdir()):
         for name in ('best_model.h5', 'evaluation.json', 'predictions.npz'):
             file = folder / name
             frozen[str(file)] = digest(file)
     features, labels = {}, {}
     unchanged = [i for i in range(238) if i not in CHANGED]
     for p in PARTICIPANTS:
-        path = root / 'processed' / f'{p}-dataset-v{6 if p.endswith("04") else 5}.json'
+        path = processed_artifact_path(root / 'processed', f'{p}-dataset-v{6 if p.endswith("04") else 5}.json')
         frozen[str(path)] = digest(path)
         data = read(path)
         for seq in data['sequences']:
@@ -61,7 +65,7 @@ def main():
         print('Prepared raw features', p, flush=True)
     for p in PARTICIPANTS:
         exp = experiment_name(p)
-        old = root / 'processed' / exp
+        old = processed_artifact_path(root / 'processed', exp)
         for name in ('metadata.json', 'gru_data.npz'):
             frozen[str(old / name)] = digest(old / name)
         meta = read(old / 'metadata.json')
@@ -84,7 +88,7 @@ def main():
         arrays['feature_std'][:, :, CHANGED] = std[:, :, CHANGED].astype(np.float32)
         meta.update(experimentalNormalization=protocol['change'], baselineTensorSha256=frozen[str(old / 'gru_data.npz')],
                     experimentalRoot=str(output), changedChannels=CHANGED)
-        dest = output / 'processed' / exp
+        dest = processed_artifact_path(output / 'processed', exp)
         dest.mkdir(parents=True)
         np.savez_compressed(dest / 'gru_data.npz', **arrays)
         (dest / 'metadata.json').write_text(json.dumps(meta, indent=2))
@@ -98,7 +102,7 @@ def main():
             command = [sys.executable, '-u', str(scripts / 'train_gru.py'), '--experiment', exp, '--dataset-root', str(output), '--seed', str(seed)]
             with (output / 'logs' / (run + '.log')).open('w', encoding='utf-8') as log:
                 subprocess.run(command, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-            result = read(output / 'models' / 'gru_model_train_test_geometry_v3_recordings_v6' / run / 'evaluation.json')
+            result = read(model_artifact_folder(output / 'models', 'gru_model_train_test_geometry_v3_recordings_v6') / run / 'evaluation.json')
             print('Completed', p, seed, result['testAccuracy'], result['macroF1'], flush=True)
     for path, expected in frozen.items():
         assert digest(Path(path)) == expected, 'Baseline changed: ' + path

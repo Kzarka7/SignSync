@@ -12,9 +12,15 @@ async function main() {
   const frontend = path.resolve(__dirname, '..')
   const { createServer } = await import(pathToFileURL(path.join(frontend, 'node_modules/vite/dist/node/index.js')))
   const { chromium } = require(playwrightPath)
+  const rawFolder = (...locations) => {
+    const folder = locations.map(relative => path.join(datasetRoot, 'raw', relative))
+      .find(candidate => fs.existsSync(candidate))
+    if (!folder) throw Error(`None of the collection folders exist: ${locations.join(', ')}`)
+    return folder
+  }
   const folders = [
-    ['visible', path.join(datasetRoot, 'raw/Video recording')],
-    ['rest', path.join(datasetRoot, 'raw/105 FSL SIGNS REFERENCE-20261018T051635Z-1-001/clips/THANK YOU')],
+    ['visible', rawFolder('recordings/2026-10-20_phone-recordings/videos', 'Video recording')],
+    ['rest', rawFolder('external-datasets/105 FSL SIGNS REFERENCE-20261022T085323Z-1-001/clips/THANK YOU', 'external-datasets/105-fsl-signs-reference/original-files/clips/THANK YOU', '105 FSL SIGNS REFERENCE-20261018T051635Z-1-001/clips/THANK YOU')],
   ]
   const clips = folders.flatMap(([group, folder]) => fs.readdirSync(folder).filter(name => /\.(mp4|mov)$/i.test(name)).sort()
     .map(name => ({ group, name, source: path.join(folder, name) }))).filter(clip => (!groupArg || groupArg === 'all' || clip.group === groupArg) &&

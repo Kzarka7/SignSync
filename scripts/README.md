@@ -6,6 +6,11 @@ workflow; older comparison runners are in `historical/`, and checks are in
 `tests/`. The dataset and trained outputs stay in the sibling `SignSync Dataset`
 folder.
 
+For new data and experiments, use [SAMPLE_TRAINING.md](SAMPLE_TRAINING.md).
+It reads `samples/<SIGN>/` through a reviewed manifest and saves paired outputs
+under `processed/candidates/<version>/` and `models/candidates/<version>/`.
+The merged participant workflows below reproduce historical runs.
+
 | Task | Script |
 |---|---|
 | Merge reviewed recordings | `merge_dataset.py` |
@@ -18,15 +23,14 @@ folder.
 
 `historical/` retains earlier recording comparisons and feature ablations for
 reproducing research results. See [GEOMETRY_V3.md](GEOMETRY_V3.md) for their
-commands and the current v5 comparison. One-time manifest scripts remain at the
-top level because they have not been replaced by a general v5 manifest command;
-do not rerun them against the current manifest without checking their target
-dataset versions.
+commands and the current v5 comparison. `generate_manifests.py` now refreshes
+the sign-folder training manifest. Its historical merged-export behavior
+requires `--legacy`.
 
 Run the checks with:
 
 ```powershell
-python -m unittest discover -s scripts -p "test_*.py"
+python -c "import sys, unittest; sys.path.insert(0, 'scripts'); result = unittest.TextTestRunner().run(unittest.defaultTestLoader.discover('scripts/tests')); sys.exit(not result.wasSuccessful())"
 ```
 
 ## Live conversation

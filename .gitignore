@@ -12,6 +12,7 @@ skills-lock.json
 # Generated model backups and ML binary artifacts; keep source scripts tracked.
 /model-backups/
 /model-releases/
+/.tmp/
 *.keras
 *.h5
 *.npz

@@ -1,0 +1,15 @@
+{
+  "name": "samples_sign_rest_idle_v1",
+  "frames": 40,
+  "includeSignerIds": ["participant_01", "participant_02", "participant_03"],
+  "labels": [
+    "FAMILY", "FRIEND", "HELLO", "HELP", "HOW", "IDLE_MOVEMENT", "NO", "PLEASE",
+    "REST", "SORRY", "STAY", "THANK_YOU", "WAIT", "WAVE_GREETING", "WELCOME",
+    "WHAT", "WHEN", "WHERE", "WHICH", "WHO", "WHY", "YES"
+  ],
+  "splitGroups": {
+    "training": ["signer:participant_01"],
+    "validation": ["signer:participant_02"],
+    "test": ["signer:participant_03"]
+  }
+}

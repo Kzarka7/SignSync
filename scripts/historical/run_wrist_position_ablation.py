@@ -13,6 +13,8 @@ import sys
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
+from processed_paths import processed_artifact_path
+from model_paths import model_artifact_folder
 
 import numpy as np
 from gesture_geometry import feature_names
@@ -34,8 +36,8 @@ def retained_indices(meta):
 def prepare(base):
     previous = base.replace('_v1', '_geometry_v3')
     experiment = previous + '_no_wrist_position'
-    source = ROOT/'processed'/previous
-    target = ROOT/'processed'/experiment
+    source = processed_artifact_path(ROOT/'processed', previous)
+    target = processed_artifact_path(ROOT/'processed', experiment)
     meta = json.loads((source/'metadata.json').read_text(encoding='utf-8'))
     keep, removed = retained_indices(meta)
     names = meta['geometryFeatureNames']
@@ -59,7 +61,7 @@ def prepare(base):
             if set(saved.files) != set(arrays) or any(not np.array_equal(saved[k],v) for k,v in arrays.items()):
                 raise ValueError('Existing ablation arrays differ: '+str(target))
     else:
-        target.mkdir()
+        target.mkdir(parents=True)
         np.savez_compressed(target/'gru_data.npz', **arrays)
         (target/'metadata.json').write_text(json.dumps(meta,indent=2),encoding='utf-8')
     print('Verified',experiment,arrays['X_train'].shape,flush=True)
@@ -99,7 +101,7 @@ def main():
     references={}
     for experiment in experiments:
         full=experiment.removesuffix('_no_wrist_position')
-        meta=json.loads((ROOT/'processed'/full/'metadata.json').read_text(encoding='utf-8'))
+        meta=json.loads((processed_artifact_path(ROOT/'processed', full)/'metadata.json').read_text(encoding='utf-8'))
         for seed in (42,43,44):
             suffix='' if seed==42 else f'_seed{seed}'
             folder=find_model_folder(ROOT/'models',full+suffix)
@@ -107,8 +109,8 @@ def main():
             if old['preprocessingMetadata'] != meta or old['randomSeed'] != seed:
                 raise ValueError('Reference metadata or seed mismatch')
             references[experiment,seed]=old
-    output=ROOT/'models'/'geometry_v3_no_wrist_position_comparison'
-    output.mkdir(exist_ok=True)
+    output=model_artifact_folder(ROOT / 'models', 'geometry_v3_no_wrist_position_comparison')
+    output.mkdir(parents=True, exist_ok=True)
     rows=[]
     for experiment in experiments:
         for seed in (42,43,44):
@@ -124,7 +126,7 @@ def main():
                     raise RuntimeError('Training failed; inspect '+str(log_path))
             new=json.loads(result.read_text(encoding='utf-8'))
             old=references[experiment,seed]
-            expected=json.loads((ROOT/'processed'/experiment/'metadata.json').read_text(encoding='utf-8'))
+            expected=json.loads((processed_artifact_path(ROOT/'processed', experiment)/'metadata.json').read_text(encoding='utf-8'))
             if new['preprocessingMetadata'] != expected or new['randomSeed'] != seed or new['experiment'] != experiment:
                 raise ValueError('Saved ablation model metadata mismatch')
             for key in ('sequenceIds','participantIds','labelToIndex'):

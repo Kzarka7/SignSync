@@ -1,4 +1,5 @@
 """Append 48 geometry channels to v2; preserve its splits and 190 channels."""
+from processed_paths import processed_artifact_path, resolve_artifact_path
 import hashlib
 import json
 from pathlib import Path
@@ -9,14 +10,14 @@ from gesture_geometry import geometry, resample, feature_names
 
 def prepare(base, source_name=None, target_name=None):
     previous=source_name or base.replace('_v1','_handshape_v2')
-    source=ROOT/'processed'/previous
-    target=ROOT/'processed'/(target_name or base.replace('_v1','_geometry_v3'))
+    source=processed_artifact_path(ROOT/'processed', previous)
+    target=processed_artifact_path(ROOT/'processed', target_name or base.replace('_v1','_geometry_v3'))
     if target.exists():
         raise FileExistsError(target)
     meta=json.loads((source/'metadata.json').read_text())
     sequences={}
     for path in meta['trainSources']+[meta['testSource']]:
-        payload=Path(path).read_bytes()
+        payload=resolve_artifact_path(path).read_bytes()
         if hashlib.sha256(payload).hexdigest()!=meta['sourceSha256'][path]:
             raise ValueError('Source changed: '+path)
         data=json.loads(payload)
@@ -44,7 +45,7 @@ def prepare(base, source_name=None, target_name=None):
                 geometryFeatureNames=feature_names(), geometryVersion=3,
                 previousTensorSha256=hashlib.sha256((source/'gru_data.npz').read_bytes()).hexdigest(),
                 geometryDefinition='Image-coordinate thumb separation, thumb/MCP bend, finger spread, side-adjusted palm normal proxy, projected wrist bend, thumb-shoulder XY distance; independent validity groups; first observed valid shape/orientation repeated; source-frame geometry before masked interpolation. Not anatomical angles, calibrated palm-facing labels or physical contact. Training-only standardization.')
-    target.mkdir()
+    target.mkdir(parents=True)
     np.savez_compressed(target/'gru_data.npz',**arrays)
     (target/'metadata.json').write_text(json.dumps(meta,indent=2),encoding='utf-8')
     print('Prepared',target.name,arrays['X_train'].shape,flush=True)

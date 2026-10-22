@@ -1,4 +1,6 @@
 """Compare isolated P4 WHICH replacement retraining with saved v6 models."""
+from processed_paths import processed_artifact_path, resolve_artifact_path
+from model_paths import model_artifact_folder
 import argparse
 import hashlib
 import json
@@ -11,6 +13,7 @@ from run_recordings_v6_experiments import PARTICIPANTS, experiment_name
 
 
 def read(path):
+    path = resolve_artifact_path(path)
     return json.loads(path.read_text(encoding='utf-8'))
 
 
@@ -21,22 +24,22 @@ def main():
     args = parser.parse_args()
     baseline, candidate = args.dataset_root.resolve(), args.candidate_root.resolve()
     result = {'runs': [], 'ensembles': {}, 'splitChecks': {}}
-    old_p4 = {s['id']: s for s in read(baseline / 'processed' / 'participant_04-dataset-v6.json')['sequences']}
-    new_p4 = {s['id']: s for s in read(candidate / 'processed' / 'participant_04-dataset-v6.json')['sequences']}
+    old_p4 = {s['id']: s for s in read(processed_artifact_path(baseline / 'processed', 'participant_04-dataset-v6.json'))['sequences']}
+    new_p4 = {s['id']: s for s in read(processed_artifact_path(candidate / 'processed', 'participant_04-dataset-v6.json'))['sequences']}
     shared_p4 = old_p4.keys() & new_p4.keys()
     assert len(shared_p4) == 394 and all(old_p4[sid] == new_p4[sid] for sid in shared_p4)
     result['retainedP4RecordingsExactlyUnchanged'] = True
     del old_p4, new_p4
     for participant in PARTICIPANTS:
         exp = experiment_name(participant)
-        metas = {k: read(root / 'processed' / exp / 'metadata.json') for k, root in [('baseline', baseline), ('candidate', candidate)]}
+        metas = {k: read(processed_artifact_path(root / 'processed', exp) / 'metadata.json') for k, root in [('baseline', baseline), ('candidate', candidate)]}
         labels = [label for label, index in sorted(metas['baseline']['labelToIndex'].items(), key=lambda kv: kv[1])]
         assert metas['baseline']['labelToIndex'] == metas['candidate']['labelToIndex']
         # Retained samples must keep their train/validation/test assignments.
         assignments = {k: {sid: split for split, ids in m['sequenceIds'].items() for sid in ids} for k, m in metas.items()}
         common = set(assignments['baseline']) & set(assignments['candidate'])
         assert all(assignments['baseline'][sid] == assignments['candidate'][sid] for sid in common)
-        with np.load(baseline / 'processed' / exp / 'gru_data.npz') as b, np.load(candidate / 'processed' / exp / 'gru_data.npz') as c:
+        with np.load(processed_artifact_path(baseline / 'processed', exp) / 'gru_data.npz') as b, np.load(processed_artifact_path(candidate / 'processed', exp) / 'gru_data.npz') as c:
             same_training = bool(np.array_equal(b['X_train'], c['X_train']) and np.array_equal(b['y_train'], c['y_train']))
             same_validation = bool(np.array_equal(b['X_validation'], c['X_validation']) and np.array_equal(b['y_validation'], c['y_validation']))
         if participant == 'participant_04':
@@ -48,7 +51,7 @@ def main():
             run = exp + (f'_seed{seed}' if seed != 42 else '')
             row = dict(participant=participant, seed=seed)
             for kind, root in [('baseline', baseline), ('candidate', candidate)]:
-                folder = root / 'models' / 'gru_model_train_test_geometry_v3_recordings_v6' / run
+                folder = model_artifact_folder(root / 'models', 'gru_model_train_test_geometry_v3_recordings_v6') / run
                 evaluation = read(folder / 'evaluation.json')
                 assert evaluation['randomSeed'] == seed
                 with np.load(folder / 'predictions.npz', allow_pickle=False) as saved:
@@ -82,7 +85,7 @@ def main():
         document = read(candidate / name)
         hashes = document['sourceSha256'] if name == 'source-provenance.json' else document
         for path, expected in hashes.items():
-            assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, path
+            assert hashlib.sha256(resolve_artifact_path(path).read_bytes()).hexdigest() == expected, path
     result['baselineIntegrityVerified'] = True
     (candidate / 'replacement-comparison.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
     lines = ['# P4 WHICH replacement retraining comparison', '',

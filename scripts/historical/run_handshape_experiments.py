@@ -9,11 +9,12 @@ import sys
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
+from model_paths import model_artifact_folder
 from prepare_handshape_experiments import ROOT, BASELINES
 
 def main():
-    report=ROOT/'models'/'handshape_v2_comparison'
-    report.mkdir(exist_ok=True)
+    report=model_artifact_folder(ROOT / 'models', 'handshape_v2_comparison')
+    report.mkdir(parents=True, exist_ok=True)
     rows=[]
     for base in BASELINES:
         experiment=base.replace('_v1','_handshape_v2')

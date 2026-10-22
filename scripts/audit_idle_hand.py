@@ -3,6 +3,8 @@
 This is a conservative screening tool, not a visual or FSL verification tool.
 No source recordings, tensors, baseline models, or live configuration are changed.
 """
+from processed_paths import processed_artifact_path, processed_glob, resolve_artifact_path
+from model_paths import model_artifact_folder
 import argparse
 import csv
 import hashlib
@@ -15,11 +17,13 @@ import numpy as np
 
 
 def sha(path):
+    path = resolve_artifact_path(path)
     with path.open('rb') as handle:
         return hashlib.file_digest(handle, 'sha256').hexdigest()
 
 
 def read(path):
+    path = resolve_artifact_path(path)
     return json.loads(path.read_text(encoding='utf-8'))
 
 
@@ -55,15 +59,15 @@ def screen(sequence, order, annotation):
 
 
 def freeze(root, scripts, destination):
-    comparison = root / 'models' / 'geometry_v3_recordings_v6_comparison'
+    comparison = model_artifact_folder(root / 'models', 'geometry_v3_recordings_v6_comparison')
     provenance = read(comparison / 'provenance.json')
     for name, expected in provenance['sourceSha256'].items():
         if sha(Path(name)) != expected:
             raise ValueError('Frozen v6 source changed: ' + name)
     files = set(comparison.rglob('*'))
-    source_paths = {Path(name) for name in provenance['sourceSha256']}
+    source_paths = {resolve_artifact_path(name) for name in provenance['sourceSha256']}
     files.update(source_paths)
-    folders = sorted((root / 'processed').glob('gru_*_geometry_v3_recordings_v6'))
+    folders = sorted(processed_glob(root / 'processed', 'gru_*_geometry_v3_recordings_v6'))
     if len(folders) != 4:
         raise ValueError('Expected four v6 prepared folds')
     runs = []
@@ -71,7 +75,7 @@ def freeze(root, scripts, destination):
         files.update(folder.rglob('*'))
         for seed in (42, 43, 44):
             run = folder.name if seed == 42 else folder.name + f'_seed{seed}'
-            saved = root / 'models' / 'gru_model_train_test_geometry_v3_recordings_v6' / run
+            saved = model_artifact_folder(root / 'models', 'gru_model_train_test_geometry_v3_recordings_v6') / run
             required = ('best_model.h5', 'evaluation.json', 'predictions.npz', 'history.json',
                         'training_history.png', 'confusion_matrix.png')
             if not all((saved / name).is_file() for name in required):
@@ -118,7 +122,7 @@ def main():
     for number in range(1, 5):
         participant = f'participant_{number:02d}'
         version = 6 if number == 4 else 5
-        data = read(root / 'processed' / f'{participant}-dataset-v{version}.json')
+        data = read(processed_artifact_path(root / 'processed', f'{participant}-dataset-v{version}.json'))
         totals = Counter()
         for sequence in data['sequences']:
             result = screen(sequence, data['featureSchema']['order'], annotations.get(sequence['id']))
