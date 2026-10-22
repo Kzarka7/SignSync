@@ -44,7 +44,7 @@ function SequenceList({ collapsible = false, sequences, onDelete, onExportZip, o
           title="Download one JSON file per saved sample in a ZIP. Pending videos are excluded."
         >
           {isExportingZip ? <Loader2 size={13} className="animate-spin" /> : <FolderArchive size={13} />}
-          {isExportingZip ? 'Preparing ZIP…' : 'Export as ZIP'}
+          {isExportingZip ? 'Preparing ZIP' : zipReady ? 'Export as ZIP' : 'Prepare ZIP'}
         </Button>
         <Button size="sm" variant="danger" onClick={onClearAll} title="Clear all saved landmark samples; pending videos remain.">
           Clear all
