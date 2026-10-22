@@ -141,11 +141,16 @@ to the label, interval, hand expectation and processing version. Trim changes,
 reprocessing, hand-expectation changes and deletion from Recorded samples clear
 approval. Undo save still retains the checked review. Originals remain unchanged.
 
-Recorded samples has a separate **Prepare training package** / **Download training
-package** control. Regular JSON and per-sample ZIP exports continue to include all
-saved samples. The training package includes only approved, validated v3 video
-samples; older videos need reprocessing/review, and camera samples retain their
-regular export path. No participant input is added.
+Recorded samples uses **Export as ZIP**: click once to prepare the archive,
+then again when ready to download one JSON file per saved sample. **Clear all**
+sits beside the export button. Saved samples appear in save order, first saved
+at the top. Merged JSON and the separate training-package action have been
+removed from the collector. Review and save
+samples before exporting, then use the manifest-based preparation workflow in
+[SAMPLE_TRAINING.md](SAMPLE_TRAINING.md). No participant input is added.
+
+The following package specification documents older exports for reproducibility;
+the legacy builder and validator remain available for those artifacts.
 
 The package contains:
 

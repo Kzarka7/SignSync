@@ -31,7 +31,7 @@ The collector targets 30 landmark FPS automatically. Lower-rate recordings retai
 
 1. Choose Camera and Preserve video, process afterward. Start camera, then Start recording. Delay/duration, the large countdown and Space/Escape shortcuts work in both camera methods. Preserved recording shows elapsed time and Stop & save video; live recording shows detection frames/FPS and Stop & save. Hands/Pose badges apply only to live tracking.
 2. Stop & save video (or duration auto-stop) adds an original to Recorded samples with Waiting to process status and keeps the camera open. There is no separate Recorded videos container. The heading counts pending originals plus saved landmark samples. Record a second take, optionally changing its label or rest/idle task first. No landmark processing or upload-tab switch should occur. Pending originals retain their assigned labels/tasks.
-3. Download or remove pending originals as needed inside Recorded samples. Process all must remain disabled during capture/countdown. When ready, click Process all once: the pending batch transfers to the upload/review queue at the 30 FPS target. It is no longer pending on the camera screen. Review and save landmark samples separately. JSON/ZIP and Training package exports include only saved landmark samples; clearing saved samples does not remove pending videos.
+3. Download or remove pending originals as needed inside Recorded samples. Process all must remain disabled during capture/countdown. When ready, click Process all once: the pending batch transfers to the upload/review queue at the 30 FPS target. It is no longer pending on the camera screen. Review and save landmark samples separately. Export as ZIP includes only saved landmark samples; clearing saved samples does not remove pending videos.
 4. Discard a recording: no original should enter the pending queue. Switching to uploads manually must not submit pending recordings. Cancel processing: no unfinished sample should be saved.
 5. Pending originals are held for this browser session; download them before leaving, refreshing or changing collectors.
 6. Try unsupported files and duplicate uploads: errors/duplicates remain unsaved.
@@ -44,16 +44,20 @@ The collector targets 30 landmark FPS automatically. Lower-rate recordings retai
 3. Review playback, Tracking timeline and quality findings. Full intervals are retained by default: sign-motion auto-trimming would discard useful non-sign content. Keep full recording, or use Adjust interval and reprocess, then confirm the interval.
 4. Check reviewed takes and Save or Save checked takes. Undo retains the review check; saved takes cannot be removed from the queue. Download originals before leaving.
 5. Change categories: Recorded samples and its exports/Clear all show only that category. Queued saved takes stay protected across category switches. Task checklist counts include imported samples; task metadata remains frozen even when the next task is selected.
-6. Export the category's reviewed Training package and run the validator below. Rest/idle processing uses `video-import-v6-mp0.10.35-boundary`, retaining real timestamps and raw missing-hand flags. Body coverage is required; missing hands alone do not force Retake for idle. Limited hand visibility still flags resting-posture samples for review. Manual review confirms task correctness.
+6. Click Export as ZIP to prepare the category's saved samples, then click it again when ready to download. Each ZIP member must contain one sample with its original task metadata. Rest/idle processing uses `video-import-v6-mp0.10.35-boundary`, retaining real timestamps and raw missing-hand flags. Body coverage is required; missing hands alone do not force Retake for idle. Limited hand visibility still flags resting-posture samples for review. Manual review confirms task correctness.
 
-## Validate a training package
+## Export samples for training preparation
 
-Prepare and download the Training package from Recorded samples. Other exports and Clear all are under Sample exports and storage. Retain ordinary sample exports for archival use.
+In Recorded samples, click **Export as ZIP** to prepare the archive, then click
+**Export as ZIP** again when ready to download it.
+Verify that the ZIP contains one `SIGN-<full-sample-id>.json` per saved sample.
+Extract the files into `samples/<SIGN>/`, refresh the manifest, review approvals,
+and prepare a versioned experiment as described in [SAMPLE_TRAINING.md](SAMPLE_TRAINING.md).
+Copies or trims of one source recording must stay in one dataset split.
 
-From the project root:
-
-```powershell
-.venv-gru/Scripts/python.exe scripts/validate_video_training_package.py 'C:/absolute/path/to/training-package.zip'
-```
-
-Expect a successful compatibility report with base shape `[sample count, 40, 164]` and geometry shape `[sample count, 40, 238]`. Keep copies of the same source recording together in dataset splits.
+**Clear all** sits beside **Export as ZIP** and removes saved landmark samples.
+Saved samples appear in save order, with the first saved take at the top.
+The collector no longer offers merged JSON or a separate Training package action.
+The legacy package builder and `validate_video_training_package.py` remain
+available for existing package artifacts; they are not part of the collector's
+current export workflow.

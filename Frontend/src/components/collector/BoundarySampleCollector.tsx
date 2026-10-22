@@ -92,7 +92,7 @@ export default function BoundarySampleCollector({ onLocked }: { onLocked: (locke
       <img src="/guides/idle-hand/one-hand-idle-posture.png" alt="One-handed resting posture" loading="lazy" className="mt-3 w-full rounded-lg" />
     </details>}
   </div></Card>
-  const recordedSamples = <SequenceList collapsible sequences={recorder.sequences} onDelete={recorder.removeSequence} onExport={recorder.exportDataset} onExportZip={recorder.exportPerSampleZip}
+  const recordedSamples = <SequenceList collapsible sequences={recorder.sequences} onDelete={recorder.removeSequence} onExportZip={recorder.exportPerSampleZip}
     pendingVideos={pendingVideos} pendingLocked={locked} onRemoveVideo={id => setPendingVideos(previous => previous.filter(take => take.id !== id))}
     onProcessVideos={() => {
       if (locked || !pendingVideos.length) return
