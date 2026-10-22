@@ -34,7 +34,7 @@ const summary = { samples: rows.length, automatic: rows.filter(row => row.automa
   processingVersion: samples[0].videoImport.processingVersion, testOnlyApprovals: true }
 fs.writeFileSync(path.join(output, 'quality-summary.json'), JSON.stringify(summary, null, 2))
 const lines = ['# Gesture/context assessment — THANK_YOU reference test', '',
-  'All twenty originals from raw/105 FSL SIGNS REFERENCE-20261018T051635Z-1-001/clips/THANK YOU were processed at target 30 FPS through the isolated browser collector. Original files and user collections were not modified. The exported package uses simulated development approvals and is not a newly curated dataset.', '',
+  'All twenty originals from the external 105 FSL reference THANK YOU folder were processed at target 30 FPS through the isolated browser collector. Original files and user collections were not modified. The exported package uses simulated development approvals and is not a newly curated dataset.', '',
   'The before/after comparison uses identical retained frames, timestamps and trim boundaries. Only the quality-assessment scope changes; there is no interpolation, frame removal or new sign prediction.', '',
   '| File | Whole interval → separate assessment | Gesture usable | Context before/after | Selected interval (s) |', '| --- | --- | --- | --- | --- |']
 for (const row of rows) lines.push(`| ${row.filename} | ${row.oldResult} → ${row.result}${row.automaticTrim ? '' : ' (full fallback)'} | ${row.gesture ? `${row.gesture.usableFrames}/${row.gesture.totalFrames}` : 'whole interval'} | ${row.context ? `${row.context.beforeFrames}/${row.context.afterFrames}` : 'not assigned'} | ${row.interval.map(value => value.toFixed(3)).join('–')} |`)

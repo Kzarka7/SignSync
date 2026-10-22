@@ -1,6 +1,7 @@
 """Create handshape-v2 tensors using the exact baseline IDs and original channels.
 Run python scripts/prepare_handshape_experiments.py. Never overwrites outputs.
 """
+from processed_paths import processed_artifact_path, resolve_artifact_path
 import hashlib
 import json
 from pathlib import Path
@@ -44,14 +45,14 @@ def resample_shape(values, length):
     return out
 
 def prepare(base, target_name=None):
-    source=ROOT/'processed'/base
-    target=ROOT/'processed'/(target_name or base.replace('_v1','_handshape_v2'))
+    source=processed_artifact_path(ROOT/'processed', base)
+    target=processed_artifact_path(ROOT/'processed', target_name or base.replace('_v1','_handshape_v2'))
     if target.exists():
         raise FileExistsError(target)
     meta=json.loads((source/'metadata.json').read_text())
     sequences={}
     for path in meta['trainSources']+[meta['testSource']]:
-        payload=Path(path).read_bytes()
+        payload=resolve_artifact_path(path).read_bytes()
         if hashlib.sha256(payload).hexdigest()!=meta['sourceSha256'][path]:
             raise ValueError('Source hash changed: '+path)
         data=json.loads(payload)
@@ -79,7 +80,7 @@ def prepare(base, target_name=None):
     meta.update(featureCount=190,baselineExperiment=base,addedFeatureNames=names,
         handshapeVersion=2,handshapeDefinition='XY projected, wrist-middle MCP scale; computed before resampling; missing/degenerate geometry zeroed with validity flags; full-valid interpolation only; appended channels standardized on training subset only',
         baselineTensorSha256=hashlib.sha256((source/'gru_data.npz').read_bytes()).hexdigest())
-    target.mkdir()
+    target.mkdir(parents=True)
     np.savez_compressed(target/'gru_data.npz',**arrays)
     (target/'metadata.json').write_text(json.dumps(meta,indent=2),encoding='utf-8')
     print('Prepared',target.name,arrays['X_train'].shape,flush=True)

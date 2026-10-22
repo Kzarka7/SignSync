@@ -15,6 +15,8 @@ import sys
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
+from processed_paths import processed_artifact_path, resolve_artifact_path, resolved_source_hashes
+from model_paths import model_artifact_folder
 
 import numpy as np
 from prepare_handshape_experiments import ROOT, BASELINES, handshape, resample_shape
@@ -25,14 +27,16 @@ from preprocess_dataset import resample_sequence
 from model_paths import find_model_folder, recordings_v3_model_folder
 
 TARGETS = {'FRIEND', 'WHERE'}
-OUTPUT = ROOT/'models'/'geometry_v3_recordings_v3_comparison'
+OUTPUT = model_artifact_folder(ROOT / 'models', 'geometry_v3_recordings_v3_comparison')
 
 
 def read_json(path):
+    path = resolve_artifact_path(path)
     return json.loads(path.read_text(encoding='utf-8'))
 
 
 def digest(path):
+    path = resolve_artifact_path(path)
     with path.open('rb') as handle:
         return hashlib.file_digest(handle, 'sha256').hexdigest()
 
@@ -49,7 +53,7 @@ def run_script(name, args, log_path):
 
 
 def verify_sources(meta, expected):
-    if meta['sourceSha256'] != expected:
+    if resolved_source_hashes(meta['sourceSha256']) != resolved_source_hashes(expected):
         raise ValueError('Prepared inputs reference different source exports')
     if meta['split']['seed'] != 42 or meta['split']['validationPerLabel'] != 4:
         raise ValueError('Unexpected preprocessing split settings')
@@ -59,14 +63,14 @@ def verify_sources(meta, expected):
 
 def prepare(base):
     reference = base.replace('_v1', '_geometry_v3_recordings_v2')
-    old = read_json(ROOT/'processed'/reference/'metadata.json')
+    old = read_json(processed_artifact_path(ROOT/'processed', reference)/'metadata.json')
     raw_name = base.replace('_v1', '_recordings_v3')
     shape_name = base.replace('_v1', '_handshape_v2_recordings_v3')
     experiment = base.replace('_v1', '_geometry_v3_recordings_v3')
     participants = old['trainingParticipants']+[old['testParticipant']]
-    sources = [(ROOT/'processed'/(p+'-dataset-v3.json')).resolve() for p in participants]
+    sources = [(processed_artifact_path(ROOT/'processed', p+'-dataset-v3.json')).resolve() for p in participants]
     hashes = {str(p): digest(p) for p in sources}
-    raw_folder = ROOT/'processed'/raw_name
+    raw_folder = processed_artifact_path(ROOT/'processed', raw_name)
     if not raw_folder.exists():
         print('Preprocessing', raw_name, flush=True)
         args = ['--train', *map(str, sources[:2]), '--train-participants', *participants[:2],
@@ -74,11 +78,11 @@ def prepare(base):
                 '--output', str(raw_folder), '--seed', '42']
         run_script('preprocess_dataset.py', args, OUTPUT/(raw_name+'.log'))
     verify_sources(read_json(raw_folder/'metadata.json'), hashes)
-    shape_folder = ROOT/'processed'/shape_name
+    shape_folder = processed_artifact_path(ROOT/'processed', shape_name)
     if not shape_folder.exists():
         prepare_handshape(raw_name, target_name=shape_name)
     verify_sources(read_json(shape_folder/'metadata.json'), hashes)
-    folder = ROOT/'processed'/experiment
+    folder = processed_artifact_path(ROOT/'processed', experiment)
     if not folder.exists():
         prepare_geometry(base, source_name=shape_name, target_name=experiment)
     meta = read_json(folder/'metadata.json')
@@ -161,14 +165,14 @@ def report_results(rows, predictions_folder):
 def compare(experiments):
     import tensorflow as tf
     from export_predictions import prediction_rows, write_excel_csv, compare_seed_rows
-    predictions_folder = ROOT/'models'/'prediction-reports'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    predictions_folder = model_artifact_folder(ROOT / 'models', 'prediction-reports')/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     predictions_folder.mkdir(parents=True, exist_ok=False)
     rows=[]; summaries=[]; consistency=[]
     for experiment in experiments:
-        folder=ROOT/'processed'/experiment
+        folder=processed_artifact_path(ROOT/'processed', experiment)
         meta=read_json(folder/'metadata.json')
         reference=experiment.removesuffix('_recordings_v3')+'_recordings_v2'
-        old_folder=ROOT/'processed'/reference
+        old_folder=processed_artifact_path(ROOT/'processed', reference)
         old_meta=read_json(old_folder/'metadata.json')
         source=read_json(Path(meta['testSource']))
         sequences={s['id']:s for s in source['sequences']}
@@ -229,11 +233,11 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--prepare-only',action='store_true')
     args=parser.parse_args()
-    OUTPUT.mkdir(exist_ok=True)
+    OUTPUT.mkdir(parents=True, exist_ok=True)
     protected={}
     for base in BASELINES:
         reference=base.replace('_v1','_geometry_v3_recordings_v2')
-        meta=read_json(ROOT/'processed'/reference/'metadata.json')
+        meta=read_json(processed_artifact_path(ROOT/'processed', reference)/'metadata.json')
         for path,h in meta['sourceSha256'].items():
             if digest(Path(path))!=h: raise ValueError('V2 source changed: '+path)
             protected[path]=h
@@ -245,7 +249,7 @@ def main():
             for name in ('best_model.keras','evaluation.json'):
                 p=folder/name;protected[str(p)]=digest(p)
     for i in (1,2,3):
-        p=(ROOT/'processed'/f'participant_{i:02d}-dataset-v3.json').resolve()
+        p=(processed_artifact_path(ROOT/'processed', f'participant_{i:02d}-dataset-v3.json')).resolve()
         protected[str(p)]=digest(p)
     manifest=(ROOT/'manifests'/'samples.csv').resolve()
     protected[str(manifest)]=digest(manifest)
@@ -255,7 +259,7 @@ def main():
     experiments=[prepare(base) for base in BASELINES]
     if args.prepare_only: return
     for experiment in experiments:
-        meta=read_json(ROOT/'processed'/experiment/'metadata.json')
+        meta=read_json(processed_artifact_path(ROOT/'processed', experiment)/'metadata.json')
         for seed in (42,43,44):
             run=experiment+('' if seed==42 else f'_seed{seed}')
             result=recordings_v3_model_folder(ROOT/'models',run)/'evaluation.json'

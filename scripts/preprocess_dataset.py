@@ -7,9 +7,9 @@ to the same number of frames, creates a label map, and writes NumPy arrays.
 
 Example (run from the SignSync project folder):
     python scripts/preprocess_dataset.py \
-      --train "../SignSync Dataset/processed/participant_01-dataset.json" \
-      --test "../SignSync Dataset/processed/participant_02-dataset.json" \
-      --output "../SignSync Dataset/processed/gru_p01_train_p02_test"
+      --train "../SignSync Dataset/processed/archive/baseline_v1/datasets/participant_01-dataset.json" \
+      --test "../SignSync Dataset/processed/archive/baseline_v1/datasets/participant_02-dataset.json" \
+      --output "../SignSync Dataset/processed/archive/two_participants/folds/gru_p01_train_p02_test"
 
 Pass multiple JSON paths after --train for multiple training participants.
 Validation holds out four samples per label FROM EACH training participant.
@@ -18,6 +18,7 @@ with --train-participants and --test-participant for other filenames.
 """
 
 from __future__ import annotations
+from processed_paths import resolve_artifact_path
 
 import argparse
 import json
@@ -33,6 +34,7 @@ EXPECTED_FEATURE_COUNT = 164
 
 
 def load_export(path: Path) -> dict:
+    path = resolve_artifact_path(path)
     with path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
 
@@ -149,6 +151,9 @@ def main() -> None:
     parser.add_argument("--validation-per-label", type=int, default=4, help="Samples held out per label PER training participant (default: 4)")
     parser.add_argument("--seed", type=int, default=42, help="Reproducible split seed (default: 42)")
     args = parser.parse_args()
+    args.train = [resolve_artifact_path(path) for path in args.train]
+    args.test = resolve_artifact_path(args.test)
+    args.output = resolve_artifact_path(args.output)
 
     if args.frames < 2:
         parser.error("--frames must be at least 2")

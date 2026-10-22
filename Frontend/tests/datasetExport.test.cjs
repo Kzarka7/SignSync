@@ -43,7 +43,7 @@ test('repeated ZIP preparation preserves every sample, actual labels, and raw fr
       assert.equal(payload.sequences[0].label, sequences[i].label)
       assert.deepEqual(payload.sequences[0].frames[0].raw, sequences[i].frames[0].raw)
       assert.equal(payload.sequences[0].frames[0].features.length, 164)
-      assert.ok(files[i].startsWith(sequences[i].label.toLowerCase().replaceAll('_', '-')))
+      assert.equal(files[i], `${sequences[i].label}-${sequences[i].id}.json`)
     }
   }
 })
@@ -89,7 +89,7 @@ test('idle participant and condition metadata survive JSON and per-sample ZIP ex
   const payload = JSON.parse(await Object.values(zip.files)[0].async('string'))
   assert.deepEqual(payload.sequences[0].collection, collection)
   assert.equal(payload.sequences[0].label, 'IDLE')
-  assert.match(Object.keys(zip.files)[0], /^idle-01-/)
+  assert.equal(Object.keys(zip.files)[0], 'IDLE-idle-sample.json')
   const legacy = buildDatasetExport([{ ...sample, label: 'HELLO', collection: undefined }])
   assert.equal(Object.hasOwn(legacy.sequences[0], 'collection'), false)
 })
@@ -107,4 +107,25 @@ test('mixed old and new idle variations export as a single class with separate m
   assert.equal(data.sequences[0].collection.hands, 'left')
   assert.equal(data.sequences[1].collection.hands, 'both')
   assert.equal(data.sequences[2].label, 'THANK_YOU')
+})
+
+
+test('ZIP sample filenames use full IDs and actual labels without numbering', async () => {
+  const { buildPerSampleZipExport } = loadExport()
+  const base = { label: 'THANK_YOU', createdAt: '2026-10-22T00:00:00Z', durationMs: 0, frames: [] }
+  const samples = [
+    { ...base, id: 'fb71bd1b-b170-4906-b472-27d28d901f7b' },
+    { ...base, id: 'fb71bd1b-b170-4906-b472-27d28d901f7c' },
+  ]
+  for (const ordered of [samples, [...samples].reverse()]) {
+    const { blob } = await buildPerSampleZipExport(ordered, 'HELLO')
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer())
+    assert.deepEqual(Object.keys(zip.files).sort(), samples.map(s => `THANK_YOU-${s.id}.json`).sort())
+    for (const name of Object.keys(zip.files)) {
+      const payload = JSON.parse(await zip.file(name).async('string'))
+      assert.equal(name, `${payload.sequences[0].label}-${payload.sequences[0].id}.json`)
+    }
+  }
+  await assert.rejects(buildPerSampleZipExport([samples[0], samples[0]]), /duplicate filename/)
+  await assert.rejects(buildPerSampleZipExport([{ ...base, id: '../unsafe' }]), /unsafe filename ID/)
 })

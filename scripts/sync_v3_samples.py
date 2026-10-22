@@ -1,6 +1,7 @@
 """Back up samples.csv and replace P1/P2 FRIEND and WHERE with v3 recordings."""
 
 from __future__ import annotations
+from processed_paths import processed_artifact_path
 
 import argparse
 from collections import Counter
@@ -31,7 +32,7 @@ def main() -> None:
     new_ids = set()
     for number in (1, 2, 3):
         participant = f"participant_{number:02d}"
-        path = ROOT / "processed" / f"{participant}-dataset-v3.json"
+        path = processed_artifact_path(ROOT / "processed", f"{participant}-dataset-v3.json")
         with path.open(encoding="utf-8") as stream:
             export = json.load(stream)
         sequences = export["sequences"]
@@ -88,7 +89,7 @@ def main() -> None:
 
     BACKUPS.mkdir(exist_ok=True)
     backup = BACKUPS / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    backup.mkdir()
+    backup.mkdir(parents=True)
     shutil.copy2(MANIFEST, backup / MANIFEST.name)
     temporary = None
     try:

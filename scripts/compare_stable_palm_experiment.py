@@ -1,4 +1,6 @@
 """Compare completed isolated palm-floor candidate with saved v6, without tuning."""
+from processed_paths import processed_artifact_path, resolve_artifact_path
+from model_paths import model_artifact_folder
 import argparse
 import json
 from pathlib import Path
@@ -7,6 +9,7 @@ from run_recordings_v6_experiments import PARTICIPANTS, experiment_name
 
 
 def read(path):
+    path = resolve_artifact_path(path)
     return json.loads(path.read_text(encoding='utf-8'))
 
 
@@ -39,14 +42,14 @@ def main():
     result = dict(runs=[], ensembles={})
     for p in PARTICIPANTS:
         exp = experiment_name(p)
-        meta = read(args.dataset_root / 'processed' / exp / 'metadata.json')
+        meta = read(processed_artifact_path(args.dataset_root / 'processed', exp) / 'metadata.json')
         labels = [k for k, v in sorted(meta['labelToIndex'].items(), key=lambda kv: kv[1])]
         arrays = {'baseline': [], 'candidate': []}
         for seed in (42, 43, 44):
             run = exp + (f'_seed{seed}' if seed != 42 else '')
             row = dict(participant=p, seed=seed)
             for kind, root in [('baseline', args.dataset_root), ('candidate', args.candidate_root)]:
-                folder = root / 'models' / 'gru_model_train_test_geometry_v3_recordings_v6' / run
+                folder = model_artifact_folder(root / 'models', 'gru_model_train_test_geometry_v3_recordings_v6') / run
                 evaluation = read(folder / 'evaluation.json')
                 with np.load(folder / 'predictions.npz', allow_pickle=False) as data:
                     np.testing.assert_array_equal(data['sequence_ids'], meta['sequenceIds']['test'])

@@ -9,6 +9,8 @@ import sys
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
+from processed_paths import processed_artifact_path, resolve_artifact_path
+from model_paths import model_artifact_folder
 
 import numpy as np
 from prepare_finger_joint_experiments import prepare
@@ -50,7 +52,7 @@ def main():
     reference_hashes={}
     for experiment in experiments:
         full=experiment.removesuffix('_finger_joints')
-        meta=json.loads((ROOT/'processed'/full/'metadata.json').read_text(encoding='utf-8'))
+        meta=json.loads((processed_artifact_path(ROOT/'processed', full)/'metadata.json').read_text(encoding='utf-8'))
         for seed in (42,43,44):
             suffix='' if seed==42 else f'_seed{seed}'
             folder=find_model_folder(ROOT/'models',full+suffix)
@@ -60,8 +62,8 @@ def main():
             references[experiment,seed]=old
             checkpoint=folder/'best_model.keras'
             reference_hashes[str(checkpoint)]=hashlib.sha256(checkpoint.read_bytes()).hexdigest()
-    output=ROOT/'models'/'geometry_v3_finger_joints_comparison'
-    output.mkdir(exist_ok=True)
+    output=model_artifact_folder(ROOT / 'models', 'geometry_v3_finger_joints_comparison')
+    output.mkdir(parents=True, exist_ok=True)
     hash_path=output/'reference_model_checksums.json'
     if hash_path.exists() and json.loads(hash_path.read_text()) != reference_hashes:
         raise ValueError('Reference checkpoints changed since experiment started')
@@ -81,7 +83,7 @@ def main():
                     raise RuntimeError('Training failed; inspect '+str(log_path))
             new=json.loads(result.read_text(encoding='utf-8'))
             old=references[experiment,seed]
-            expected=json.loads((ROOT/'processed'/experiment/'metadata.json').read_text(encoding='utf-8'))
+            expected=json.loads((processed_artifact_path(ROOT/'processed', experiment)/'metadata.json').read_text(encoding='utf-8'))
             if new['preprocessingMetadata'] != expected or new['randomSeed'] != seed or new['experiment'] != experiment:
                 raise ValueError('Saved finger-joint model metadata mismatch')
             for key in ('sequenceIds','participantIds','labelToIndex'):
@@ -94,7 +96,7 @@ def main():
             rows.append(row)
             write_report(rows,output)
             print(run,row['finger_joints'],flush=True)
-    if any(hashlib.sha256(Path(p).read_bytes()).hexdigest()!=h for p,h in reference_hashes.items()):
+    if any(hashlib.sha256(resolve_artifact_path(p).read_bytes()).hexdigest()!=h for p,h in reference_hashes.items()):
         raise ValueError('Reference checkpoint changed during experiment')
     print('Completed:',output/'report.md',flush=True)
 

@@ -5,6 +5,7 @@ strong. FSL verification remains pending until a person reviews the take.
 """
 
 from __future__ import annotations
+from processed_paths import processed_artifact_path
 
 import argparse
 from collections import Counter
@@ -71,7 +72,7 @@ def main() -> None:
     new_only = []
     for number in (1, 2, 3):
         participant = f"participant_{number:02d}"
-        path = ROOT / "processed" / f"{participant}-dataset-v2.json"
+        path = processed_artifact_path(ROOT / "processed", f"{participant}-dataset-v2.json")
         with path.open(encoding="utf-8") as stream:
             export = json.load(stream)
         sequences = export["sequences"]
@@ -124,7 +125,7 @@ def main() -> None:
 
     BACKUPS.mkdir(exist_ok=True)
     backup = BACKUPS / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    backup.mkdir()
+    backup.mkdir(parents=True)
     shutil.copy2(MANIFEST, backup / MANIFEST.name)
     temporary = None
     try:

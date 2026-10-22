@@ -1,4 +1,5 @@
 """Append 20 individual finger-joint channels to full geometry v3."""
+from processed_paths import processed_artifact_path, resolve_artifact_path
 import hashlib
 import json
 from pathlib import Path
@@ -9,15 +10,15 @@ from finger_joint_features import geometry, resample, feature_names
 
 def prepare(base):
     previous=base.replace('_v1','_geometry_v3')
-    source=ROOT/'processed'/previous
+    source=processed_artifact_path(ROOT/'processed', previous)
     experiment=previous+'_finger_joints'
-    target=ROOT/'processed'/experiment
+    target=processed_artifact_path(ROOT/'processed', experiment)
     meta=json.loads((source/'metadata.json').read_text())
     if meta['featureCount'] != 238:
         raise ValueError('Expected full geometry v3 with 238 channels')
     sequences={}
     for path in meta['trainSources']+[meta['testSource']]:
-        payload=Path(path).read_bytes()
+        payload=resolve_artifact_path(path).read_bytes()
         if hashlib.sha256(payload).hexdigest()!=meta['sourceSha256'][path]:
             raise ValueError('Source changed: '+path)
         data=json.loads(payload)
@@ -52,7 +53,7 @@ def prepare(base):
             if set(saved.files) != set(arrays) or any(not np.array_equal(saved[k],v) for k,v in arrays.items()):
                 raise ValueError('Existing tensors differ')
     else:
-        target.mkdir()
+        target.mkdir(parents=True)
         np.savez_compressed(target/'gru_data.npz',**arrays)
         (target/'metadata.json').write_text(json.dumps(meta,indent=2),encoding='utf-8')
     print('Verified',target.name,arrays['X_train'].shape,flush=True)
