@@ -8,7 +8,7 @@ the sections. Recorded samples starts expanded and can be minimized from its hea
 
 ## Upload, review and save
 
-1. Choose Upload videos. Leave Auto-trim videos and Use trimmed intervals automatically checked. Upload reference clips `0.MOV` and `7.MOV` from `raw/105 FSL SIGNS REFERENCE-20261018T051635Z-1-001/clips/THANK YOU`.
+1. Choose Upload videos. Leave Auto-trim videos and Use trimmed intervals automatically checked. Upload reference clips `0.MOV` and `7.MOV` from `raw/external-datasets/105 FSL SIGNS REFERENCE-20261022T085323Z-1-001/clips/THANK YOU`.
 2. Wait for processing, then open Preview / review. Check the complete gesture, landmarks, assigned label and quality findings. Automatic trimming selects boundaries without approving or saving a take.
 3. Expand Tracking timeline to inspect coverage and seek through the recording. Expand Adjust interval to change boundaries or Hands used. Reprocess changed boundaries and confirm the selected interval before review.
 4. Check the far-right Reviewed checkbox. Save must remain disabled before this check. The top checkbox checks/unchecks eligible unsaved takes; Save checked takes saves explicitly.

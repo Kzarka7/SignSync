@@ -1,0 +1,14 @@
+{
+  "name": "samples_geometry_v1",
+  "frames": 40,
+  "labels": [
+    "FAMILY", "FRIEND", "HELLO", "HELP", "HOW", "NO", "PLEASE", "SORRY",
+    "STAY", "THANK_YOU", "WAIT", "WAVE_GREETING", "WELCOME", "WHAT", "WHEN",
+    "WHERE", "WHICH", "WHO", "WHY", "YES"
+  ],
+  "splitGroups": {
+    "training": ["signer:participant_01", "signer:participant_02"],
+    "validation": ["signer:participant_03"],
+    "test": ["signer:participant_04"]
+  }
+}

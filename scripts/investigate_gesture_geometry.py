@@ -1,4 +1,6 @@
 """Inspect all recordings by ID; no labels are used to calculate features."""
+from processed_paths import processed_artifact_path
+from model_paths import model_artifact_folder
 import csv
 import json
 import numpy as np
@@ -7,11 +9,11 @@ from gesture_geometry import geometry, NAMES, GROUPS
 
 
 def main():
-    output = ROOT/'models'/'geometry_v3_comparison'
-    output.mkdir(exist_ok=True)
+    output = model_artifact_folder(ROOT / 'models', 'geometry_v3_comparison')
+    output.mkdir(parents=True, exist_ok=True)
     rows = []
     for participant in ('participant_01','participant_02','participant_03'):
-        data = json.loads((ROOT/'processed'/f'{participant}-dataset.json').read_text())
+        data = json.loads((processed_artifact_path(ROOT/'processed', f'{participant}-dataset.json')).read_text())
         for seq in data['sequences']:
             values = geometry(np.asarray([f['features'] for f in seq['frames']]), data['featureSchema']['order'])
             for side, offset in (('left',0),('right',14)):

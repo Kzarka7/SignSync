@@ -4,6 +4,8 @@ Stages an isolated dataset root, leaving existing prepared sources and models
 unchanged. Run the existing four-participant trainer against that root.
 """
 from __future__ import annotations
+from processed_paths import processed_artifact_path, resolve_artifact_path
+from model_paths import model_artifact_folder
 
 import argparse
 from collections import Counter
@@ -19,6 +21,7 @@ from merge_dataset import merge
 
 
 def digest(path: Path) -> str:
+    path = resolve_artifact_path(path)
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
@@ -33,7 +36,7 @@ def main() -> None:
     if source == output or source not in output.parents or output.exists():
         parser.error('--output must be a NEW folder inside --dataset-root')
 
-    old_path = source / 'processed' / 'participant_04-dataset-v6.json'
+    old_path = processed_artifact_path(source / 'processed', 'participant_04-dataset-v6.json')
     old = json.loads(old_path.read_text(encoding='utf-8'))
     input_dir = source / 'clean' / 'participant_04' / 'merge-input-v5'
     current, warnings, scanned = merge(input_dir)
@@ -51,17 +54,19 @@ def main() -> None:
     if set(changes) != {'WHICH'} or len(changes['WHICH']['removed']) != 6 or len(changes['WHICH']['added']) != 6:
         raise ValueError(f'Expected exactly six WHICH replacements, got {changes}')
 
-    source_files = [source / 'processed' / f'participant_{i:02}-dataset-v5.json' for i in range(1, 4)]
+    source_files = [processed_artifact_path(source / 'processed', f'participant_{i:02}-dataset-v5.json') for i in range(1, 4)]
     source_files += [old_path, *sorted(input_dir.glob('*.json'))]
     baseline_hashes = {str(p): digest(p) for p in source_files}
     print('Verified six WHICH replacements and 394 retained P4 recordings.', flush=True)
 
     (output / 'processed').mkdir(parents=True)
-    (output / 'models').mkdir()
+    (output / 'models').mkdir(parents=True)
     staged_input = output / 'clean' / 'participant_04' / 'merge-input-v5'
     staged_input.mkdir(parents=True)
     for path in source_files[:3]:
-        shutil.copy2(path, output / 'processed' / path.name)
+        destination = processed_artifact_path(output / 'processed', path.name)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, destination)
     for path in sorted(input_dir.glob('*.json')):
         shutil.copy2(path, staged_input / path.name)
     (output / 'source-provenance.json').write_text(json.dumps({
@@ -84,7 +89,7 @@ def main() -> None:
             raise RuntimeError(f'Source changed during experiment: {path}')
     if result.returncode:
         raise SystemExit(result.returncode)
-    print('Original source hashes unchanged. Results:', output / 'models' / 'geometry_v3_recordings_v6_comparison' / 'report.md', flush=True)
+    print('Original source hashes unchanged. Results:', model_artifact_folder(output / 'models', 'geometry_v3_recordings_v6_comparison') / 'report.md', flush=True)
 
 
 if __name__ == '__main__':

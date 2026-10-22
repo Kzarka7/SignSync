@@ -6,6 +6,8 @@ files. Select the participant direction with --experiment.
 """
 
 from __future__ import annotations
+from processed_paths import processed_artifact_path
+from model_paths import model_artifact_folder
 
 import argparse
 import json
@@ -85,28 +87,43 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument(
     "--experiment",
-    choices=sorted(EXPERIMENTS),
     default="gru_p01_train_p02_test",
     help="Preprocessed experiment folder to train (default: %(default)s)",
 )
 parser.add_argument("--check-only", action="store_true", help="Validate the experiment without training or writing outputs")
 parser.add_argument("--seed", type=int, default=42, help="Training randomness seed; preprocessing splits stay unchanged (default: 42)")
 parser.add_argument("--dataset-root", type=Path, help="Dataset location when running from a worktree")
+parser.add_argument("--prepared", type=Path, help="Manifest candidate folder produced by sample_pipeline.py prepare")
+parser.add_argument("--model-output", type=Path, help="New model run folder (only with --prepared)")
 arguments = parser.parse_args()
+if arguments.prepared is None and (arguments.experiment not in EXPERIMENTS or arguments.model_output):
+    parser.error('Choose a registered legacy --experiment, or use --prepared for a sample candidate')
 if not 0 <= arguments.seed < 2**32:
     parser.error("--seed must be between 0 and 4294967295")
 RANDOM_SEED = arguments.seed
 
 EXPERIMENT_NAME = arguments.experiment
-experiment = EXPERIMENTS[EXPERIMENT_NAME]
+experiment = EXPERIMENTS.get(EXPERIMENT_NAME, {})
+if arguments.prepared:
+    candidate_metadata = json.loads((arguments.prepared / 'metadata.json').read_text(encoding='utf-8'))
+    from sample_training import validate_candidate
+    validate_candidate(arguments.prepared, candidate_metadata)
+    EXPERIMENT_NAME = candidate_metadata['experiment']
+    experiment = {'trainingParticipants': [], 'testParticipant': None}
 TRAINING_PARTICIPANTS = experiment["trainingParticipants"]
 TEST_PARTICIPANT = experiment["testParticipant"]
 
 PROJECT_FOLDER = Path(__file__).resolve().parent.parent
 DATASET_FOLDER = arguments.dataset_root or PROJECT_FOLDER.parent / "SignSync Dataset"
-PREPROCESSED_FOLDER = DATASET_FOLDER / "processed" / EXPERIMENT_NAME
+PREPROCESSED_FOLDER = processed_artifact_path(DATASET_FOLDER / "processed", EXPERIMENT_NAME)
 RUN_NAME = EXPERIMENT_NAME if RANDOM_SEED == 42 else f"{EXPERIMENT_NAME}_seed{RANDOM_SEED}"
 MODEL_FOLDER = DATASET_FOLDER / "models" / RUN_NAME
+if EXPERIMENT_NAME.endswith('_handshape_v2'):
+    MODEL_FOLDER = model_artifact_folder(DATASET_FOLDER / 'models', 'gru_model_train_test_handshape_v2') / RUN_NAME
+elif EXPERIMENT_NAME.endswith('_v1'):
+    MODEL_FOLDER = model_artifact_folder(DATASET_FOLDER / 'models', 'gru_model_train_test_v1') / RUN_NAME
+elif EXPERIMENT_NAME in ('gru_p01_train_p02_test', 'gru_p02_train_p01_test'):
+    MODEL_FOLDER = model_artifact_folder(DATASET_FOLDER / 'models', 'gru_model_train_test_two_participants') / RUN_NAME
 if EXPERIMENT_NAME.endswith('_geometry_v3'):
     from model_paths import geometry_model_folder
     MODEL_FOLDER = geometry_model_folder(DATASET_FOLDER / 'models', RUN_NAME)
@@ -138,7 +155,11 @@ if EXPERIMENT_NAME.endswith('_geometry_v3_recordings_v5'):
     MODEL_FOLDER = recordings_v5_model_folder(DATASET_FOLDER / 'models', RUN_NAME)
 
 if EXPERIMENT_NAME.endswith('_geometry_v3_recordings_v6'):
-    MODEL_FOLDER = DATASET_FOLDER / 'models' / 'gru_model_train_test_geometry_v3_recordings_v6' / RUN_NAME
+    MODEL_FOLDER = model_artifact_folder(DATASET_FOLDER / 'models', 'gru_model_train_test_geometry_v3_recordings_v6') / RUN_NAME
+
+if arguments.prepared:
+    PREPROCESSED_FOLDER = arguments.prepared.resolve()
+    MODEL_FOLDER = arguments.model_output or DATASET_FOLDER / 'models' / 'candidates' / EXPERIMENT_NAME / RUN_NAME
 
 CHECKPOINT_NAME = 'best_model.h5' if EXPERIMENT_NAME.endswith(('_geometry_v3_recordings_v4', '_geometry_v3_recordings_v5', '_geometry_v3_recordings_v6')) else 'best_model.keras'
 
@@ -172,7 +193,9 @@ with np.load(DATA_PATH) as data:
 with METADATA_PATH.open("r", encoding="utf-8") as file:
     metadata = json.load(file)
 
-if "trainingParticipants" in metadata:
+if arguments.prepared:
+    pass  # Connected group isolation was checked against the frozen manifest.
+elif "trainingParticipants" in metadata:
     if metadata["trainingParticipants"] != TRAINING_PARTICIPANTS or metadata.get("testParticipant") != TEST_PARTICIPANT:
         raise ValueError("Preprocessing participant identities do not match the chosen experiment")
 elif len(TRAINING_PARTICIPANTS) > 1:
@@ -209,7 +232,7 @@ for split, x, y in (
     if len(ids) != len(x) or len(set(ids)) != len(ids) or seen_ids.intersection(ids):
         raise ValueError(f"{split}: missing, duplicate, or overlapping sequence IDs")
     seen_ids.update(ids)
-    if "participantIds" in metadata:
+    if "participantIds" in metadata and not arguments.prepared:
         participants = metadata["participantIds"][split]
         expected = {TEST_PARTICIPANT} if split == "test" else set(TRAINING_PARTICIPANTS)
         if len(participants) != len(x) or set(participants) != expected:
@@ -219,8 +242,12 @@ print("Loaded dataset")
 print("Experiment:", EXPERIMENT_NAME)
 print("Training seed:", RANDOM_SEED)
 print("Model output:", MODEL_FOLDER)
-print("Training participants:", ", ".join(TRAINING_PARTICIPANTS))
-print("Unseen test participant:", TEST_PARTICIPANT)
+if arguments.prepared:
+    print('Split policy:', metadata['split']['method'])
+    print('All signer IDs known:', metadata['split']['unseenSignerEvaluation'])
+else:
+    print("Training participants:", ", ".join(TRAINING_PARTICIPANTS))
+    print("Unseen test participant:", TEST_PARTICIPANT)
 print("X_train:", X_train.shape)
 print("X_validation:", X_validation.shape)
 print("X_test:", X_test.shape)
@@ -236,6 +263,9 @@ from sklearn.metrics import ConfusionMatrixDisplay, classification_report
 
 tf.random.set_seed(RANDOM_SEED)
 MODEL_FOLDER.mkdir(parents=True, exist_ok=False)
+if arguments.prepared:
+    from sample_training import copy_preparation
+    copy_preparation(PREPROCESSED_FOLDER, MODEL_FOLDER, metadata)
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +359,17 @@ history = model.fit(
 # 7. Evaluate once on the selected unseen test participant
 # ---------------------------------------------------------------------------
 
+calibration = None
+if arguments.prepared:
+    from sample_training import calibrate_threshold, threshold_metrics
+    validation_probabilities = model.predict(X_validation, verbose=0)
+    calibration = calibrate_threshold(y_validation, validation_probabilities, label_names)
+    with (MODEL_FOLDER / 'threshold_selection.json').open('w', encoding='utf-8') as file:
+        json.dump(calibration, file, indent=2)
+    np.savez_compressed(MODEL_FOLDER / 'validation_predictions.npz',
+                        probabilities=validation_probabilities, y_true=y_validation,
+                        sequence_ids=np.asarray(metadata['sequenceIds']['validation']))
+
 test_loss, test_accuracy = model.evaluate(
     X_test,
     y_test,
@@ -354,7 +395,7 @@ report = classification_report(
     zero_division=0,
 )
 
-print("\nUnseen-participant test results")
+print("\nHeld-out test results")
 print(f"Test loss: {test_loss:.4f}")
 print(f"Test accuracy: {test_accuracy:.4f}")
 print(f"Macro F1: {report['macro avg']['f1-score']:.4f}")
@@ -381,6 +422,17 @@ evaluation = {
     "macroF1": float(report["macro avg"]["f1-score"]),
     "classificationReport": report,
 }
+
+if calibration is not None:
+    evaluation['acceptance'] = threshold_metrics(y_test, probabilities, label_names, calibration['selected']['threshold'])
+    evaluation['thresholdSelection'] = 'validation only; see threshold_selection.json'
+    evaluation['continuousEvaluation'] = calibration['continuousEvaluation']
+    from sklearn.metrics import confusion_matrix
+    matrix = confusion_matrix(y_test, predictions, labels=np.arange(number_of_classes))
+    evaluation['commonConfusions'] = sorted([
+        {'actual': label_names[i], 'predicted': label_names[j], 'count': int(matrix[i, j])}
+        for i in range(number_of_classes) for j in range(number_of_classes) if i != j and matrix[i, j]
+    ], key=lambda row: -row['count'])
 
 with (MODEL_FOLDER / "evaluation.json").open(
     "w",
@@ -446,7 +498,7 @@ ConfusionMatrixDisplay.from_predictions(
 )
 
 axis.set_title(
-    f"GRU confusion matrix: {TEST_PARTICIPANT} test set"
+    f"GRU confusion matrix: {EXPERIMENT_NAME if arguments.prepared else TEST_PARTICIPANT} test set"
 )
 figure.tight_layout()
 figure.savefig(

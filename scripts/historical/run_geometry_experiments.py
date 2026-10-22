@@ -7,6 +7,7 @@ import sys
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
+from model_paths import model_artifact_folder
 from prepare_handshape_experiments import ROOT, BASELINES
 from model_paths import find_model_folder, geometry_model_folder
 
@@ -32,8 +33,8 @@ def report_results(rows, output):
 
 
 def main():
-    output=ROOT/'models'/'geometry_v3_comparison'
-    output.mkdir(exist_ok=True)
+    output=model_artifact_folder(ROOT / 'models', 'geometry_v3_comparison')
+    output.mkdir(parents=True, exist_ok=True)
     rows=[]
     for base in BASELINES:
         experiment=base.replace('_v1','_geometry_v3')

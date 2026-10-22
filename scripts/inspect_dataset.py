@@ -1,3 +1,4 @@
+from processed_paths import processed_artifact_path
 import json
 from collections import Counter
 from pathlib import Path
@@ -47,10 +48,9 @@ def resample_sequence(frames, target_frames=40):
 project_folder = Path(__file__).resolve().parent.parent
 
 dataset_path = (
-    project_folder.parent
+    processed_artifact_path(project_folder.parent
     / "SignSync Dataset"
-    / "processed"
-    / "participant_01-dataset.json"
+    / "processed", "participant_01-dataset.json")
 )
 
 
