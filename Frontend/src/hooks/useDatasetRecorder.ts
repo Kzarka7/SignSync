@@ -13,7 +13,15 @@ import {
 import { downloadDatasetExport, buildPerSampleZipExport, triggerDownload } from '../services/dataset/datasetExport'
 
 // Standard signs, supplemented by labels in previously saved recordings.
-export const DEFAULT_SIGN_LABELS = ['HELLO', 'WAVE_GREETING', 'THANK_YOU', 'PLEASE', 'SORRY', 'YES', 'NO', 'HELP', 'WELCOME', 'FRIEND', 'FAMILY', 'STAY', 'WAIT', 'WHAT', 'WHY', 'WHERE', 'WHEN', 'WHO', 'WHICH', 'HOW']
+export const DEFAULT_SIGN_LABELS = [
+  'HELLO', 'WAVE_GREETING', 'THANK_YOU', 'PLEASE', 'SORRY', 'YES', 'NO', 'HELP',
+  'WELCOME', 'FRIEND', 'FAMILY', 'STAY', 'WAIT', 'WHAT', 'WHY', 'WHERE', 'WHEN', 'WHO', 'WHICH', 'HOW',
+  'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN',
+  'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST',
+  'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
+  'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY',
+  'GOOD_MORNING', 'GOOD_AFTERNOON', 'GOOD_EVENING', 'YESTERDAY', 'TOMORROW', 'TODAY',
+]
 
 function createSequenceId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto

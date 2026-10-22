@@ -64,6 +64,18 @@ function recorderHarness(options = {}, storageOptions = {}) {
   }
 }
 
+test('sign collection offers all 55 vocabulary labels, including the 35 expansion labels', () => {
+  const recorder = recorderHarness({ signsOnly: true }).render()
+  assert.equal(recorder.knownLabels.length, 55)
+  assert.equal(new Set(recorder.knownLabels).size, 55)
+  for (const label of ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN',
+    'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
+    'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY',
+    'GOOD_MORNING', 'GOOD_AFTERNOON', 'GOOD_EVENING', 'YESTERDAY', 'TOMORROW', 'TODAY']) {
+    assert.equal(recorder.knownLabels.includes(label), true, label)
+  }
+})
+
 const collection = { kind: 'idle', protocol: 'idle-v1',
   hands: 'both', posture: 'near_waist', palmOrientation: 'natural', targetDurationMs: 3000 }
 

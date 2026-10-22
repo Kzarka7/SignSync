@@ -13,6 +13,8 @@ interface DropdownProps<T extends string | number> {
   onChange: (value: T) => void;
   className?: string;
   size?: "sm" | "md";
+  disabled?: boolean;
+  ariaLabel?: string;
 }
 
 // Reusable custom dropdown used anywhere a native <select> would otherwise
@@ -24,6 +26,8 @@ export default function Dropdown<T extends string | number>({
   onChange,
   className = "",
   size = "md",
+  disabled = false,
+  ariaLabel,
 }: DropdownProps<T>) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,6 +53,8 @@ export default function Dropdown<T extends string | number>({
     <div ref={containerRef} className={`relative inline-block ${className}`}>
       <button
         type="button"
+        disabled={disabled}
+        aria-label={ariaLabel}
         onClick={() => setOpen((prev) => !prev)}
         aria-haspopup="true"
         aria-expanded={open}
@@ -61,7 +67,7 @@ export default function Dropdown<T extends string | number>({
         />
       </button>
 
-      {open && (
+      {open && !disabled && (
         <div className="absolute right-0 z-20 mt-1.5 flex max-h-[220px] min-w-full w-max flex-col overflow-y-auto rounded-lg border border-border bg-white p-1 shadow-lg custom-scrollbar">
           {options.map((option) => (
             <Button
