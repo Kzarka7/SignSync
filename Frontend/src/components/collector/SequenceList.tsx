@@ -1,10 +1,9 @@
 import { getEvaluationTaskTitle } from '../../services/dataset/boundaryEvaluation'
 import { memo } from 'react'
-import { Download, FolderArchive, Loader2, Trash2 } from 'lucide-react'
+import { FolderArchive, Loader2, Trash2 } from 'lucide-react'
 import Card from '../shared/Card'
 import Button from '../shared/Button'
 import { LabeledSequence } from '../../types/dataset'
-import TrainingPackageExport from './TrainingPackageExport'
 import PendingVideoRecordings, { type PreservedVideoTake } from './PendingVideoRecordings'
 
 interface SequenceListProps {
@@ -15,7 +14,6 @@ interface SequenceListProps {
   collapsible?: boolean
   sequences: LabeledSequence[]
   onDelete: (id: string) => void
-  onExport: () => void
   onExportZip: () => void
   onDownloadZip: () => void
   isExportingZip: boolean
@@ -25,48 +23,42 @@ interface SequenceListProps {
 }
 
 // Wrapped in memo: during a recording session every prop here
-// (sequences/onDelete/onExport/onExportZip/onClearAll) stays
+// (sequences/onDelete/onExportZip/onClearAll) stays
 // reference-stable tick to tick (the callbacks are useCallback'd in
 // useDatasetRecorder, sequences only changes on save/delete) - without
 // memo, this whole list still gets rebuilt on every detection tick purely
 // because its sibling (RecordingControls) re-renders, which is wasted
 // work that competes with the detection loop for main-thread time.
-function SequenceList({ collapsible = false, sequences, onDelete, onExport, onExportZip, onDownloadZip, isExportingZip, zipReady, exportError, onClearAll,
+function SequenceList({ collapsible = false, sequences, onDelete, onExportZip, onDownloadZip, isExportingZip, zipReady, exportError, onClearAll,
   pendingVideos = [], pendingLocked = false, onProcessVideos = () => {}, onRemoveVideo = () => {} }: SequenceListProps) {
   const content = <>
       {pendingVideos.length > 0 && <PendingVideoRecordings recordings={pendingVideos} locked={pendingLocked} onProcessAll={onProcessVideos} onRemove={onRemoveVideo} />}
-      {sequences.length > 0 && <details className="mb-3 text-sm"><summary className="cursor-pointer font-semibold text-text-2">Sample exports and storage</summary>
-        <div className="flex gap-2 flex-wrap mt-3">
-          <Button size="sm" onClick={onExport} disabled={sequences.length === 0} title="Export saved landmark samples; pending videos are excluded.">
-            <Download size={13} /> Export JSON
-          </Button>
-          <Button
-            size="sm"
-            variant="default"
-            onClick={zipReady ? onDownloadZip : onExportZip}
-            disabled={sequences.length === 0 || isExportingZip}
-            aria-busy={isExportingZip}
-            title="Export saved landmark samples in this mode; pending videos are excluded."
-          >
-            {isExportingZip ? <Loader2 size={13} className="animate-spin" /> : <FolderArchive size={13} />}
-            {isExportingZip ? 'Preparing ZIP…' : zipReady ? 'Download ZIP' : 'Prepare ZIP'}
-          </Button>
-          <Button size="sm" variant="danger" onClick={onClearAll} disabled={sequences.length === 0} title="Clear saved landmark samples; pending videos remain.">
-            {pendingVideos.length ? 'Clear saved samples' : 'Clear all'}
-          </Button>
+      {sequences.length > 0 && <div className="mb-3 space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={zipReady ? onDownloadZip : onExportZip}
+          disabled={isExportingZip}
+          aria-busy={isExportingZip}
+          title="Download one JSON file per saved sample in a ZIP. Pending videos are excluded."
+        >
+          {isExportingZip ? <Loader2 size={13} className="animate-spin" /> : <FolderArchive size={13} />}
+          {isExportingZip ? 'Preparing ZIP…' : 'Export as ZIP'}
+        </Button>
+        <Button size="sm" variant="danger" onClick={onClearAll} title="Clear all saved landmark samples; pending videos remain.">
+          Clear all
+        </Button>
         </div>
-      {sequences.length > 0 && (
-        <p className="text-sm text-text-2 mb-3" role="status">
+        <p className="text-sm text-text-2" role="status">
           {isExportingZip
-            ? 'Preparing all saved samples. Download ZIP will appear when ready.'
+            ? 'Preparing one JSON file per saved sample.'
             : zipReady
-              ? 'ZIP ready. Click Download ZIP to save it; you can download it again at any time.'
-              : 'Prepare ZIP, then click Download ZIP. Both export formats include all saved samples.'}
+              ? 'ZIP ready. Click Export as ZIP to download one JSON file per sample.'
+              : 'Export saved samples as a ZIP containing one JSON file per sample. Pending videos are excluded.'}
         </p>
-      )}
-      </details>}
+      </div>}
       {exportError && <p role="alert" className="text-sm text-danger mb-3">{exportError}</p>}
-      <TrainingPackageExport sequences={sequences} />
 
       {sequences.length === 0 && pendingVideos.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border bg-sky p-4"><p className="text-sm font-semibold">No saved samples yet</p><p className="text-xs text-text-2 mt-1">Record a take or save a reviewed sample.</p></div>
