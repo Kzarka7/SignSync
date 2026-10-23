@@ -10,6 +10,7 @@ const React = require('react')
 function harness(boundary) {
   const slots = []; let cursor = 0, effects = [], dirty = false, tree, id = 0
   const empty = []
+  let recorderOptions
   const recorder = {
     knownLabels: ['HELLO', 'THANK_YOU'], selectedLabel: 'HELLO', sequences: empty, allSequences: empty,
     async clearAll() { recorder.sequences = []; recorder.allSequences = []; dirty = true },
@@ -42,7 +43,7 @@ function harness(boundary) {
     exports, crypto: { randomUUID: () => `capture-${++id}` }, require(name) {
       if (name === 'react') return react
       if (name === 'react/jsx-runtime') return require(name)
-      if (name.endsWith('useDatasetRecorder')) return { useDatasetRecorder: () => recorder }
+      if (name.endsWith('useDatasetRecorder')) return { useDatasetRecorder: options => { recorderOptions=options; return recorder } }
       if (name.endsWith('datasetStorage')) return { getSequences: () => empty }
       if (name.endsWith('trainingCollection')) return {
         getTrainingTasks: (_, category) => [{ id: `${category}-task`, category, label: category === 'rest' ? 'REST' : 'IDLE_MOVEMENT',
@@ -72,7 +73,8 @@ function harness(boundary) {
   const child = name => all(node => node.type === name)[0]
   render()
   return {
-    render, child,
+    render, child, recorderOptions:()=>recorderOptions,
+    method(value) { all(node=>node.type==='select' && ['video','live'].includes(node.props.value))[0].props.onChange({target:{value}});render() },
     capture(filename) {
       const camera = child('CameraVideoRecorder')
       camera.props.onRecorded({ name: filename }, camera.props.label, 30); render()
@@ -91,6 +93,13 @@ function harness(boundary) {
 
 for (const boundary of [false, true]) {
   const category = boundary ? 'rest/idle' : 'sign'
+  test(`${category} enables live recording shortcuts only in live-camera mode`,()=>{
+    const h=harness(boundary)
+    assert.equal(h.recorderOptions().hotkeysEnabled,false)
+    h.method('live');assert.equal(h.recorderOptions().hotkeysEnabled,true)
+    h.source('Upload videos');assert.equal(h.recorderOptions().hotkeysEnabled,false)
+    h.source('Camera');assert.equal(h.recorderOptions().hotkeysEnabled,true)
+  })
   test(`${category} captures wait on the camera screen, retain labels/tasks and transfer only on Process all`, () => {
     const h = harness(boundary)
     h.capture('first.webm'); h.selectNext(); h.capture('second.webm')

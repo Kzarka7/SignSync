@@ -233,6 +233,7 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
   const [selected, setSelected] = useState<string | null>(null)
   const [saveError, setSaveError] = useState('')
   const workspace = useRef<HTMLDivElement>(null)
+  const reviewQueue = useRef<HTMLUListElement>(null)
   const [shortcutHelp, setShortcutHelp] = useState(false)
   const saving = useRef(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -377,18 +378,23 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
     try { await onSaved() }
     finally { saving.current = false; setIsSaving(false) }
   }
-  const undo = async (take: Take) => {
-    if (saving.current || take.status !== 'Saved') return
+  const undoMany = async (items: Take[]) => {
+    if (saving.current || !items.some(take => take.status === 'Saved')) return
     saving.current = true; setIsSaving(true)
     setSaveError('')
     try {
-      await deleteSequence(take.id)
-      patch(take.id, { status: 'Ready' })
+      for (const take of items) {
+        if (take.status !== 'Saved') continue
+        try { await deleteSequence(take.id) }
+        catch { setSaveError(`Could not undo ${take.file.name}. The sample is still saved; please try again.`); break }
+        patch(take.id, { status: 'Ready' })
+      }
       await onSaved()
     } catch {
-      setSaveError(`Could not undo ${take.file.name}. The sample is still saved; please try again.`)
+      setSaveError('Could not refresh recorded samples. Reload the saved list before continuing.')
     } finally { saving.current = false; setIsSaving(false) }
   }
+  const undo = (take: Take) => undoMany([take])
   const current = takes.find(take => take.id === selected)
   const processed = takes.filter(take => take.result)
   const fullCount = processed.filter(take => isFullRecording(take.result!.start, take.result!.end, take.result!.duration)).length
@@ -407,17 +413,33 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
         const index = takes.findIndex(take => take.id === selected)
         const next = index < 0 ? 0 : Math.min(takes.length - 1, Math.max(0, index + (action === 'next' ? 1 : -1)))
         setSelected(takes[next].id)
+        // Only Q/E center rows. Change this scroll container alone so the page
+        // stays in place and manual scrolling is never corrected on re-render.
+        const queue = reviewQueue.current
+        const row = queue?.children.item(next) as HTMLElement | null
+        if (queue && row) {
+          const bounds = queue.getBoundingClientRect(), item = row.getBoundingClientRect()
+          const top = bounds.top + queue.clientTop
+          const centered = queue.scrollTop + item.top + item.height / 2 - top - queue.clientHeight / 2
+          queue.scrollTop = Math.max(0, Math.min(queue.scrollHeight - queue.clientHeight, centered))
+        }
         return
       }
       if (isSaving) return
       if (action === 'review' || action === 'review-all') {
         event.preventDefault()
-        setTakes(previous => previous.map(take => canReview(take) && (action === 'review-all' || take.id === selected)
-          ? { ...take, reviewed: action === 'review-all' || !take.reviewed } : take))
+        setTakes(previous => {
+          const eligible = previous.filter(canReview)
+          const checked = !eligible.every(take => take.reviewed)
+          return previous.map(take => canReview(take) && (action === 'review-all' || take.id === selected)
+            ? { ...take, reviewed: action === 'review-all' ? checked : !take.reviewed } : take)
+        })
       } else if (action === 'save' || action === 'save-all') {
         event.preventDefault()
-        const items = (action === 'save-all' ? takes : current ? [current] : []).filter(take => take.reviewed && canReview(take))
+        const candidates = action === 'save-all' ? takes : current ? [current] : []
+        const items = candidates.filter(take => take.reviewed && canReview(take))
         if (items.length) void save(items)
+        else void undoMany(candidates.filter(take => take.status === 'Saved'))
       } else {
         const control = workspace.current?.querySelector<HTMLInputElement | HTMLButtonElement>(`[data-collector-shortcut="${action}"]`)
         if (!control || control.matches(':disabled')) return
@@ -476,6 +498,14 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
     {takes.length > 0 && <Card><div className="space-y-3">
       <div className="flex items-center justify-between gap-3"><h2 className="font-semibold text-lg">Review queue <span className="text-text-2 font-normal">({takes.length})</span></h2>
         <span className="text-xs text-text-2 tabular-nums">{takes.filter(take => take.status === 'Saved').length} saved · {takes.filter(take => take.reviewed && canReview(take)).length} checked</span></div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3 text-xs text-text-2 tabular-nums">
+          <span>{processed.length}/{takes.length} samples processed</span>
+          <span>{Math.round(processed.length / takes.length * 100)}%</span>
+        </div>
+        <progress aria-label="Total sample processing progress" value={processed.length} max={takes.length}
+          className="block h-2 w-full overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-border [&::-webkit-progress-value]:bg-signal [&::-moz-progress-bar]:bg-signal" />
+      </div>
       <div className="flex gap-3 items-center border border-transparent p-3 overflow-y-auto" style={{ scrollbarGutter: 'stable' }}>
       <div className="flex-1 min-w-0 flex gap-2 flex-wrap">
         <Button size="sm" variant="primary" className="disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-signal" disabled={isSaving || !takes.some(t => t.reviewed && canReview(t))} onClick={() => save(takes)}>Save checked takes</Button>
@@ -503,7 +533,7 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
       </div>
       <p className="text-xs text-text-2" aria-label="Queue interval summary">{processed.length - fullCount} trimmed · {fullCount} full recordings · {needIntervalReview} need interval confirmation</p>
       <p id="video-review-instructions" className="text-xs text-text-2">Review each take, then check it to enable saving.</p>
-      <ul className="space-y-2 max-h-96 overflow-auto overscroll-contain" style={{ scrollbarGutter: 'stable' }}>{takes.map(take => <li key={take.id} data-auto-trimmed={!!take.contextCandidate} className={`border rounded-lg p-3 relative ${selected === take.id ? 'border-signal bg-signal-light' : 'border-border'}`}>
+      <ul ref={reviewQueue} aria-label="Review queue takes" className="space-y-2 max-h-96 overflow-auto overscroll-contain" style={{ scrollbarGutter: 'stable' }}>{takes.map(take => <li key={take.id} data-auto-trimmed={!!take.contextCandidate} className={`border rounded-lg p-3 relative ${selected === take.id ? 'border-signal bg-signal-light' : 'border-border'}`}>
         <div className="min-w-0 flex-1 space-y-2">
         <p className="text-sm truncate font-semibold pr-14" title={`${take.file.name} · ${take.label}`}>{take.file.name} · {take.label}</p>
         {take.training && <p className="text-xs text-text-2 pr-14">{take.training.taskTitle}</p>}

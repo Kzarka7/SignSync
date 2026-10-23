@@ -44,7 +44,7 @@ export default function CollectorShortcutHelp({ open, onClose }: { open: boolean
         </section>)}
       </div>
       <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-border bg-sky px-5 py-4 sm:px-6">
-        <p id="collector-shortcuts-note" className="max-w-lg text-xs leading-relaxed text-text-2">Letter shortcuts pause while typing. Use arrows and Enter in the time fields. Reprocess changed boundaries before reviewing or saving. Shift + C only checks eligible unsaved takes.</p>
+        <p id="collector-shortcuts-note" className="max-w-lg text-xs leading-relaxed text-text-2">Letter shortcuts pause while typing. Reprocess changed boundaries before reviewing or saving. Shift + C checks or unchecks eligible unsaved takes. Shift + V saves checked takes; when none remain to save, it undoes this queue’s saves and keeps the takes available.</p>
         <div className="flex items-center gap-2 text-xs text-text-2"><Keys value="?" /><span>Toggle help</span><Keys value="Esc" /><span>Close</span></div>
       </footer>
     </div>

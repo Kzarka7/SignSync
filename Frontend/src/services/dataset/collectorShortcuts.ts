@@ -1,8 +1,8 @@
 export const COLLECTOR_SHORTCUTS = [
   ['Space', 'Play/pause selected interval'], ['Shift + Space', 'Play/pause whole recording'],
   ['Q / E', 'Previous / next take'], ['C', 'Toggle Reviewed for current take'],
-  ['Shift + C', 'Check all eligible unsaved takes'], ['V', 'Save current reviewed take'],
-  ['Shift + V', 'Save all checked takes'], ['T', 'Toggle interval looping'],
+  ['Shift + C', 'Check/uncheck all eligible unsaved takes'], ['V', 'Save current reviewed take / undo save'],
+  ['Shift + V', 'Save checked takes / undo queue saves'], ['T', 'Toggle interval looping'],
   ['F / G', 'Focus start / end time'], ['↑ / ↓', 'Adjust focused time by 0.05 seconds'],
   ['Shift + ↑ / ↓', 'Adjust focused time by 0.5 seconds'], ['Enter in time field', 'Reprocess interval'],
   ['Y', 'Use suggested interval'], ['?', 'Show/hide shortcut help'],
@@ -11,10 +11,8 @@ export const COLLECTOR_SHORTCUTS = [
 export function collectorShortcut(event: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'ctrlKey' | 'metaKey' | 'altKey' | 'repeat' | 'isComposing' | 'defaultPrevented' | 'target'>) {
   if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.repeat) return null
   const target = event.target as HTMLElement | null
-  if (target?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]')) return null
+  if (target?.closest?.('input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="button"]):not([type="submit"]), textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]')) return null
   const key = event.key.toLowerCase()
-  // Let Space retain native activation when a button or link has keyboard focus.
-  if (key === ' ' && !event.shiftKey && target?.closest?.('button, a, summary')) return null
   if (key === '?') return 'help'
   if (key === ' ') return event.shiftKey ? 'play-whole' : 'play-interval'
   if (key === 'c') return event.shiftKey ? 'review-all' : 'review'

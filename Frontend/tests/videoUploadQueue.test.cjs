@@ -125,13 +125,14 @@ test('collector shortcuts navigate, review and save with batch eligibility and t
   assert.equal(h.saved().length,1)
   h.key('e'); assert.equal(h.preview().props.take.file.name,'second.mp4')
   h.preview().props.onDraftChange(.1,.9); h.render()
-  h.key('C',{shiftKey:true}); h.key('V',{shiftKey:true})
+  h.key('C',{shiftKey:true}); h.key('v')
   await new Promise(resolve=>setImmediate(resolve)); h.render()
   assert.equal(h.saved().length,1,'dirty takes cannot be reviewed or saved')
   h.preview().props.onTrim(.1,.9); h.render()
   await new Promise(resolve=>setImmediate(resolve)); h.render()
   h.key('C',{shiftKey:true}); h.key('C',{shiftKey:true})
-  assert.equal(h.all(n=>/^Reviewed /.test(n.props?.['aria-label']??''))[1].props.checked,true,'Shift+C never unchecks')
+  assert.equal(h.all(n=>/^Reviewed /.test(n.props?.['aria-label']??''))[1].props.checked,false,'Shift+C unchecks on the second press')
+  h.key('C',{shiftKey:true})
   h.key('V',{shiftKey:true}); await new Promise(resolve=>setImmediate(resolve)); h.render()
   assert.equal(h.saved().length,2)
   h.key('?'); assert.equal(h.all(n=>n.props?.open===true && typeof n.props?.onClose==='function').length,1)
@@ -146,6 +147,64 @@ test('processing shortcuts stay inactive when its workspace is hidden in camera 
   h.key('?');assert.equal(h.all(n=>n.props?.open===true && typeof n.props?.onClose==='function').length,0)
   workspace.ref.current={closest:()=>null}
   h.key('c');assert.equal(h.check().props.checked,true)
+})
+
+test('C toggles review and V saves, undoes and re-saves the current take',async()=>{
+  const h=harness();await h.upload()
+  const settle=async()=>{await new Promise(resolve=>setImmediate(resolve));h.render()}
+  h.key('c');assert.equal(h.check().props.checked,true)
+  h.key('c');assert.equal(h.check().props.checked,false)
+  h.key('v');await settle();assert.equal(h.saved().length,0,'unreviewed takes stay unsaved')
+  h.key('c');h.key('v');await settle();assert.equal(h.saved().length,1)
+  h.key('v');await settle();assert.equal(h.saved().length,0)
+  assert.equal(h.preview().props.take.status,'Ready')
+  assert.equal(h.check().props.checked,true,'undo retains review and source take')
+  h.key('v');await settle();assert.equal(h.saved().length,1)
+})
+
+test('Shift+C toggles the batch and Shift+V saves or undoes only the queue saves',async()=>{
+  const h=harness();await h.upload('first.mp4');await h.upload('second.mp4')
+  const settle=async()=>{await new Promise(resolve=>setImmediate(resolve));h.render()}
+  const checked=()=>h.all(n=>/^Reviewed /.test(n.props?.['aria-label']??'')).map(n=>n.props.checked)
+  h.key('C',{shiftKey:true});assert.deepEqual(checked(),[true,true])
+  h.key('C',{shiftKey:true});assert.deepEqual(checked(),[false,false])
+  h.key('C',{shiftKey:true});h.key('V',{shiftKey:true});await settle();assert.equal(h.saved().length,2)
+  h.saved().push({id:'outside-queue'})
+  h.key('V',{shiftKey:true});await settle();assert.deepEqual(h.saved().map(s=>s.id),['outside-queue'])
+  assert.deepEqual(checked(),[true,true])
+  h.key('V',{shiftKey:true});await settle();assert.equal(h.saved().length,3,'batch can be re-saved')
+  h.failDelete();h.key('V',{shiftKey:true});await settle()
+  assert.equal(h.saved().length,3,'failed undo preserves saved samples')
+  assert.ok(h.all(n=>n.props?.role==='alert').length)
+})
+
+test('Q/E center the selected take inside the queue without overriding manual scrolling',async()=>{
+  const h=harness();await h.upload('first.mp4');await h.upload('second.mp4');await h.upload('third.mp4')
+  const queue={scrollTop:0,clientTop:0,clientHeight:300,scrollHeight:480,getBoundingClientRect:()=>({top:100}),
+    children:{item:index=>({getBoundingClientRect:()=>({top:100+160*index-queue.scrollTop,bottom:260+160*index-queue.scrollTop,height:160})})}}
+  h.all(n=>n.props?.['aria-label']==='Review queue takes')[0].ref.current=queue
+  const previews=()=>h.all(n=>n.type==='button'&&n.props['aria-label']==='Preview / review')
+  previews()[0].props.onClick();h.render();assert.equal(queue.scrollTop,0)
+  h.key('e');assert.equal(queue.scrollTop,90,'middle row is centered, not merely visible')
+  h.key('e');assert.equal(queue.scrollTop,180)
+  queue.scrollTop=0;h.render();assert.equal(queue.scrollTop,0,'manual scrolling survives render')
+  h.key('c');assert.equal(queue.scrollTop,0,'review updates do not scroll')
+  previews()[2].props.onClick();h.render();assert.equal(queue.scrollTop,0,'mouse selection does not scroll')
+  h.key('q');assert.equal(queue.scrollTop,90)
+  h.key('q');assert.equal(queue.scrollTop,0)
+})
+
+test('Space routes to interval playback and Shift+Space to whole playback without video focus',async()=>{
+  const h=harness();await h.upload()
+  const actions=[]
+  h.all(n=>n.props?.['data-collector-workspace'])[0].ref.current={closest:()=>null,
+    querySelector:selector=>({matches:()=>false,click:()=>actions.push(selector)})}
+  for(const type of ['body','button','file','checkbox']) {
+    const target={closest:()=>null,tagName:type==='body'?'BODY':type==='button'?'BUTTON':'INPUT',type}
+    h.key(' ',{target});h.key(' ',{target,shiftKey:true})
+  }
+  assert.equal(actions.length,8)
+  assert.ok(actions.every((selector,i)=>selector.includes(i%2?'play-whole':'play-interval')))
 })
 
 test('row review, save, undo, re-save and remove keep queue and storage consistent', async () => {
