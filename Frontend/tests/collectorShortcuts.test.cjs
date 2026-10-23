@@ -10,9 +10,9 @@ function service(relative) {
 }
 const shortcuts = service('services/dataset/collectorShortcuts')
 test('shortcut mapping covers the agreed keys and protects typing, composition and native controls', () => {
-  const expected = { ' ':'play-interval', q:'previous', e:'next', c:'review', s:'save', t:'loop', f:'start', g:'end', y:'suggest', '?':'help' }
+  const expected = { ' ':'play-interval', q:'previous', e:'next', c:'review', s:'save', r:'remove', t:'loop', f:'start', g:'end', y:'suggest', '?':'help' }
   for (const [key,action] of Object.entries(expected)) assert.equal(shortcuts.collectorShortcut({key}),action)
-  for (const [key,action] of [[' ','play-whole'],['C','review-all'],['S','save-all']]) assert.equal(shortcuts.collectorShortcut({key,shiftKey:true}),action)
+  for (const [key,action] of [[' ','play-whole'],['C','review-all'],['S','save-all'],['R','remove-all']]) assert.equal(shortcuts.collectorShortcut({key,shiftKey:true}),action)
   for (const flag of ['ctrlKey','metaKey','altKey','isComposing','repeat','defaultPrevented']) assert.equal(shortcuts.collectorShortcut({key:'s',[flag]:true}),null)
   assert.equal(shortcuts.collectorShortcut({key:'c',target:{closest:()=>({})}}),null)
   const button = { closest: selector => selector === 'button, a, summary' ? {} : null }

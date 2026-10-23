@@ -32,6 +32,7 @@ type Take = {
   qualityWindow?: VideoQualityWindow
   contextCandidate?: VideoQualityWindow
 }
+type RemovedTakes = { items: { take: Take; index: number }[]; selected: string | null }
 
 function purposeOf(take: Pick<Take, 'training'>) {
   const category = take.training?.category
@@ -231,6 +232,8 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
 }) {
   const [takes, setTakes] = useState<Take[]>([])
   const [selected, setSelected] = useState<string | null>(null)
+  const [removedTake, setRemovedTake] = useState<RemovedTakes | null>(null)
+  const [removedAll, setRemovedAll] = useState<RemovedTakes | null>(null)
   const [saveError, setSaveError] = useState('')
   const workspace = useRef<HTMLDivElement>(null)
   const reviewQueue = useRef<HTMLUListElement>(null)
@@ -249,6 +252,7 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
   const seenIncoming = useRef(new Set<string>())
   const active = useRef<{ id: string; controller: AbortController } | null>(null)
   const fingerprints = useRef(new Map<string, string>())
+  const processingRuns = useRef(new Map<string, symbol>())
   const alive = useRef(true)
   const patch = (id: string, changes: Partial<Take>) => setTakes(previous => previous.map(take => take.id === id ? { ...take, ...changes } : take))
   const busy = isSaving || takes.some(take => take.status === 'Queued' || take.status === 'Processing')
@@ -280,8 +284,11 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
     const take = takes.find(t => t.status === 'Queued')
     if (!take) return
     const controller = new AbortController()
+    const run = Symbol()
+    processingRuns.current.set(take.id, run)
+    const update = (changes: Partial<Take>) => { if (processingRuns.current.get(take.id) === run) patch(take.id, changes) }
     active.current = { id: take.id, controller }
-    patch(take.id, { status: 'Processing', progress: 0, message: undefined })
+    update({ status: 'Processing', progress: 0, message: undefined })
     void (async () => {
       try {
         const fingerprint = take.fingerprint ?? await fingerprintVideo(take.file)
@@ -290,13 +297,13 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
         controller.signal.throwIfAborted()
         const owner = fingerprints.current.get(fingerprint)
         if ((owner && owner !== take.id) || alreadySaved) {
-          patch(take.id, { status: 'Duplicate', fingerprint, message: 'This source file is already queued or saved, even if its filename or label differs.' })
+          update({ status: 'Duplicate', fingerprint, message: 'This source file is already queued or saved, even if its filename or label differs.' })
           return
         }
         fingerprints.current.set(fingerprint, take.id)
-        patch(take.id, { fingerprint })
+        update({ fingerprint })
         let result: Result = await processVideo(take.file, controller.signal, progress => {
-          if (alive.current) patch(take.id, { progress: !take.interval && take.autoTrim ? Math.round(progress * .5) : progress })
+          if (alive.current) update({ progress: !take.interval && take.autoTrim ? Math.round(progress * .5) : progress })
         }, take.interval, { targetFps: IMPORT_FPS, qualityWindow: take.qualityWindow, samplePurpose: purposeOf(take) })
         result.contextCandidate = take.contextCandidate
         controller.signal.throwIfAborted()
@@ -305,12 +312,12 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
         if (!take.interval && take.autoTrim) {
           const suggested = automaticSignInterval(result.frames, result.duration)
           if (suggested) {
-            patch(take.id, { progress: 50, message: 'Auto-trimming and reprocessing the suggested interval…' })
+            update({ progress: 50, message: 'Auto-trimming and reprocessing the suggested interval…' })
             try {
               const qualityWindow: VideoQualityWindow = { protocol: 'gesture-context-v1', basis: 'automatic-hand-activity',
                 startMs: suggested.activityStartMs - suggested.start * 1000, endMs: suggested.activityEndMs - suggested.start * 1000 }
               const trimmed = await processVideo(take.file, controller.signal, progress => {
-                if (alive.current) patch(take.id, { progress: 50 + Math.round(progress * .49) })
+                if (alive.current) update({ progress: 50 + Math.round(progress * .49) })
               }, { start: suggested.start, end: suggested.end }, { targetFps: IMPORT_FPS, qualityWindow })
               controller.signal.throwIfAborted()
               if (trimmed.quality.result === 'Retake') message = 'Automatic trim had too little usable data. Full recording retained; adjust boundaries manually.'
@@ -327,12 +334,12 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
         controller.signal.throwIfAborted()
         if (purposeOf(take) || take.expectedHands === 'both') result.quality = qualityFor(take, result, take.expectedHands ?? 'either')
         if (!purposeOf(take)) intervalReview = confirmInterval(result.start, result.end, result.duration, take.interval ? 'manual' : 'automatic')
-        if (alive.current) patch(take.id, { status: 'Ready', progress: 100, result,
+        if (alive.current) update({ status: 'Ready', progress: 100, result,
           fullResult, interval: isFullRecording(result.start, result.end, result.duration) ? take.interval : { start: result.start, end: result.end },
           qualityWindow: result.qualityWindow, contextCandidate: result.contextCandidate,
           message, draft: undefined, reviewed: false, intervalReview })
       } catch (error) {
-        if (alive.current) patch(take.id, { status: controller.signal.aborted ? 'Cancelled' : 'Retake',
+        if (alive.current) update({ status: controller.signal.aborted ? 'Cancelled' : 'Retake',
           message: controller.signal.aborted ? 'Processing cancelled. Retry when ready.' : String(error instanceof Error ? error.message : error), reviewed: false })
       } finally {
         active.current = null
@@ -395,6 +402,38 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
     } finally { saving.current = false; setIsSaving(false) }
   }
   const undo = (take: Take) => undoMany([take])
+  const removeTakes = (all: boolean, id?: string) => {
+    if (saving.current) return
+    const items = takes.map((take, index) => ({ take, index })).filter(({ take }) => take.status !== 'Saved' && (all || take.id === id))
+    if (!items.length) return
+    const snapshot = { items, selected }
+    if (all) setRemovedAll(snapshot); else setRemovedTake(snapshot)
+    const ids = new Set(items.map(({ take }) => take.id))
+    for (const { take } of items) {
+      processingRuns.current.delete(take.id)
+      if (active.current?.id === take.id) active.current.controller.abort()
+      if (take.fingerprint && fingerprints.current.get(take.fingerprint) === take.id) fingerprints.current.delete(take.fingerprint)
+    }
+    setTakes(previous => previous.filter(take => !ids.has(take.id)))
+    if (selected && ids.has(selected)) setSelected(null)
+  }
+  const restoreTakes = (snapshot: RemovedTakes | null, all: boolean) => {
+    if (saving.current || !snapshot) return
+    const restored = [...takes]
+    for (const { take, index } of snapshot.items) {
+      if (restored.some(item => item.id === take.id)) continue
+      const owner = take.fingerprint && fingerprints.current.get(take.fingerprint)
+      const duplicate = take.fingerprint && ((owner && owner !== take.id) || sequences.some(sample => sample.videoImport?.fingerprint === take.fingerprint))
+      const wasProcessing = take.status === 'Processing'
+      const item: Take = duplicate ? { ...take, status: 'Duplicate', reviewed: false, message: 'This source video is already queued or saved.' }
+        : wasProcessing ? { ...take, status: 'Queued', progress: 0, reviewed: false } : take
+      restored.splice(Math.min(index, restored.length), 0, item)
+      if (take.fingerprint && !duplicate) fingerprints.current.set(take.fingerprint, take.id)
+    }
+    setTakes(restored)
+    setSelected(snapshot.selected && restored.some(take => take.id === snapshot.selected) ? snapshot.selected : snapshot.items[0]?.take.id ?? null)
+    if (all) setRemovedAll(null); else setRemovedTake(null)
+  }
   const current = takes.find(take => take.id === selected)
   const processed = takes.filter(take => take.result)
   const fullCount = processed.filter(take => isFullRecording(take.result!.start, take.result!.end, take.result!.duration)).length
@@ -426,7 +465,14 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
         return
       }
       if (isSaving) return
-      if (action === 'review' || action === 'review-all') {
+      if (action === 'remove' || action === 'remove-all') {
+        event.preventDefault()
+        if (action === 'remove-all') {
+          if (removedAll) restoreTakes(removedAll, true)
+          else removeTakes(true)
+        } else if (!current && removedTake) restoreTakes(removedTake, false)
+        else if (current) removeTakes(false, current.id)
+      } else if (action === 'review' || action === 'review-all') {
         event.preventDefault()
         setTakes(previous => {
           const eligible = previous.filter(canReview)
@@ -494,6 +540,11 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
     <div className={controls ? 'contents xl:block xl:col-start-2 xl:row-start-1 xl:space-y-4' : ''}>
     {controls && <div data-collector-controls className="min-w-0 order-1 xl:order-none">{controls}</div>}
     <div data-collector-review className={controls ? 'min-w-0 space-y-4 order-4 xl:order-none' : 'space-y-4'}>
+    {(removedTake || removedAll) && <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-sky p-3 text-sm" role="status">
+      <span>Removed takes can be restored until you leave or refresh.</span>
+      {removedTake && <Button size="sm" disabled={isSaving} onClick={() => restoreTakes(removedTake, false)}>Undo remove (R)</Button>}
+      {removedAll && <Button size="sm" disabled={isSaving} onClick={() => restoreTakes(removedAll, true)}>Undo remove all (Shift + R)</Button>}
+    </div>}
     {takes.length === 0 && controls && <Card><h2 className="font-semibold text-lg">Review queue</h2><p className="text-sm text-text-2 mt-3">No recordings added yet.</p></Card>}
     {takes.length > 0 && <Card><div className="space-y-3">
       <div className="flex items-center justify-between gap-3"><h2 className="font-semibold text-lg">Review queue <span className="text-text-2 font-normal">({takes.length})</span></h2>
@@ -515,13 +566,7 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
         }}>Cancel remaining</Button>
         <Button size="sm" variant="danger" disabled={isSaving || !takes.some(take => take.status !== 'Saved')}
           title="Remove all unsaved videos, including reviewed takes; cancel processing. Saved takes stay until you undo their save."
-          onClick={() => {
-            active.current?.controller.abort()
-            const savedIds = new Set(takes.filter(take => take.status === 'Saved').map(take => take.id))
-            for (const [fingerprint, owner] of fingerprints.current) if (!savedIds.has(owner)) fingerprints.current.delete(fingerprint)
-            setTakes(previous => previous.filter(take => take.status === 'Saved'))
-            if (!takes.some(take => take.id === selected && take.status === 'Saved')) setSelected(null)
-          }}>Remove all from queue</Button>
+          onClick={() => removeTakes(true)}>Remove all from queue</Button>
       </div>
       <label className="shrink-0 flex items-center justify-center min-w-12 min-h-12 p-2 cursor-pointer"
         title="Check or uncheck all eligible previews. Checking confirms their labels, tasks and acceptable quality findings; saving is separate.">
@@ -556,11 +601,7 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
             if (active.current?.id === take.id) active.current.controller.abort()
             else patch(take.id, { status: 'Cancelled' })
           }}>Cancel</Button>}
-          {!['Queued', 'Processing'].includes(take.status) && <Button size="sm" variant="danger" aria-label="Remove from queue" className="disabled:opacity-40 disabled:cursor-not-allowed" disabled={isSaving || take.status === 'Saved'} title={take.status === 'Saved' ? 'Undo save before removing this video from the queue' : 'Remove this video from the queue'} onClick={() => {
-            if (take.status === 'Saved') return
-            if (take.fingerprint && fingerprints.current.get(take.fingerprint) === take.id) fingerprints.current.delete(take.fingerprint)
-            setTakes(previous => previous.filter(t => t.id !== take.id)); if (selected === take.id) setSelected(null)
-          }}>Remove</Button>}
+          {!['Queued', 'Processing'].includes(take.status) && <Button size="sm" variant="danger" aria-label="Remove from queue" className="disabled:opacity-40 disabled:cursor-not-allowed" disabled={isSaving || take.status === 'Saved'} title={take.status === 'Saved' ? 'Undo save before removing this video from the queue' : 'Remove this video from the queue'} onClick={() => removeTakes(false, take.id)}>Remove</Button>}
           </div>
         </div>
         {hasPendingTrim(take) && <p className="text-sm text-text-2">Reprocess the changed interval before checking this take.</p>}

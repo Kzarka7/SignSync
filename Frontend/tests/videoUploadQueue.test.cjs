@@ -149,6 +149,56 @@ test('processing shortcuts stay inactive when its workspace is hidden in camera 
   h.key('c');assert.equal(h.check().props.checked,true)
 })
 
+test('R removes and restores the selected take in order with its review and processing data',async()=>{
+  const h=harness();await h.upload('first.mp4');await h.upload('middle.mp4');await h.upload('last.mp4')
+  h.key('q');h.key('c')
+  const original=h.preview().props.take
+  h.key('r');assert.equal(h.preview(),undefined)
+  assert.equal(h.all(n=>/^Reviewed /.test(n.props?.['aria-label']??'')).length,2)
+  h.key('r')
+  assert.equal(h.preview().props.take.id,original.id)
+  assert.equal(h.preview().props.take.result,original.result)
+  assert.equal(h.preview().props.take.reviewed,true)
+  assert.deepEqual(h.all(n=>/^Reviewed /.test(n.props?.['aria-label']??'')).map(n=>n.props['aria-label']),
+    ['Reviewed first.mp4 as HELLO','Reviewed middle.mp4 as HELLO','Reviewed last.mp4 as HELLO'])
+  h.key('r');h.key('r');assert.equal(h.preview().props.take.id,original.id)
+})
+
+test('Shift+R removes and restores unsaved takes while protecting saved samples',async()=>{
+  const h=harness();await h.upload('saved.mp4');h.key('c');h.key('s')
+  await new Promise(resolve=>setImmediate(resolve));h.render()
+  h.key('r');assert.equal(h.preview().props.take.status,'Saved')
+  await h.upload('second.mp4');await h.upload('third.mp4')
+  h.key('C',{shiftKey:true})
+  h.key('R',{shiftKey:true});assert.equal(h.all(n=>/^Reviewed /.test(n.props?.['aria-label']??'')).length,1)
+  assert.equal(h.saved().length,1)
+  h.key('R',{shiftKey:true})
+  assert.equal(h.preview().props.take.file.name,'third.mp4')
+  assert.equal(h.all(n=>/^Reviewed /.test(n.props?.['aria-label']??'')).length,3)
+  assert.equal(h.saved().length,1)
+  assert.equal(h.preview().props.take.reviewed,true)
+})
+
+test('restoring an active take restarts processing and ignores the removed run',async()=>{
+  const h=harness({holdProcessing:true});await h.upload('active.mp4',false)
+  h.key('r');assert.equal(h.pending[0].signal.aborted,true)
+  h.key('r');assert.equal(h.preview().props.take.status,'Queued')
+  h.pending[0].onProgress(99);h.render();assert.equal(h.preview().props.take.progress,0)
+  h.pending[0].resolve();await new Promise(resolve=>setImmediate(resolve));h.render()
+  await new Promise(resolve=>setImmediate(resolve));h.render()
+  assert.equal(h.pending.length,2);assert.equal(h.preview().props.take.status,'Processing')
+  h.pending[1].resolve();await new Promise(resolve=>setImmediate(resolve));h.render()
+  assert.equal(h.preview().props.take.status,'Ready')
+  h.pending[0].onProgress(12);h.render();assert.equal(h.preview().props.take.progress,100)
+})
+
+test('restore does not bypass duplicate checks after the same source is imported again',async()=>{
+  const h=harness();await h.upload('same.mp4');h.key('r');await h.upload('same.mp4')
+  h.button('Undo remove (R)').props.onClick();h.render()
+  assert.equal(h.preview().props.take.status,'Duplicate')
+  assert.equal(h.check().props.disabled,true)
+})
+
 test('C toggles review and S saves, undoes and re-saves the current take',async()=>{
   const h=harness();await h.upload()
   const settle=async()=>{await new Promise(resolve=>setImmediate(resolve));h.render()}
