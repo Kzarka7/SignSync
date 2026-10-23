@@ -14,6 +14,7 @@ import Button from '../shared/Button'
 import Card from '../shared/Card'
 import { Keyboard } from 'lucide-react'
 import CollectorShortcutHelp from './CollectorShortcutHelp'
+import LabelPicker from './LabelPicker'
 import { adjustedIntervalTime, collectorShortcut } from '../../services/dataset/collectorShortcuts'
 
 type Result = Awaited<ReturnType<typeof processVideo>> & { contextCandidate?: VideoQualityWindow }
@@ -223,7 +224,8 @@ function TakePreview({ locked = false, take, onTrim, onDraftChange, onHandsChang
   </div></Card>
 }
 
-export default function VideoUploadCollector({ label, sequences, onSaved, onBusy, incoming, onIncomingConsumed, controls, recordedSamples, training, onSampleSaved }: {
+export default function VideoUploadCollector({ label, knownLabels = [], sequences, onSaved, onBusy, incoming, onIncomingConsumed, controls, recordedSamples, training, onSampleSaved }: {
+  knownLabels?: string[]
   training?: TrainingCollectionMetadata; onSampleSaved?: (sample: LabeledSequence) => void
   controls?: ReactNode; recordedSamples?: ReactNode
   label: string; sequences: LabeledSequence[]; onSaved: () => void; onBusy: (busy: boolean) => void
@@ -235,6 +237,10 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
   const [removedTake, setRemovedTake] = useState<RemovedTakes | null>(null)
   const [removedAll, setRemovedAll] = useState<RemovedTakes | null>(null)
   const [saveError, setSaveError] = useState('')
+  const [relabelOpen, setRelabelOpen] = useState(false)
+  const [replacementLabel, setReplacementLabel] = useState('')
+  const [relabelScope, setRelabelScope] = useState<'current' | 'checked' | 'all'>('checked')
+  const [relabelMessage, setRelabelMessage] = useState('')
   const workspace = useRef<HTMLDivElement>(null)
   const reviewQueue = useRef<HTMLUListElement>(null)
   const [shortcutHelp, setShortcutHelp] = useState(false)
@@ -435,6 +441,16 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
     if (all) setRemovedAll(null); else setRemovedTake(null)
   }
   const current = takes.find(take => take.id === selected)
+  const relabelable = (take: Take) => !take.training && take.status !== 'Saved' && take.status !== 'Saving'
+  const relabelTargets = takes.filter(take => relabelable(take) && take.label !== replacementLabel &&
+    (relabelScope === 'all' || relabelScope === 'current' && take.id === selected || relabelScope === 'checked' && take.reviewed))
+  const applyLabel = () => {
+    if (saving.current || boundary || !knownLabels.includes(replacementLabel) || !relabelTargets.length) return
+    const ids = new Set(relabelTargets.map(take => take.id))
+    setTakes(previous => previous.map(take => ids.has(take.id) && relabelable(take)
+      ? { ...take, label: replacementLabel, reviewed: false } : take))
+    setRelabelMessage(`Changed ${ids.size} ${ids.size === 1 ? 'take' : 'takes'} to ${replacementLabel}. Processing and intervals kept. Review the corrected labels before saving.`)
+  }
   const processed = takes.filter(take => take.result)
   const fullCount = processed.filter(take => isFullRecording(take.result!.start, take.result!.end, take.result!.duration)).length
   const needIntervalReview = processed.filter(take => hasPendingTrim(take) || !intervalReviewMatches(take.intervalReview, take.result!.start, take.result!.end, take.result!.duration)).length
@@ -557,6 +573,27 @@ export default function VideoUploadCollector({ label, sequences, onSaved, onBusy
         <progress aria-label="Total sample processing progress" value={processed.length} max={takes.length}
           className="block h-2 w-full overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-border [&::-webkit-progress-value]:bg-signal [&::-moz-progress-bar]:bg-signal" />
       </div>
+      {!boundary && knownLabels.length > 0 && <div className="space-y-3">
+        <Button size="sm" disabled={isSaving || !takes.some(relabelable)} aria-expanded={relabelOpen}
+          onClick={() => { setRelabelOpen(value => !value); setRelabelMessage('') }}>Change label</Button>
+        {relabelOpen && <section aria-label="Correct queued sign labels" className="space-y-3 rounded-lg border border-border bg-sky p-3">
+          <p className="text-sm text-text-2">Correct existing queue labels without processing the videos again. Saved samples are excluded. Reviewed checks are cleared only for changed takes.</p>
+          <LabelPicker knownLabels={knownLabels} selectedLabel={replacementLabel} labelText="New sign label"
+            disabled={isSaving} onSelectLabel={value => { setReplacementLabel(value); setRelabelMessage('') }} />
+          <label className="block text-sm font-semibold text-text-2">Apply to
+            <select aria-label="Takes to relabel" className="mt-2 block w-full rounded-lg border border-border bg-white p-2 text-ink" disabled={isSaving}
+              value={relabelScope} onChange={event => { setRelabelScope(event.target.value as typeof relabelScope); setRelabelMessage('') }}>
+              <option value="checked">Checked unsaved takes</option><option value="current">Current take</option><option value="all">All unsaved takes</option>
+            </select>
+          </label>
+          {knownLabels.includes(replacementLabel) && <p aria-label="Label change summary" className="text-sm font-semibold">
+            Change {relabelTargets.length} {relabelTargets.length === 1 ? 'take' : 'takes'}{relabelTargets.length > 0 ? ` from ${Array.from(new Set(relabelTargets.map(take => take.label))).join(', ')}` : ''} to {replacementLabel}.
+          </p>}
+          <div className="flex flex-wrap gap-2"><Button size="sm" variant="primary" disabled={isSaving || !knownLabels.includes(replacementLabel) || !relabelTargets.length} onClick={applyLabel}>Apply label</Button>
+            <Button size="sm" onClick={() => setRelabelOpen(false)}>Close label correction</Button></div>
+        </section>}
+        {relabelMessage && <p role="status" className="text-sm text-success-dark">{relabelMessage}</p>}
+      </div>}
       <div className="flex gap-3 items-center border border-transparent p-3 overflow-y-auto" style={{ scrollbarGutter: 'stable' }}>
       <div className="flex-1 min-w-0 flex gap-2 flex-wrap">
         <Button size="sm" variant="primary" className="disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-signal" disabled={isSaving || !takes.some(t => t.reviewed && canReview(t))} onClick={() => save(takes)}>Save checked takes</Button>
