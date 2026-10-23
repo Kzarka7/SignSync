@@ -7,9 +7,10 @@ interface LabelPickerProps {
   selectedLabel: string
   onSelectLabel: (label: string) => void
   disabled?: boolean
+  labelText?: string
 }
 
-function LabelPicker({ knownLabels, selectedLabel, onSelectLabel, disabled }: LabelPickerProps) {
+function LabelPicker({ knownLabels, selectedLabel, onSelectLabel, disabled, labelText = 'Sign label' }: LabelPickerProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState<string | null>(null)
   const [active, setActive] = useState(-1)
@@ -42,7 +43,7 @@ function LabelPicker({ knownLabels, selectedLabel, onSelectLabel, disabled }: La
 
   return (
     <div className="flex flex-col gap-2.5">
-      <label htmlFor={`${id}-input`} className="text-sm font-semibold text-text-2">Sign label</label>
+      <label htmlFor={`${id}-input`} className="text-sm font-semibold text-text-2">{labelText}</label>
       <div className="relative" onBlur={event => {
         if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
         setOpen(false)
