@@ -54,18 +54,40 @@ test('stale presented frames after a restart cannot seek or stop the new playbac
     assert.equal(v.currentTime, 1.4)
     v.currentTime = 2.05
     assert.equal(binding.check(2.05), true)
-    assert.equal(v.currentTime, loop ? 1 : 2)
+    assert.equal(v.currentTime, 1)
     binding.dispose()
   }
 })
 
-test('one-pass interval playback stops at the exclusive end without replaying', () => {
+test('one-pass interval playback rewinds and pauses at completion without automatically replaying', () => {
   const v = video(); let complete = 0
   const binding = bindVideoReplay(v, 1, 2, () => assert.fail(), { loop: false, onComplete: () => complete++ })
   binding.play(); assert.equal(v.currentTime, 1)
   v.currentTime = 2.1; binding.check(2.1)
-  assert.equal(v.currentTime, 2); assert.equal(v.paused, true); assert.equal(complete, 1)
+  assert.equal(v.currentTime, 1); assert.equal(v.paused, true); assert.equal(complete, 1)
   v.fire('ended'); v.fire('timeupdate'); assert.equal(v.plays, 1)
+  binding.dispose()
+})
+
+test('completed intervals can restart repeatedly and ignore delayed pause events', () => {
+  const v=video();let complete=0
+  const binding=bindVideoReplay(v,1,2,()=>assert.fail(),{loop:false,onComplete:()=>complete++})
+  for(let i=0;i<3;i++) {
+    binding.play();assert.equal(v.currentTime,1);assert.equal(v.paused,false)
+    v.fire('pause');assert.equal(complete,i,'stale pause does not finish a new playback')
+    v.fire('ended');assert.equal(complete,i,'stale ended event does not finish a new playback')
+    v.currentTime=2.1;v.fire('timeupdate')
+    assert.equal(v.currentTime,1);assert.equal(v.paused,true);assert.equal(complete,i+1)
+  }
+  binding.dispose()
+})
+
+test('a selected interval reaching the source ending rewinds when the native pause arrives first', () => {
+  const v=video();let complete=0
+  const binding=bindVideoReplay(v,1,3,()=>assert.fail(),{loop:false,onComplete:()=>complete++})
+  binding.play();v.currentTime=3;v.ended=true;v.pause();v.fire('ended')
+  assert.equal(v.currentTime,1);assert.equal(complete,1)
+  v.ended=false;binding.play();assert.equal(v.paused,false)
   binding.dispose()
 })
 

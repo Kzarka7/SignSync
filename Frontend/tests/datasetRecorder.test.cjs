@@ -68,7 +68,7 @@ function recorderHarness(options = {}, storageOptions = {}) {
     },
     frame(timestamp) { onFrame({ timestamp, pose: null, leftHand: null, rightHand: null }) },
     fire(ms) { const timer = [...timers.values()].find(timer => timer.ms === ms); assert.ok(timer); timer.callback() },
-    key(code, tagName = 'BODY') { listeners.get('keydown')({ code, target: { tagName }, preventDefault() {} }) },
+    key(code, tagName = 'BODY', extra = {}) { const event = { code, target: { tagName }, defaultPrevented:false, preventDefault() { this.defaultPrevented=true }, ...extra }; listeners.get('keydown')(event); return event },
   }
 }
 
@@ -145,6 +145,18 @@ test('a disallowed recording stays blocked even through the Space shortcut', asy
   h.key('Space')
   assert.equal(h.timers.size, 0)
   assert.equal(h.saved.length, 0)
+})
+
+test('disabled live-recording shortcuts leave Space available for processing playback', async () => {
+  const options={hotkeysEnabled:false,durationLimitMs:3000}
+  const h=recorderHarness(options);h.render();await new Promise(resolve=>setImmediate(resolve))
+  h.render().setCountdownSeconds(0);h.render()
+  assert.equal(h.key('Space').defaultPrevented,false)
+  assert.equal(h.key('Space','BODY',{shiftKey:true}).defaultPrevented,false)
+  assert.equal(h.timers.size,0)
+  h.render({...options,hotkeysEnabled:true})
+  assert.equal(h.key('Space').defaultPrevented,true)
+  assert.ok(h.timers.size>0,'live-camera recording still starts with Space')
 })
 
 test('idle records and auto-saves without choosing a variation', async () => {
