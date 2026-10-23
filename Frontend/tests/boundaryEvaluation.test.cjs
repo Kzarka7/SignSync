@@ -6,7 +6,7 @@ const vm = require('node:vm')
 const ts = require('typescript')
 const JSZip = require('jszip')
 function loader() {
-  const cache = new Map(), storage = new Map()
+  const cache = new Map(), storage = new Map(), indexedDB = new (require('fake-indexeddb').IDBFactory)()
   function load(file) {
     file = path.resolve(__dirname, '../src/services/dataset', file)
     if (cache.has(file)) return cache.get(file)
@@ -14,8 +14,8 @@ function loader() {
     const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
     }).outputText
-    vm.runInNewContext(code, { exports, Blob, console, crypto: require('node:crypto').webcrypto,
-      localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) },
+    vm.runInNewContext(code, { exports, Blob, console, indexedDB, crypto: require('node:crypto').webcrypto,
+      localStorage: { getItem: key => storage.get(key) ?? null, removeItem: key => storage.delete(key), setItem: (key, value) => storage.set(key, value) },
       require: name => name.startsWith('.') ? load(path.resolve(path.dirname(file), name + '.ts')) : require(name),
     })
     return exports
@@ -25,31 +25,31 @@ function loader() {
 const sample = { id: 'test', label: 'HELP', createdAt: '2026-10-16', durationMs: 30000,
   frames: [{ timestamp: 1, raw: { timestamp: 1, pose: null, leftHand: null, rightHand: null } }] }
 const evaluation = { ...sample, evaluation: { protocol: 'boundary-pilot-v1', taskId: 'HELP-normal', participantId: 'P4', sessionId: 'pilot', notes: 'video.mp4' } }
-test('evaluation save, delete and clear cannot modify training recordings', () => {
+test('evaluation save, delete and clear cannot modify training recordings', async () => {
   const load = loader(), storage = load('datasetStorage.ts')
-  storage.saveSequence(sample)
-  storage.saveSequence(evaluation, 'evaluation')
-  assert.equal(storage.getSequences().length, 1)
-  assert.equal(storage.getSequences('evaluation').length, 1)
-  storage.deleteSequence('test', 'evaluation')
-  assert.equal(storage.getSequences().length, 1)
-  storage.saveSequence(evaluation, 'evaluation')
-  storage.clearSequences('evaluation')
-  assert.equal(storage.getSequences('evaluation').length, 0)
-  assert.equal(storage.getSequences().length, 1)
-  assert.throws(() => storage.saveSequence(evaluation))
-  assert.throws(() => storage.saveSequence(sample, 'evaluation'))
+  await storage.saveSequence(sample)
+  await storage.saveSequence(evaluation, 'evaluation')
+  assert.equal((await storage.getSequences()).length, 1)
+  assert.equal((await storage.getSequences('evaluation')).length, 1)
+  await storage.deleteSequence('test', 'evaluation')
+  assert.equal((await storage.getSequences()).length, 1)
+  await storage.saveSequence(evaluation, 'evaluation')
+  await storage.clearSequences('evaluation')
+  assert.equal((await storage.getSequences('evaluation')).length, 0)
+  assert.equal((await storage.getSequences()).length, 1)
+  await assert.rejects(() => storage.saveSequence(evaluation))
+  await assert.rejects(() => storage.saveSequence(sample, 'evaluation'))
 })
-test('clearing selected idle recordings preserves pilot and training samples', () => {
+test('clearing selected idle recordings preserves pilot and training samples', async () => {
   const storage = loader()('datasetStorage.ts')
-  storage.saveSequence(sample)
-  storage.saveSequence(evaluation, 'evaluation')
-  storage.saveSequence({ ...evaluation, id: 'idle', label: 'IDLE',
+  await storage.saveSequence(sample)
+  await storage.saveSequence(evaluation, 'evaluation')
+  await storage.saveSequence({ ...evaluation, id: 'idle', label: 'IDLE',
     evaluation: { ...evaluation.evaluation, taskId: 'no-sign-extra-idle_left_beside_torso' } }, 'evaluation')
-  storage.clearSequences('evaluation', ['idle'])
-  assert.equal(storage.getSequences('evaluation').length, 1)
-  assert.equal(storage.getSequences('evaluation')[0].id, evaluation.id)
-  assert.equal(storage.getSequences().length, 1)
+  await storage.clearSequences('evaluation', ['idle'])
+  assert.equal((await storage.getSequences('evaluation')).length, 1)
+  assert.equal((await storage.getSequences('evaluation'))[0].id, evaluation.id)
+  assert.equal((await storage.getSequences()).length, 1)
 })
 test('40-task protocol and evaluation ZIP preserve metadata and reject training mixing', async () => {
   const load = loader(), api = load('boundaryEvaluation.ts')
@@ -155,10 +155,10 @@ test('separate training plans retain batch identity, variants and three distinct
   const task = signs.find(t => t.label === 'WHICH' && t.variantId === 'v2')
   const clip = { ...sample, training: { protocol: 'separate-training-v1', batchId: batch.id, participantId: batch.participantId,
     category: task.category, taskId: task.id, taskTitle: task.title, variantId: task.variantId, pace: task.pace } }
-  storage.saveSequence(clip)
-  assert.equal(storage.getSequences()[0].training.batchId, batch.id)
-  assert.throws(() => storage.saveSequence({ ...clip, evaluation: evaluation.evaluation }, 'evaluation'))
-  assert.throws(() => storage.saveSequence({ ...clip, training: { ...clip.training, participantId: '' } }))
+  await storage.saveSequence(clip)
+  assert.equal((await storage.getSequences())[0].training.batchId, batch.id)
+  await assert.rejects(() => storage.saveSequence({ ...clip, evaluation: evaluation.evaluation }, 'evaluation'))
+  await assert.rejects(() => storage.saveSequence({ ...clip, training: { ...clip.training, participantId: '' } }))
   const exported = load('datasetExport.ts').buildDatasetExport([clip])
   assert.deepEqual(JSON.parse(JSON.stringify(exported.sequences[0].training)), clip.training)
   const archive = await load('datasetExport.ts').buildPerSampleZipExport([clip])
@@ -178,8 +178,8 @@ test('separate training plans retain batch identity, variants and three distinct
   assert.equal(api.nextTrainingTask(idle, fixedTakes, batch.id, idle[0].id), idle[0].id)
   assert.equal(api.nextTrainingTask(idle, fixedTakes.filter(s => s.training.taskId !== idle[1].id), batch.id, idle[0].id), idle[1].id)
   const oldGlasses = { ...clip, id: 'legacy-glasses', training: { ...clip.training, category: 'idle_movement', taskId: 'idle-movement-glasses', taskTitle: 'Adjust glasses' } }
-  storage.saveSequence(oldGlasses)
-  assert.ok(storage.getSequences().some(s => s.id === oldGlasses.id))
+  await storage.saveSequence(oldGlasses)
+  assert.ok((await storage.getSequences()).some(s => s.id === oldGlasses.id))
   assert.equal(load('datasetExport.ts').buildDatasetExport([oldGlasses]).sequences[0].training.taskId, 'idle-movement-glasses')
 })
 
@@ -188,14 +188,14 @@ test('collection without setup saves and exports category metadata and counts ea
   const load = loader(), api = load('trainingCollection.ts'), storage = load('datasetStorage.ts')
   const tasks = api.getTrainingTasks(undefined, 'rest')
   const clip = { ...sample, label: 'REST', training: { protocol: 'separate-training-v1', category: 'rest', taskId: tasks[0].id, taskTitle: tasks[0].title } }
-  storage.saveSequence(clip)
+  await storage.saveSequence(clip)
   const old = { ...clip, id: 'old', training: { ...clip.training, batchId: 'old-batch', participantId: 'P1' } }
-  storage.saveSequence(old)
-  const takes = storage.getSequences()
+  await storage.saveSequence(old)
+  const takes = (await storage.getSequences())
   assert.equal(api.trainingTaskCount(takes, undefined, tasks[0].id), 2)
   assert.equal(api.nextTrainingTask(tasks, takes, undefined, tasks[0].id), tasks[0].id)
-  storage.saveSequence({ ...clip, id: 'third' })
-  assert.equal(api.nextTrainingTask(tasks, storage.getSequences(), undefined, tasks[0].id), tasks[1].id)
+  await storage.saveSequence({ ...clip, id: 'third' })
+  assert.equal(api.nextTrainingTask(tasks, (await storage.getSequences()), undefined, tasks[0].id), tasks[1].id)
   const exported = load('datasetExport.ts').buildDatasetExport([clip])
   assert.equal(exported.sequences[0].training.category, 'rest')
   assert.equal(Object.hasOwn(exported.sequences[0].training, 'participantId'), false)

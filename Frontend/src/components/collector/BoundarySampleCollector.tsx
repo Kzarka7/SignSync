@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useDatasetRecorder } from '../../hooks/useDatasetRecorder'
 import type { LabeledSequence, TrainingCategory, TrainingCollectionMetadata } from '../../types/dataset'
 import { getTrainingTasks, nextTrainingTask, trainingTaskCount } from '../../services/dataset/trainingCollection'
-import { getSequences } from '../../services/dataset/datasetStorage'
 import Card from '../shared/Card'
 import PageHeader from '../layout/PageHeader'
 import CollectorCameraPreview from './CollectorCameraPreview'
@@ -25,7 +24,6 @@ export default function BoundarySampleCollector({ onLocked }: { onLocked: (locke
   const [videoControls, setVideoControls] = useState<HTMLDivElement | null>(null)
   const [incoming, setIncoming] = useState<Incoming[]>([])
   const [pendingVideos, setPendingVideos] = useState<Incoming[]>([])
-  const [allSequences, setAllSequences] = useState(getSequences)
   const [durations, setDurations] = useState<Partial<Record<TrainingCategory, number>>>({})
   const [selectedTasks, setSelectedTasks] = useState<Partial<Record<TrainingCategory, string>>>({})
   const tasks = useMemo(() => getTrainingTasks(undefined, category), [category])
@@ -35,16 +33,19 @@ export default function BoundarySampleCollector({ onLocked }: { onLocked: (locke
   } : undefined
   const recorder = useDatasetRecorder({ scope: 'training', trainingCategory: category, recordingAllowed: !!task,
     durationLimitMs: durations[category], training })
-  const locked = recorder.isRecording || recorder.countdown !== null || uploadBusy || cameraBusy
+  const locked = recorder.isLoading || recorder.isSaving || recorder.isRecording || recorder.countdown !== null || uploadBusy || cameraBusy
   useEffect(() => { onLocked(locked); return () => onLocked(false) }, [locked, onLocked])
   useEffect(() => { if (task) recorder.setSelectedLabel(task.label) }, [task?.label, recorder.setSelectedLabel])
   // Queue ownership spans both categories; switching categories must not undo saves.
-  useEffect(() => { setAllSequences(getSequences()) }, [recorder.sequences])
-  const refresh = () => { setAllSequences(getSequences()); recorder.refreshSequences() }
+  const allSequences = recorder.allSequences
+  const progressSamples = useRef(allSequences)
+  useEffect(() => { progressSamples.current = allSequences }, [allSequences])
+  const refresh = recorder.refreshSequences
   const advance = (saved: LabeledSequence) => {
     if (!saved.training) return
+    progressSamples.current = [...progressSamples.current.filter(s => s.id !== saved.id), saved]
     const savedCategory = saved.training.category
-    const next = nextTrainingTask(getTrainingTasks(undefined, savedCategory), getSequences(), undefined, saved.training.taskId)
+    const next = nextTrainingTask(getTrainingTasks(undefined, savedCategory), progressSamples.current, undefined, saved.training.taskId)
     setSelectedTasks(previous => ({ ...previous, [savedCategory]: next }))
   }
   const handledSave = useRef<string | null>(null)
@@ -92,7 +93,7 @@ export default function BoundarySampleCollector({ onLocked }: { onLocked: (locke
       <img src="/guides/idle-hand/one-hand-idle-posture.png" alt="One-handed resting posture" loading="lazy" className="mt-3 w-full rounded-lg" />
     </details>}
   </div></Card>
-  const recordedSamples = <SequenceList collapsible sequences={recorder.sequences} onDelete={recorder.removeSequence} onExportZip={recorder.exportPerSampleZip}
+  const recordedSamples = <SequenceList isLoading={recorder.isLoading} storageBusy={recorder.isSaving || uploadBusy} storageError={recorder.saveError} onRetry={recorder.refreshSequences} collapsible sequences={recorder.sequences} onDelete={recorder.removeSequence} onExportZip={recorder.exportPerSampleZip}
     pendingVideos={pendingVideos} pendingLocked={locked} onRemoveVideo={id => setPendingVideos(previous => previous.filter(take => take.id !== id))}
     onProcessVideos={() => {
       if (locked || !pendingVideos.length) return

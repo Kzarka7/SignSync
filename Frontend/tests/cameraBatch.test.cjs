@@ -11,7 +11,8 @@ function harness(boundary) {
   const slots = []; let cursor = 0, effects = [], dirty = false, tree, id = 0
   const empty = []
   const recorder = {
-    knownLabels: ['HELLO', 'THANK_YOU'], selectedLabel: 'HELLO', sequences: empty,
+    knownLabels: ['HELLO', 'THANK_YOU'], selectedLabel: 'HELLO', sequences: empty, allSequences: empty,
+    async clearAll() { recorder.sequences = []; recorder.allSequences = []; dirty = true },
     isRecording: false, countdown: null, countdownSeconds: 0,
     feed: { enabled: false, toggleCamera() {} },
     setSelectedLabel(label) { if (recorder.selectedLabel !== label) { recorder.selectedLabel = label; dirty = true } },
@@ -108,6 +109,16 @@ for (const boundary of [false, true]) {
     assert.equal(h.child('VideoUploadCollector').props.incoming.length, 0)
     h.source('Camera')
     assert.equal(h.child('SequenceList').props.pendingVideos.length, 0, 'processed batch cannot be resubmitted')
+  })
+
+  test(`${category} clearing saved samples leaves pending videos available for processing`, async () => {
+    const h = harness(boundary)
+    h.capture('keep.webm')
+    const before = h.child('SequenceList').props.pendingVideos[0]
+    await h.child('SequenceList').props.onClearAll(); h.render()
+    assert.equal(h.child('SequenceList').props.pendingVideos[0], before)
+    h.child('SequenceList').props.onProcessVideos(); h.render()
+    assert.equal(h.child('VideoUploadCollector').props.incoming[0].file.name, 'keep.webm')
   })
 
   test(`${category} pending videos survive source changes, allow removal and block processing while recording`, () => {
