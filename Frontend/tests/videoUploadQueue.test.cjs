@@ -6,7 +6,7 @@ const vm = require('node:vm')
 const ts = require('typescript')
 const React = require('react')
 
-function harness({ holdProcessing = false, suggestion = null, trimFails = false, trimRetake = false, training } = {}) {
+function harness({ holdSave = false, failSave = false, holdProcessing = false, suggestion = null, trimFails = false, trimRetake = false, training } = {}) {
   const serviceCache = new Map()
   function loadService(file) {
     if (serviceCache.has(file)) return serviceCache.get(file)
@@ -17,8 +17,10 @@ function harness({ holdProcessing = false, suggestion = null, trimFails = false,
   }
   const slots = []; let cursor = 0, dirty = false, effects = [], tree, id = 0
   let saved = [], failDelete = false
+  const pendingSaves = []
   const pending = []
   const processingOptions = []
+  const keyListeners = new Set()
   const props = { label: 'HELLO', sequences: [], onBusy() {}, onSaved() { props.sequences = [...saved]; dirty = true } }
   if (training) { props.training = training; props.label = training.category === 'rest' ? 'REST' : 'IDLE_MOVEMENT' }
   const react = { ...React,
@@ -42,15 +44,20 @@ function harness({ holdProcessing = false, suggestion = null, trimFails = false,
   const source = fs.readFileSync(path.resolve(__dirname, '../src/components/collector/VideoUploadCollector.tsx'), 'utf8')
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS,
     target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText
-  vm.runInNewContext(code, { exports, AbortController, console, crypto: { randomUUID: () => `take-${++id}` }, require(name) {
+  vm.runInNewContext(code, { exports, AbortController, console, window: {
+    addEventListener: (name, listener) => { if (name === 'keydown') keyListeners.add(listener) },
+    removeEventListener: (name, listener) => keyListeners.delete(listener),
+  }, crypto: { randomUUID: () => `take-${++id}` }, require(name) {
     if (name === 'react') return react
     if (name === 'react/jsx-runtime') return require(name)
+    if (name === 'lucide-react') return { Keyboard: 'svg' }
     if (name.endsWith('videoIntervalReview')) return loadService(path.resolve(__dirname, '../src/services/dataset/videoIntervalReview.ts'))
+    if (name.endsWith('collectorShortcuts')) return loadService(path.resolve(__dirname, '../src/services/dataset/collectorShortcuts.ts'))
     if (name.endsWith('videoDiagnostics')) return { automaticSignInterval: () => suggestion }
     if (name.endsWith('videoQuality')) return { assessBoundaryVideoQuality: () => ({ result: 'Pass', findings: [] }), assessVideoQuality: (_frames, _hands, _timing, window) => ({ result: window ? 'Pass' : 'Review', findings: [] }) }
     if (name.endsWith('datasetStorage')) return {
-      getSequences: () => saved,
-      saveSequence: sample => { saved.push(sample) },
+      hasSourceFingerprint: async fingerprint => saved.some(s => s.videoImport?.fingerprint === fingerprint),
+      saveSequence: async sample => { if (holdSave) await new Promise(resolve => pendingSaves.push(resolve)); if (failSave) throw Error('QuotaExceededError: storage full'); saved.push(sample) },
       deleteSequence: id => { if (failDelete) throw Error('storage failure'); saved = saved.filter(s => s.id !== id) },
     }
     if (name.endsWith('videoImport')) return {
@@ -94,7 +101,8 @@ function harness({ holdProcessing = false, suggestion = null, trimFails = false,
       previews[previews.length - 1].props.onClick(); render(); confirm()
     }
   }
-  return { render, all, button, upload, saved: () => saved, pending, confirm, processingOptions,
+  return { pendingSaves, allowSave: () => { failSave = false }, render, all, button, upload, saved: () => saved, pending, confirm, processingOptions,
+    key: (key, extra = {}) => { const event = { key, preventDefault() {}, ...extra }; for (const listener of [...keyListeners]) listener(event); render() },
     selectTraining: value => { props.training = value; props.label = value.category === 'rest' ? 'REST' : 'IDLE_MOVEMENT'; render() },
     incoming: async item => {
       props.incoming = [item]; props.onIncomingConsumed = () => { props.incoming = []; dirty = true }
@@ -107,6 +115,39 @@ function harness({ holdProcessing = false, suggestion = null, trimFails = false,
   }
 }
 
+test('collector shortcuts navigate, review and save with batch eligibility and typing guards', async () => {
+  const h = harness(); await h.upload('first.mp4'); await h.upload('second.mp4')
+  h.key('q'); assert.equal(h.preview().props.take.file.name,'first.mp4')
+  h.key('c',{ repeat:true }); assert.equal(h.check().props.checked,false)
+  h.key('c',{ target:{ closest:()=>({}) } }); assert.equal(h.check().props.checked,false)
+  h.key('c'); assert.equal(h.check().props.checked,true)
+  h.key('v'); await new Promise(resolve=>setImmediate(resolve)); h.render()
+  assert.equal(h.saved().length,1)
+  h.key('e'); assert.equal(h.preview().props.take.file.name,'second.mp4')
+  h.preview().props.onDraftChange(.1,.9); h.render()
+  h.key('C',{shiftKey:true}); h.key('V',{shiftKey:true})
+  await new Promise(resolve=>setImmediate(resolve)); h.render()
+  assert.equal(h.saved().length,1,'dirty takes cannot be reviewed or saved')
+  h.preview().props.onTrim(.1,.9); h.render()
+  await new Promise(resolve=>setImmediate(resolve)); h.render()
+  h.key('C',{shiftKey:true}); h.key('C',{shiftKey:true})
+  assert.equal(h.all(n=>/^Reviewed /.test(n.props?.['aria-label']??''))[1].props.checked,true,'Shift+C never unchecks')
+  h.key('V',{shiftKey:true}); await new Promise(resolve=>setImmediate(resolve)); h.render()
+  assert.equal(h.saved().length,2)
+  h.key('?'); assert.equal(h.all(n=>n.props?.open===true && typeof n.props?.onClose==='function').length,1)
+  h.key('?'); assert.equal(h.all(n=>n.props?.open===true && typeof n.props?.onClose==='function').length,0)
+})
+
+test('processing shortcuts stay inactive when its workspace is hidden in camera mode', async () => {
+  const h=harness();await h.upload()
+  const workspace=h.all(n=>n.props?.['data-collector-workspace'])[0]
+  workspace.ref.current={closest:()=>({hidden:true})}
+  h.key('c');assert.equal(h.check().props.checked,false)
+  h.key('?');assert.equal(h.all(n=>n.props?.open===true && typeof n.props?.onClose==='function').length,0)
+  workspace.ref.current={closest:()=>null}
+  h.key('c');assert.equal(h.check().props.checked,true)
+})
+
 test('row review, save, undo, re-save and remove keep queue and storage consistent', async () => {
   const h = harness(); await h.upload()
   assert.equal(h.all(n => n.type === 'details').length, 0, 'queue actions are directly visible')
@@ -114,18 +155,18 @@ test('row review, save, undo, re-save and remove keep queue and storage consiste
   assert.equal(h.all(n => n.props?.type === 'checkbox' && /^Reviewed /.test(n.props['aria-label'] ?? '')).length, 1)
   h.check().props.onChange({ target: { checked: true } }); h.render()
   assert.equal(h.button('Remove from queue').props.disabled, false)
-  h.button('Save').props.onClick(); h.render()
+  await h.button('Save').props.onClick(); h.render()
   assert.equal(h.saved().length, 1)
   assert.equal(h.saved()[0].videoImport.intervalReview.choice, 'full-recording')
   assert.equal(h.check().props.disabled, true)
   assert.equal(h.button('Remove from queue').props.disabled, true)
   h.button('Remove from queue').props.onClick(); h.render()
   assert.ok(h.check(), 'saved queue row cannot be removed even through its handler')
-  h.button('Undo save').props.onClick(); h.render()
+  await h.button('Undo save').props.onClick(); h.render()
   assert.equal(h.saved().length, 0)
   assert.equal(h.check().props.checked, true)
   assert.equal(h.check().props.disabled, false)
-  h.button('Save checked takes').props.onClick(); h.render()
+  await h.button('Save checked takes').props.onClick(); h.render()
   assert.equal(h.saved().length, 1)
   h.externalDelete()
   assert.equal(h.check().props.checked, false)
@@ -145,7 +186,7 @@ test('non-sign uploads freeze task/category, preserve full clips and save bound 
   assert.equal(h.all(n => n.props?.['aria-label'] === 'Auto-trim and reprocess new recordings').length, 0)
   h.selectTraining({ ...training, category: 'idle_movement', taskId: 'idle-movement-hair', taskTitle: 'Adjust hair' })
   h.confirm(); h.check().props.onChange({ target: { checked: true } }); h.render()
-  h.button('Save').props.onClick(); h.render()
+  await h.button('Save').props.onClick(); h.render()
   const sample = h.saved()[0]
   assert.equal(sample.label, 'REST')
   assert.equal(sample.training.taskId, 'rest-both')
@@ -154,7 +195,7 @@ test('non-sign uploads freeze task/category, preserve full clips and save bound 
   assert.equal(sample.videoImport.review.completeSign, undefined)
   assert.equal(sample.videoImport.review.training.taskId, 'rest-both')
   assert.equal(sample.videoImport.processingVersion, 'boundary-test')
-  h.button('Undo save').props.onClick(); h.render()
+  await h.button('Undo save').props.onClick(); h.render()
   assert.equal(h.check().props.checked, true)
   assert.equal(h.saved().length, 0)
 })
@@ -170,22 +211,21 @@ test('preserved idle recording keeps its frozen task through handoff and manual 
   assert.equal(h.processingOptions.at(-1).samplePurpose, 'idle_movement')
   assert.equal(h.processingOptions.at(-1).qualityWindow, undefined)
   h.confirm(); h.check().props.onChange({ target: { checked: true } }); h.render()
-  h.button('Save').props.onClick(); h.render()
+  await h.button('Save').props.onClick(); h.render()
   assert.equal(h.saved()[0].videoImport.origin, 'camera-recording')
   assert.equal(h.saved()[0].training.taskId, training.taskId)
 })
 
-test('a processed full recording requires an explicit interval decision before review', async () => {
+test('a processed full recording is selected automatically but still requires sample review', async () => {
   const h = harness(); await h.upload('hello.mp4', false)
-  assert.equal(h.check().props.disabled, true)
-  h.check().props.onChange({ target: { checked: true } }); h.render()
-  h.button('Save checked takes').props.onClick(); h.render()
-  assert.equal(h.saved().length, 0)
-  h.confirm()
   assert.equal(h.check().props.disabled, false)
+  assert.equal(h.preview().props.take.intervalReview.choice, 'full-recording')
+  assert.equal(h.preview().props.take.intervalReview.selectionMethod, 'automatic')
+  await h.button('Save checked takes').props.onClick(); h.render()
+  assert.equal(h.saved().length, 0)
   h.check().props.onChange({ target: { checked: true } }); h.render()
-  h.button('Save').props.onClick(); h.render()
-  h.button('Undo save').props.onClick(); h.render()
+  await h.button('Save').props.onClick(); h.render()
+  await h.button('Undo save').props.onClick(); h.render()
   assert.equal(h.check().props.checked, true)
   h.preview().props.onDraftChange(.1, .9); h.render()
   assert.equal(h.check().props.disabled, true)
@@ -198,7 +238,7 @@ test('review status replaces the row label and unchecked samples cannot be saved
   const status = () => React.Children.toArray(h.all(n => n.props?.role === 'status')[0].props.children).join('')
   assert.equal(status(), 'Review')
   assert.equal(h.button('Save').props.disabled, true)
-  h.button('Save').props.onClick(); h.render()
+  await h.button('Save').props.onClick(); h.render()
   assert.equal(h.saved().length, 0)
   h.check().props.onChange({ target: { checked: true } }); h.render()
   assert.equal(status(), 'Reviewed')
@@ -207,9 +247,9 @@ test('review status replaces the row label and unchecked samples cannot be saved
   assert.equal(status(), 'Review')
   assert.equal(h.button('Save').props.disabled, true)
   h.check().props.onChange({ target: { checked: true } }); h.render()
-  h.button('Save').props.onClick(); h.render()
+  await h.button('Save').props.onClick(); h.render()
   assert.equal(status(), 'Saved')
-  h.button('Undo save').props.onClick(); h.render()
+  await h.button('Undo save').props.onClick(); h.render()
   assert.equal(status(), 'Reviewed')
   assert.equal(h.check().props.checked, true)
 })
@@ -221,12 +261,11 @@ test('pending trim blocks row approval and save; successful reprocessing allows 
   assert.equal(h.check().props.checked, false)
   assert.equal(h.check().props.disabled, true)
   h.check().props.onChange({ target: { checked: true } }); h.render()
-  h.button('Save checked takes').props.onClick(); h.render()
+  await h.button('Save checked takes').props.onClick(); h.render()
   assert.equal(h.saved().length, 0)
   h.preview().props.onTrim(.1, .9); h.render()
   await new Promise(resolve => setImmediate(resolve)); h.render()
-  assert.equal(h.check().props.disabled, true, 'reprocessing requires a fresh boundary choice')
-  h.confirm()
+  assert.equal(h.preview().props.take.intervalReview.selectionMethod, 'manual')
   assert.equal(h.check().props.disabled, false)
   assert.equal(h.check().props.checked, false)
 })
@@ -234,8 +273,8 @@ test('pending trim blocks row approval and save; successful reprocessing allows 
 test('failed undo keeps the sample saved and protected from queue removal', async () => {
   const h = harness(); await h.upload()
   h.check().props.onChange({ target: { checked: true } }); h.render()
-  h.button('Save').props.onClick(); h.render()
-  h.failDelete(); h.button('Undo save').props.onClick(); h.render()
+  await h.button('Save').props.onClick(); h.render()
+  h.failDelete(); await h.button('Undo save').props.onClick(); h.render()
   assert.equal(h.saved().length, 1)
   assert.equal(h.button('Remove from queue').props.disabled, true)
   assert.ok(h.all(n => n.props?.role === 'alert').length)
@@ -244,7 +283,7 @@ test('failed undo keeps the sample saved and protected from queue removal', asyn
 test('remove all clears checked unsaved takes and their preview while protecting saved samples', async () => {
   const h = harness(); await h.upload()
   h.check().props.onChange({ target: { checked: true } }); h.render()
-  h.button('Save').props.onClick(); h.render()
+  await h.button('Save').props.onClick(); h.render()
   await h.upload('second.mp4')
   h.all(n => n.props?.type === 'checkbox' && /^Reviewed /.test(n.props['aria-label'] ?? '') && !n.props.disabled)[0].props.onChange({ target: { checked: true } }); h.render()
   h.all(n => n.type === 'button' && n.props['aria-label'] === 'Preview / review')[1].props.onClick(); h.render()
@@ -254,7 +293,7 @@ test('remove all clears checked unsaved takes and their preview while protecting
   assert.equal(h.all(n => n.props?.type === 'checkbox' && /^Reviewed /.test(n.props['aria-label'] ?? '')).length, 1)
   assert.equal(h.preview(), undefined)
   assert.equal(h.button('Remove all from queue').props.disabled, true)
-  h.button('Undo save').props.onClick(); h.render()
+  await h.button('Undo save').props.onClick(); h.render()
   assert.equal(h.check().props.checked, true)
   h.button('Remove all from queue').props.onClick(); h.render()
   assert.equal(h.check(), undefined)
@@ -280,7 +319,7 @@ test('camera handoff freezes the label, uses fixed 30 FPS and consumes an origin
   assert.equal(h.preview().props.take.label, 'THANK_YOU')
   assert.equal(h.preview().props.take.origin, 'camera-recording')
   assert.equal(h.processingOptions[0].targetFps, 30)
-  assert.equal(h.check().props.disabled, true)
+  assert.equal(h.check().props.disabled, false)
   await h.incoming(item)
   assert.equal(h.all(n => n.props?.type === 'checkbox' && /^Reviewed /.test(n.props['aria-label'] ?? '')).length, 1)
   assert.ok(h.button('Download original video'))
@@ -305,24 +344,24 @@ test('automatic trim reprocesses once and auto-use selects bounds without approv
   assert.equal(h.saved().length, 0)
   h.all(n => n.props?.['aria-label'] === 'Check or uncheck all previews')[0].props.onChange({ target: { checked: true } }); h.render()
   assert.equal(h.check().props.checked, true)
-  h.button('Save checked takes').props.onClick(); h.render()
+  await h.button('Save checked takes').props.onClick(); h.render()
   assert.equal(h.saved()[0].videoImport.trimStartMs, 200)
   assert.equal(h.saved()[0].videoImport.intervalReview.selectionMethod, 'automatic')
-  h.button('Undo save').props.onClick(); h.render()
+  await h.button('Undo save').props.onClick(); h.render()
   assert.equal(h.check().props.checked, true)
 })
 
-test('auto-use can be disabled independently of automatic reprocessing', async () => {
-  const h = harness({ suggestion: { start: .2, end: .8 } }); h.render()
-  h.all(n => n.props?.['aria-label'] === 'Automatically use trimmed intervals')[0].props.onChange({ target: { checked: false } }); h.render()
-  await h.upload('manual-choice.mp4', false)
+test('start-only trim preserves the source ending and selects the interval automatically', async () => {
+  const h = harness({ suggestion: { start: .2, end: 1, activityStartMs: 400, activityEndMs: 1000 } })
+  await h.upload('start-only.mp4', false)
   assert.equal(h.processingOptions.length, 2)
   assert.equal(h.preview().props.take.result.start, .2)
-  assert.equal(h.check().props.disabled, true)
-  h.all(n => n.props?.['aria-label'] === 'Check or uncheck all previews')[0].props.onChange({ target: { checked: true } }); h.render()
-  assert.equal(h.check().props.checked, false)
-  h.confirm()
+  assert.equal(h.preview().props.take.result.end, 1)
+  assert.equal(h.preview().props.take.intervalReview.selectionMethod, 'automatic')
+  assert.equal(h.processingOptions[1].qualityWindow.endMs, 800)
   assert.equal(h.check().props.disabled, false)
+  assert.equal(h.check().props.checked, false)
+  assert.equal(h.saved().length, 0)
 })
 
 test('disabling auto-trim retains the original and does not reprocess', async () => {
@@ -331,15 +370,17 @@ test('disabling auto-trim retains the original and does not reprocess', async ()
   await h.upload('full.mp4', false)
   assert.equal(h.processingOptions.length, 1)
   assert.equal(h.preview().props.take.result.start, 0)
-  assert.equal(h.check().props.disabled, true)
+  assert.equal(h.check().props.disabled, false)
 })
 
-test('automatic processing failure or unusable trim retains full recording with manual approval', async () => {
+test('automatic processing failure or unusable trim selects full recording for sample review', async () => {
   for (const options of [{ trimFails: true }, { trimRetake: true }]) {
     const h = harness({ suggestion: { start: .2, end: .8 }, ...options }); await h.upload('fallback.mp4', false)
     assert.equal(h.preview().props.take.result.start, 0)
     assert.match(h.preview().props.take.message, /Full recording retained/)
-    assert.equal(h.check().props.disabled, true)
+    assert.equal(h.check().props.disabled, false)
+    assert.equal(h.preview().props.take.intervalReview.choice, 'full-recording')
+    assert.equal(h.check().props.checked, false)
     assert.equal(h.saved().length, 0)
   }
 })
@@ -352,12 +393,14 @@ test('check all skips unconfirmed and dirty previews; uncheck all keeps saved ta
   assert.equal(h.button('Check all previews'), undefined)
   assert.equal(h.button('Uncheck all previews'), undefined)
   await h.upload('second.mp4', false)
+  h.all(n => n.type === 'button' && n.props['aria-label'] === 'Preview / review').at(-1).props.onClick(); h.render()
+  h.preview().props.onDraftChange(0, 1); h.render()
   h.all(n => n.props?.['aria-label'] === 'Check or uncheck all previews')[0].props.onChange({ target: { checked: true } }); h.render()
   const checks = () => h.all(n => /^Reviewed /.test(n.props?.['aria-label'] ?? ''))
   assert.equal(checks()[0].props.checked, true)
   assert.equal(checks()[1].props.checked, false)
   assert.equal(master().props.checked, true, 'all eligible takes checked; unconfirmed takes excluded')
-  h.button('Save checked takes').props.onClick(); h.render()
+  await h.button('Save checked takes').props.onClick(); h.render()
   assert.equal(master().props.disabled, true, 'saved and unconfirmed takes cannot be bulk edited')
   h.confirm(); h.all(n => n.props?.['aria-label'] === 'Check or uncheck all previews')[0].props.onChange({ target: { checked: true } }); h.render()
   h.all(n => n.props?.['aria-label'] === 'Check or uncheck all previews')[0].props.onChange({ target: { checked: false } }); h.render()
@@ -391,4 +434,26 @@ test('manual reprocessing clears automatic context and keeps fixed 30 FPS', asyn
   assert.equal(h.check().props.checked, false)
   assert.equal(h.processingOptions.at(-1).qualityWindow, undefined)
   assert.equal(h.processingOptions.at(-1).targetFps, 30)
+})
+
+
+test('a take stays Saving until commit, rejects double saves, and failed saves remain retryable', async () => {
+  const h = harness({ holdSave: true, failSave: true }); await h.upload()
+  h.check().props.onChange({ target: { checked: true } }); h.render()
+  const pending = h.button('Save').props.onClick(); h.render()
+  assert.equal(h.saved().length, 0)
+  assert.equal(h.button('Undo save'), undefined)
+  assert.equal(h.button('Save checked takes').props.disabled, true)
+  assert.equal(h.button('Remove from queue').props.disabled, true)
+  await h.button('Save checked takes').props.onClick()
+  assert.equal(h.pendingSaves.length, 1)
+  h.pendingSaves.shift()(); await pending; h.render()
+  assert.equal(h.saved().length, 0)
+  assert.equal(h.button('Save').props.disabled, false)
+  assert.ok(h.all(n => n.props?.role === 'alert').some(n => String(n.props.children).includes('this take remains in the queue')))
+  h.allowSave()
+  const retry = h.button('Save').props.onClick(); h.render()
+  h.pendingSaves.shift()(); await retry; h.render()
+  assert.equal(h.saved().length, 1)
+  assert.ok(h.button('Undo save'))
 })

@@ -82,20 +82,19 @@ test('internal loss of one hand is flagged even while the other remains visible'
   assert.equal(assessVideoQuality(frames).result, 'Review')
 })
 test('saved uploads retain metadata through JSON and ZIP exports and reject duplicate source files', async () => {
-  let stored = null
-  const storage = load('services/dataset/datasetStorage', {}, { localStorage: { getItem: () => stored, setItem: (_, value) => { stored = value } } })
+  const storage = load('services/dataset/datasetStorage', {}, { indexedDB: new (require('fake-indexeddb').IDBFactory)(), localStorage: { getItem: () => null } })
   const seq = { id: 'import-1', label: 'HELLO', createdAt: new Date().toISOString(), durationMs: 1000,
     frames: Array.from({ length: 21 }, (_, i) => sample(i * 50)),
     videoImport: { kind: 'video-upload', participantId: 'P1', fingerprint: 'abc', filename: 'phone.mov', trimStartMs: 500, trimEndMs: 1550,
       processingVersion: 'test', quality: { result: 'Pass' } } }
-  storage.saveSequence(seq)
-  assert.throws(() => storage.saveSequence({ ...seq, id: 'different', label: 'NO' }), /already been saved/)
+  await storage.saveSequence(seq)
+  await assert.rejects(() => storage.saveSequence({ ...seq, id: 'different', label: 'NO' }), /already been saved/)
   const exporter = load('services/dataset/datasetExport')
-  const exported = exporter.buildDatasetExport(storage.getSequences())
+  const exported = exporter.buildDatasetExport((await storage.getSequences()))
   assert.equal(exported.sequences[0].videoImport.participantId, 'P1')
   assert.equal(exported.sequences[0].videoImport.trimStartMs, 500)
   assert.equal(exported.sequences[0].frames[0].features.length, 164)
-  const zip = await exporter.buildPerSampleZipExport(storage.getSequences())
+  const zip = await exporter.buildPerSampleZipExport((await storage.getSequences()))
   const archive = await require('jszip').loadAsync(await zip.blob.arrayBuffer())
   const entry = Object.values(archive.files)[0]
   assert.equal(JSON.parse(await entry.async('string')).sequences[0].videoImport.fingerprint, 'abc')

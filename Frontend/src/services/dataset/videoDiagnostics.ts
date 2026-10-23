@@ -42,10 +42,91 @@ export function suggestSignInterval(frames: DatasetFrame[], duration: number) {
 }
 
 export function automaticSignInterval(frames: DatasetFrame[], duration: number) {
+  if (!Number.isFinite(duration) || duration <= 0 || !frames.length) return null
+  const ticks = videoDiagnostics(frames)
+  const step = medianFrameStep(frames)
+  const reliable = (p: LandmarkPoint | undefined) => !!p && [p.x, p.y, p.z].every(Number.isFinite) && (p.visibility ?? 0) >= .5
+  const bodyReference = (frame: DatasetFrame) => {
+    const pose = frame.raw.pose
+    if (!pose || !reliable(pose.leftShoulder) || !reliable(pose.rightShoulder)) return null
+    const scale = Math.hypot(pose.leftShoulder.x - pose.rightShoulder.x, pose.leftShoulder.y - pose.rightShoulder.y)
+    const shouldersY = (pose.leftShoulder.y + pose.rightShoulder.y) / 2
+    return scale >= .1 ? { scale, lower: shouldersY + scale * .9, elbowLower: shouldersY + scale * .6 } : null
+  }
+  // Follow arms that enter the signing area. An unseen, unused hand and hips
+  // below the crop must not prevent a visible signing arm from returning to rest.
+  const activeSides = (['left', 'right'] as const).filter(side => frames.some(frame => {
+    const body = bodyReference(frame), wrist = frame.raw.pose?.[`${side}Wrist`], hand = frame.raw[`${side}Hand`]
+    return body && ((detectedHand(hand) && hand![0].y < body.lower) || (reliable(wrist) && wrist!.y < body.lower))
+  }))
+  // An observed, stable lowered-arm posture is evidence of a pause. Detection
+  // loss and a stationary raised hand are not: either may be part of a sign.
+  const resting = frames.map((frame, index) => {
+    const body = bodyReference(frame), previous = frames[index - 1]
+    if (!body || !previous || !activeSides.length) return false
+    const dt = frame.timestamp - previous.timestamp
+    if (dt <= 0 || dt > 100) return false
+    return activeSides.every(side => {
+      const hand = frame.raw[`${side}Hand`]
+      const wrist = frame.raw.pose?.[`${side}Wrist`]
+      // Prefer an actual hand observation; otherwise require positive lower-arm
+      // pose evidence. Missing detections alone are never a pause.
+      if (detectedHand(hand)) return hand![0].y >= body.lower
+      if (reliable(wrist) && wrist!.y >= body.lower) return true
+      const elbow = frame.raw.pose?.[`${side}Elbow`]
+      // In a seated upper-body crop, wrist visibility drops when the hand goes
+      // below the image. A confidently lowered elbow plus a wrist estimated
+      // below the crop supports that return; an unexplained null hand does not.
+      return reliable(elbow) && wrist && [wrist.x, wrist.y, wrist.z].every(Number.isFinite) &&
+        elbow!.y >= body.elbowLower && wrist.y >= Math.max(1, body.lower) && wrist.y - elbow!.y >= body.scale * .3
+    })
+  })
+  const pauses: { start: number; end: number }[] = []
+  let pauseStart: number | null = null
+  for (let i = 0; i <= frames.length; i++) {
+    if (i < frames.length && resting[i]) { pauseStart ??= frames[i].timestamp; continue }
+    if (pauseStart !== null) {
+      const end = Math.min(duration * 1000, frames[i - 1].timestamp + step)
+      if (end - pauseStart >= 300 - .01) pauses.push({ start: pauseStart, end })
+      pauseStart = null
+    }
+  }
+  for (let i = 1; i < pauses.length; i++) {
+    const before = pauses[i - 1], after = pauses[i]
+    const activity = ticks.filter(tick => tick.timestamp >= before.end && tick.timestamp < after.start)
+    const visible = activity.filter(tick => tick.left || tick.right)
+    if (!visible.length) continue
+    const activityStartMs = visible[0].timestamp
+    const activityEndMs = Math.min(after.start, visible[visible.length - 1].timestamp + step)
+    const movingFrames = activity.filter(tick => tick.moving).length
+    if (activityEndMs - activityStartMs < 400 || movingFrames < 3 ||
+      visible.some((tick, index) => index > 0 && tick.timestamp - visible[index - 1].timestamp > 750)) continue
+    return { start: Math.max(before.start, activityStartMs - 250) / 1000,
+      end: Math.min(after.end, activityEndMs + 250) / 1000,
+      activityStartMs, activityEndMs, movingFrames,
+      reason: 'Selected the first usable activity between observed lowered-hand pauses. Preview to confirm one complete sign; repetitions without a lowered-hand pause need manual trimming.' }
+  }
+  // Never fall back to merging activities separated by an observed pause.
+  const visibleTicks = ticks.filter(tick => tick.left || tick.right)
+  if (pauses.some(pause => pause.start > visibleTicks[0]?.timestamp && pause.end < visibleTicks[visibleTicks.length - 1]?.timestamp)) return null
   const suggestion = suggestSignInterval(frames, duration)
-  if (!suggestion || suggestion.start <= 0 || suggestion.end >= duration || suggestion.activityEndMs - suggestion.activityStartMs < 400 || suggestion.movingFrames < 3) return null
+  if (!suggestion || suggestion.start <= 0 || suggestion.activityEndMs - suggestion.activityStartMs < 400 || suggestion.movingFrames < 3) return null
+  // A clip can end while the sign is still held. With an observed preparation
+  // pause, remove only the leading idle and preserve the exact source endpoint.
+  if (suggestion.end >= duration && !pauses.some(pause => pause.end <= suggestion.activityStartMs)) return null
   const visible = videoDiagnostics(frames).filter(tick => tick.left || tick.right)
   // A long internal loss may hide a gesture or separate multiple takes.
   if (visible.some((tick, index) => index > 0 && tick.timestamp - visible[index - 1].timestamp > 750)) return null
-  return suggestion
+  return suggestion.end >= duration ? { ...suggestion,
+    reason: 'Leading idle trimmed; the source ending is preserved. If the sign repeats without a pause, adjust the end manually. Check for a cut-off ending before saving.' } : suggestion
+}
+
+// Review still offers preparation/completion trimming when a single performance
+// cannot be isolated automatically. Preserve all activity for manual end edits.
+export function reviewSignInterval(frames: DatasetFrame[], duration: number) {
+  const automatic = automaticSignInterval(frames, duration)
+  if (automatic) return automatic
+  const suggestion = suggestSignInterval(frames, duration)
+  return suggestion ? { ...suggestion,
+    reason: 'Suggested outer trim keeps all detected hand activity. If the sign repeats without a clear pause, adjust the end manually to keep one complete performance. Preview both boundaries.' } : null
 }
