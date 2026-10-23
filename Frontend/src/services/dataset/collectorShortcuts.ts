@@ -1,8 +1,8 @@
 export const COLLECTOR_SHORTCUTS = [
   ['Space', 'Play/pause selected interval'], ['Shift + Space', 'Play/pause whole recording'],
   ['Q / E', 'Previous / next take'], ['C', 'Toggle Reviewed for current take'],
-  ['Shift + C', 'Check/uncheck all eligible unsaved takes'], ['V', 'Save current reviewed take / undo save'],
-  ['Shift + V', 'Save checked takes / undo queue saves'], ['T', 'Toggle interval looping'],
+  ['Shift + C', 'Check/uncheck all eligible unsaved takes'], ['S', 'Save current reviewed take / undo save'],
+  ['Shift + S', 'Save checked takes / undo queue saves'], ['T', 'Toggle interval looping'],
   ['F / G', 'Focus start / end time'], ['↑ / ↓', 'Adjust focused time by 0.05 seconds'],
   ['Shift + ↑ / ↓', 'Adjust focused time by 0.5 seconds'], ['Enter in time field', 'Reprocess interval'],
   ['Y', 'Use suggested interval'], ['?', 'Show/hide shortcut help'],
@@ -16,7 +16,7 @@ export function collectorShortcut(event: Pick<KeyboardEvent, 'key' | 'shiftKey' 
   if (key === '?') return 'help'
   if (key === ' ') return event.shiftKey ? 'play-whole' : 'play-interval'
   if (key === 'c') return event.shiftKey ? 'review-all' : 'review'
-  if (key === 'v') return event.shiftKey ? 'save-all' : 'save'
+  if (key === 's') return event.shiftKey ? 'save-all' : 'save'
   if (event.shiftKey) return null
   const letters = { q: 'previous', e: 'next', t: 'loop', f: 'start', g: 'end', y: 'suggest' } as const
   return letters[key as keyof typeof letters] ?? null
