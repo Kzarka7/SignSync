@@ -16,14 +16,14 @@ test('shortcut mapping covers the agreed keys and protects typing, composition a
   for (const flag of ['ctrlKey','metaKey','altKey','isComposing','repeat','defaultPrevented']) assert.equal(shortcuts.collectorShortcut({key:'v',[flag]:true}),null)
   assert.equal(shortcuts.collectorShortcut({key:'c',target:{closest:()=>({})}}),null)
   const button = { closest: selector => selector === 'button, a, summary' ? {} : null }
-  assert.equal(shortcuts.collectorShortcut({key:' ',target:button}),null)
+  assert.equal(shortcuts.collectorShortcut({key:' ',target:button}),'play-interval')
   assert.equal(shortcuts.collectorShortcut({key:' ',shiftKey:true,target:button}),'play-whole')
   assert.equal(shortcuts.adjustedIntervalTime(.1,-1,true,3),0)
   assert.equal(shortcuts.adjustedIntervalTime(2.9,1,true,3),3)
   assert.equal(shortcuts.adjustedIntervalTime(.1,1,false,3),.15)
 })
 
-function previewHarness() {
+function previewHarness({realReplay=false}={}) {
   const slots=[], effects=[]; let cursor=0, dirty=false, tree
   const listeners = new Map()
   const video = { currentTime:0,paused:true,ended:false,seeking:false,videoWidth:0,
@@ -50,7 +50,7 @@ function previewHarness() {
     if(name.endsWith('collectorShortcuts'))return shortcuts
     if(name.endsWith('videoDiagnostics'))return { reviewSignInterval:()=>({start:.5,end:2.5,reason:'test'}) }
     if(name.endsWith('videoIntervalReview'))return {isFullRecording:()=>false,intervalReviewMatches:()=>true}
-    if(name.endsWith('videoPlayback'))return {bindVideoReplay:(v,start,end,onError,options)=>{binding={start,end,...options};return {check:()=>false,play:()=>v.play(),dispose:()=>{disposed++}}}}
+    if(name.endsWith('videoPlayback'))return realReplay ? service('services/dataset/videoPlayback') : {bindVideoReplay:(v,start,end,onError,options)=>{binding={start,end,...options};return {check:()=>false,play:()=>v.play(),dispose:()=>{disposed++}}}}
     return {default:name.endsWith('Button')?'button':'section',__esModule:true}
   }})
   function nodes(){const found=[];function visit(n){if(!n||typeof n!=='object')return;found.push(n);React.Children.forEach(n.props?.children,visit)}visit(tree);return found}
@@ -83,6 +83,16 @@ test('time arrows and Enter update the draft and reprocess; suggested intervals 
   h.time('end','Enter',{repeat:true});assert.equal(h.trims.length,1)
   h.press('suggest');assert.deepEqual(h.changes.at(-1),[.5,2.5])
   h.props.locked=true;h.render();h.time('start','ArrowUp');assert.deepEqual(h.changes.at(-1),[.5,2.5])
+})
+
+test('Play selected interval can replay after completion with the real playback binding',()=>{
+  const h=previewHarness({realReplay:true})
+  for(let i=0;i<3;i++) {
+    h.press('play-interval');assert.equal(h.video.paused,false);assert.equal(h.video.currentTime,1)
+    h.video.emit('pause');h.render()
+    h.video.currentTime=2.05;h.video.emit('timeupdate');h.render()
+    assert.equal(h.video.paused,true);assert.equal(h.video.currentTime,1)
+  }
 })
 
 test('shortcut help uses a native modal with grouped keycaps and close actions', () => {

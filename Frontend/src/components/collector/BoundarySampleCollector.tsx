@@ -32,6 +32,7 @@ export default function BoundarySampleCollector({ onLocked }: { onLocked: (locke
     protocol: 'separate-training-v1', category, taskId: task.id, taskTitle: task.title, variantId: task.variantId, pace: task.pace,
   } : undefined
   const recorder = useDatasetRecorder({ scope: 'training', trainingCategory: category, recordingAllowed: !!task,
+    hotkeysEnabled: mode === 'camera' && cameraMethod === 'live',
     durationLimitMs: durations[category], training })
   const locked = recorder.isLoading || recorder.isSaving || recorder.isRecording || recorder.countdown !== null || uploadBusy || cameraBusy
   useEffect(() => { onLocked(locked); return () => onLocked(false) }, [locked, onLocked])

@@ -47,10 +47,11 @@ interface RecorderOptions {
   evaluation?: LabeledSequence['evaluation']
   collection?: IdleCollectionMetadata
   recordingAllowed?: boolean
+  hotkeysEnabled?: boolean
   durationLimitMs?: number
 }
 
-export function useDatasetRecorder({ collection, recordingAllowed = true, durationLimitMs, scope = 'training', evaluation, evaluationGroup, training, trainingBatchId, trainingCategory, legacyOnly = false, signsOnly = false }: RecorderOptions = {}) {
+export function useDatasetRecorder({ collection, recordingAllowed = true, hotkeysEnabled = true, durationLimitMs, scope = 'training', evaluation, evaluationGroup, training, trainingBatchId, trainingCategory, legacyOnly = false, signsOnly = false }: RecorderOptions = {}) {
   const [detectionInputWidth, setDetectionInputWidth] = useState<DetectionInputWidth>(640)
   const [allSequences, setSequences] = useState<LabeledSequence[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -298,7 +299,7 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, durati
   // cancels/discards when a recording-control button has focus.
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.repeat) return
+      if (!hotkeysEnabled || event.defaultPrevented || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
 
       const target = event.target as HTMLElement | null
       const tag = target?.tagName
@@ -325,7 +326,7 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, durati
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isRecording, countdown, startRecording, stopRecording, discardRecording, cancelCountdown])
+  }, [hotkeysEnabled, isRecording, countdown, startRecording, stopRecording, discardRecording, cancelCountdown])
 
   const mutateSamples = useCallback(async (action: () => Promise<void>) => {
     if (savingRef.current) return

@@ -29,6 +29,7 @@ export default function SignSampleCollector({
   const recorder = useDatasetRecorder({
     scope: "training",
     signsOnly: true,
+    hotkeysEnabled: mode === "camera" && cameraMethod === "live",
     durationLimitMs,
   });
   const locked =
