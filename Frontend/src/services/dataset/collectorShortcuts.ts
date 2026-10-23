@@ -6,6 +6,7 @@ export const COLLECTOR_SHORTCUTS = [
   ['F / G', 'Focus start / end time'], ['↑ / ↓', 'Adjust focused time by 0.05 seconds'],
   ['Shift + ↑ / ↓', 'Adjust focused time by 0.5 seconds'], ['Enter in time field', 'Reprocess interval'],
   ['Y', 'Use suggested interval'], ['?', 'Show/hide shortcut help'],
+  ['R', 'Remove current take / undo remove'], ['Shift + R', 'Remove unsaved takes / undo remove all'],
 ] as const
 
 export function collectorShortcut(event: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'ctrlKey' | 'metaKey' | 'altKey' | 'repeat' | 'isComposing' | 'defaultPrevented' | 'target'>) {
@@ -17,6 +18,7 @@ export function collectorShortcut(event: Pick<KeyboardEvent, 'key' | 'shiftKey' 
   if (key === ' ') return event.shiftKey ? 'play-whole' : 'play-interval'
   if (key === 'c') return event.shiftKey ? 'review-all' : 'review'
   if (key === 's') return event.shiftKey ? 'save-all' : 'save'
+  if (key === 'r') return event.shiftKey ? 'remove-all' : 'remove'
   if (event.shiftKey) return null
   const letters = { q: 'previous', e: 'next', t: 'loop', f: 'start', g: 'end', y: 'suggest' } as const
   return letters[key as keyof typeof letters] ?? null
