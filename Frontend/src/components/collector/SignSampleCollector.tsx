@@ -121,6 +121,7 @@ export default function SignSampleCollector({
       <div>
         <div hidden={mode !== "upload"}>
           <VideoUploadCollector
+            knownLabels={recorder.knownLabels}
             controls={settings}
             recordedSamples={recordedSamples}
             incoming={incoming}

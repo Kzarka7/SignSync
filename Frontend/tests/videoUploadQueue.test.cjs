@@ -21,7 +21,7 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
   const pending = []
   const processingOptions = []
   const keyListeners = new Set()
-  const props = { label: 'HELLO', sequences: [], onBusy() {}, onSaved() { props.sequences = [...saved]; dirty = true } }
+  const props = { label: 'HELLO', knownLabels:['HELLO','THREE','THANK_YOU'], sequences: [], onBusy() {}, onSaved() { props.sequences = [...saved]; dirty = true } }
   if (training) { props.training = training; props.label = training.category === 'rest' ? 'REST' : 'IDLE_MOVEMENT' }
   const react = { ...React,
     useState(initial) {
@@ -102,6 +102,12 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
     }
   }
   return { pendingSaves, allowSave: () => { failSave = false }, render, all, button, upload, saved: () => saved, pending, confirm, processingOptions,
+    relabel(scope,label) {
+      if (!button('Change label').props['aria-expanded']) { button('Change label').props.onClick();render() }
+      all(n=>n.props?.labelText==='New sign label')[0].props.onSelectLabel(label);render()
+      all(n=>n.props?.['aria-label']==='Takes to relabel')[0].props.onChange({target:{value:scope}});render()
+      button('Apply label').props.onClick();render()
+    },
     key: (key, extra = {}) => { const event = { key, preventDefault() {}, ...extra }; for (const listener of [...keyListeners]) listener(event); render() },
     selectTraining: value => { props.training = value; props.label = value.category === 'rest' ? 'REST' : 'IDLE_MOVEMENT'; render() },
     incoming: async item => {
@@ -114,6 +120,39 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
     failDelete: () => { failDelete = true },
   }
 }
+
+test('batch label correction preserves processing and intervals, clears review and saves corrected metadata',async()=>{
+  const h=harness();await h.upload('first.mp4');await h.upload('second.mp4')
+  h.key('C',{shiftKey:true})
+  const before=h.preview().props.take, calls=h.processingOptions.length
+  h.relabel('checked','THREE')
+  const after=h.preview().props.take
+  assert.equal(after.label,'THREE');assert.equal(after.reviewed,false)
+  for(const key of ['id','file','fingerprint','result','fullResult','intervalReview','interval','qualityWindow','contextCandidate']) assert.equal(after[key],before[key],key+' is preserved')
+  assert.equal(h.processingOptions.length,calls,'no inference runs again')
+  assert.ok(h.all(n=>/^Reviewed /.test(n.props?.['aria-label']??'')).every(n=>n.props['aria-label'].endsWith(' as THREE')&&!n.props.checked))
+  h.button('Save checked takes').props.onClick();await new Promise(resolve=>setImmediate(resolve));h.render()
+  assert.equal(h.saved().length,0)
+  h.key('C',{shiftKey:true});h.key('S',{shiftKey:true});await new Promise(resolve=>setImmediate(resolve));h.render()
+  assert.equal(h.saved().length,2)
+  assert.ok(h.saved().every(s=>s.label==='THREE'&&s.videoImport.review.label==='THREE'))
+  assert.equal(h.saved()[1].frames,before.result.frames)
+  await h.upload('third.mp4');assert.equal(h.preview().props.take.label,'HELLO','import default remains separate')
+})
+
+test('current/all relabel scopes protect saved takes and reject invalid labels without clearing review',async()=>{
+  const h=harness();await h.upload('saved.mp4');h.key('c');h.key('s');await new Promise(resolve=>setImmediate(resolve));h.render()
+  await h.upload('current.mp4');h.key('c')
+  h.relabel('current','THREE');assert.equal(h.preview().props.take.label,'THREE')
+  h.key('c');h.relabel('current','THREE');assert.equal(h.preview().props.take.reviewed,true,'same label is a no-op')
+  h.relabel('all','UNKNOWN');assert.equal(h.preview().props.take.reviewed,true)
+  assert.equal(h.preview().props.take.label,'THREE')
+  await h.upload('other.mp4');h.relabel('all','THANK_YOU')
+  assert.equal(h.saved()[0].label,'HELLO')
+  const rows=h.all(n=>/^Reviewed /.test(n.props?.['aria-label']??''))
+  assert.equal(rows[0].props['aria-label'],'Reviewed saved.mp4 as HELLO')
+  assert.ok(rows.slice(1).every(n=>n.props['aria-label'].endsWith(' as THANK_YOU')&&!n.props.checked))
+})
 
 test('collector shortcuts navigate, review and save with batch eligibility and typing guards', async () => {
   const h = harness(); await h.upload('first.mp4'); await h.upload('second.mp4')
