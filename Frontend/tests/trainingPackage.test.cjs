@@ -18,7 +18,7 @@ function load(relative) {
   return at(path.resolve(__dirname, '../src', relative + '.ts'))
 }
 const { assessVideoQuality, assessBoundaryVideoQuality } = load('services/dataset/videoQuality')
-const { automaticSignInterval } = load('services/dataset/videoDiagnostics')
+const { automaticSignInterval, reviewSignInterval } = load('services/dataset/videoDiagnostics')
 const { assessTrainingSample, reviewTrainingSamples, buildTrainingPackage } = load('services/dataset/trainingPackage')
 const { suggestSignInterval, videoDiagnostics } = load('services/dataset/videoDiagnostics')
 const { confirmInterval, intervalReviewMatches, intervalFindings } = load('services/dataset/videoIntervalReview')
@@ -235,6 +235,118 @@ test('automatic boundaries keep margins and defer stationary, fragmented or boun
   split.forEach((frame, i) => { if (i > 25 && i < 45) frame.raw.leftHand = null })
   assert.equal(automaticSignInterval(split, 5), null)
   assert.equal(automaticSignInterval(frames.slice(20).map(frame => ({ ...frame, timestamp: frame.timestamp - 1000 })), 4), null)
+})
+
+function repeatedSignFrames(fps = 30, ranges = [[1000, 2000], [3000, 4200]]) {
+  const template = fixture().frames[0]
+  return Array.from({ length: fps * 5 }, (_, i) => {
+    const frame = JSON.parse(JSON.stringify(template)), t = i * 1000 / fps
+    frame.timestamp = frame.raw.timestamp = t
+    const active = ranges.some(([start, end]) => t >= start && t < end)
+    const pose = frame.raw.pose
+    pose.leftShoulder.y = pose.rightShoulder.y = .3
+    pose.leftHip.y = pose.rightHip.y = .8
+    pose.leftWrist.y = active ? .45 : .9
+    pose.rightWrist.y = .9
+    frame.raw.leftHand.forEach(point => { point.y = pose.leftWrist.y; point.x = .5 + (active ? Math.sin(t / 100) * .05 : 0) })
+    return frame
+  })
+}
+
+test('auto-trim selects only the first complete idle-bounded activity at different frame rates', () => {
+  for (const fps of [20, 30, 60]) {
+    const interval = automaticSignInterval(repeatedSignFrames(fps), 5)
+    assert.ok(interval, `expected interval at ${fps} FPS`)
+    assert.ok(Math.abs(interval.start - .75) < .06)
+    assert.ok(interval.end > 2 && interval.end < 2.5, 'completion margin stays before second performance')
+    assert.ok(interval.activityStartMs >= 1000 && interval.activityEndMs < 2500)
+    assert.match(interval.reason, /first usable activity/)
+  }
+})
+
+test('raised-hand holds, brief pauses and uncertain tracking do not separate performances', () => {
+  const raised = repeatedSignFrames(30, [[1000, 4200]])
+  raised.forEach(frame => {
+    if (frame.timestamp >= 2000 && frame.timestamp < 3000) frame.raw.leftHand.forEach(point => { point.x = .5 })
+  })
+  assert.equal(automaticSignInterval(raised, 5).activityEndMs > 4000, true, 'a raised hold is not treated as idle; manual trimming is needed for repetitions')
+  const brief = repeatedSignFrames(30, [[1000, 2000], [2200, 4200]])
+  assert.ok(automaticSignInterval(brief, 5).activityEndMs > 4000, 'a short dip does not split a sign')
+  const lost = repeatedSignFrames()
+  lost.forEach(frame => {
+    if (frame.timestamp >= 2000 && frame.timestamp < 3000) {
+      frame.raw.leftHand = null
+      frame.raw.pose.leftWrist.visibility = .1
+    }
+  })
+  assert.equal(automaticSignInterval(lost, 5), null, 'missing hands with unreliable pose never prove idle')
+})
+
+test('auto-trim skips a cut-off first performance and defers when no complete interval exists', () => {
+  const cutFirst = repeatedSignFrames(30, [[0, 1500], [3000, 4200]])
+  const interval = automaticSignInterval(cutFirst, 5)
+  assert.ok(interval.start > 2.5 && interval.end < 5)
+  const cutBoth = repeatedSignFrames(30, [[0, 1500], [3000, 5000]])
+  assert.equal(automaticSignInterval(cutBoth, 5), null)
+})
+
+test('auto-trim does not split when only one arm returns to rest', () => {
+  const frames = repeatedSignFrames()
+  frames.forEach(frame => {
+    if (frame.timestamp >= 2000 && frame.timestamp < 3000) frame.raw.pose.rightWrist.y = .45
+  })
+  assert.ok(automaticSignInterval(frames, 5).activityEndMs > 4000)
+})
+
+test('one-hand trimming tolerates hidden hips and an unseen unused arm', () => {
+  const frames = repeatedSignFrames(25, [[920, 1600], [2240, 3000]])
+  frames.forEach(frame => {
+    const pose = frame.raw.pose
+    pose.leftHip.visibility = pose.rightHip.visibility = .1
+    pose.rightWrist.visibility = .1
+    if (frame.timestamp < 920 || frame.timestamp >= 1600 && frame.timestamp < 2240) frame.raw.leftHand = null
+  })
+  const interval = automaticSignInterval(frames, 3)
+  assert.ok(interval)
+  assert.ok(interval.start < 1 && interval.end < 2.24)
+  assert.ok(interval.activityEndMs < 1800)
+})
+
+test('review retains a start-trim suggestion when continuous repeated signing reaches the end', () => {
+  const frames = repeatedSignFrames(30, [[1000,5000]])
+  frames.forEach(frame => {
+    if (frame.timestamp < 1000) frame.raw.leftHand = null
+  })
+  assert.equal(automaticSignInterval(frames,5).end,5, 'leading idle is trimmed automatically while preserving the ending')
+  const suggestion = reviewSignInterval(frames,5)
+  assert.equal(suggestion.start,.75)
+  assert.equal(suggestion.end,5, 'the user chooses the end between repetitions')
+  assert.match(suggestion.reason,/adjust the end manually/)
+  assert.equal(reviewSignInterval([],5),null)
+})
+
+test('ONE_6 actual-video landmarks select the first sign despite cropped resting wrists', () => {
+  const data = require('./fixtures/one6Landmarks.json')
+  const frames = data.frames.map(([timestamp, pose, left, right]) => {
+    const point = ([x,y,z,visibility]) => ({ x,y,z,visibility })
+    return { timestamp, raw: { timestamp,
+      pose: Object.fromEntries(data.poseNames.map((name,i) => [name,point(pose[i])])),
+      leftHand: left?.map(point) ?? null, rightHand: right?.map(point) ?? null } }
+  })
+  assert.equal(suggestSignInterval(frames,data.duration).end, 3, 'old all-activity suggestion includes both performances')
+  const interval = automaticSignInterval(frames,data.duration)
+  assert.ok(interval)
+  assert.equal(interval.start, .67)
+  assert.equal(interval.end, 1.97)
+  assert.equal(reviewSignInterval(frames,data.duration).end,1.97, 'review prefers the first complete performance over the outer trim')
+  const selected = frames.filter(f => f.timestamp >= interval.start*1000 && f.timestamp < interval.end*1000)
+    .map(f => ({ ...f,timestamp:f.timestamp-interval.start*1000 }))
+  const quality = assessVideoQuality(selected,'either', { endMs:(interval.end-interval.start)*1000,fps:25 },
+    { protocol:'gesture-context-v1',basis:'automatic-hand-activity',startMs:interval.activityStartMs-interval.start*1000,endMs:interval.activityEndMs-interval.start*1000 })
+  assert.notEqual(quality.result,'Retake')
+  const unknown = JSON.parse(JSON.stringify(frames))
+  unknown.forEach(frame => { if (!frame.raw.leftHand) frame.raw.pose.leftElbow.visibility = .1 })
+  assert.equal(automaticSignInterval(unknown,data.duration),null, 'hidden wrists without reliable lower-arm evidence still defer')
 })
 
 test('v5 preserves context frames and binds training approval to gesture boundaries', async () => {

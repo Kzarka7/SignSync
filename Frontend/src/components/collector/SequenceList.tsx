@@ -1,5 +1,5 @@
 import { getEvaluationTaskTitle } from '../../services/dataset/boundaryEvaluation'
-import { memo } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { FolderArchive, Loader2, Trash2 } from 'lucide-react'
 import Card from '../shared/Card'
 import Button from '../shared/Button'
@@ -7,6 +7,10 @@ import { LabeledSequence } from '../../types/dataset'
 import PendingVideoRecordings, { type PreservedVideoTake } from './PendingVideoRecordings'
 
 interface SequenceListProps {
+  isLoading?: boolean
+  storageBusy?: boolean
+  storageError?: string | null
+  onRetry?: () => void
   pendingVideos?: PreservedVideoTake[]
   pendingLocked?: boolean
   onProcessVideos?: () => void
@@ -29,9 +33,21 @@ interface SequenceListProps {
 // memo, this whole list still gets rebuilt on every detection tick purely
 // because its sibling (RecordingControls) re-renders, which is wasted
 // work that competes with the detection loop for main-thread time.
-function SequenceList({ collapsible = false, sequences, onDelete, onExportZip, onDownloadZip, isExportingZip, zipReady, exportError, onClearAll,
+function SequenceList({ isLoading = false, storageBusy = false, storageError, onRetry, collapsible = false, sequences, onDelete, onExportZip, onDownloadZip, isExportingZip, zipReady, exportError, onClearAll,
   pendingVideos = [], pendingLocked = false, onProcessVideos = () => {}, onRemoveVideo = () => {} }: SequenceListProps) {
+  const [capacity, setCapacity] = useState('')
+  useEffect(() => {
+    let active = true
+    if (navigator.storage?.estimate) void navigator.storage.estimate().then(({ usage, quota }) => {
+      if (active && usage !== undefined && quota !== undefined) setCapacity(`Browser storage: ${(usage / 1048576).toFixed(1)} MB used  |  approximately ${(Math.max(0, quota - usage) / 1048576).toFixed(1)} MB available across this site.`)
+    }).catch(() => {})
+    return () => { active = false }
+  }, [sequences])
   const content = <>
+      {isLoading && <p role="status">Loading saved samples...</p>}
+      {storageBusy && <p role="status">Saving changes...</p>}
+      {storageError && <p role="alert" className="text-sm text-danger">{storageError} <button onClick={onRetry}>Retry loading samples</button></p>}
+      {capacity && <p className="text-xs text-text-2 mb-3">{capacity} Capacity varies; export backups regularly.</p>}
       {pendingVideos.length > 0 && <PendingVideoRecordings recordings={pendingVideos} locked={pendingLocked} onProcessAll={onProcessVideos} onRemove={onRemoveVideo} />}
       {sequences.length > 0 && <div className="mb-3 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -39,14 +55,14 @@ function SequenceList({ collapsible = false, sequences, onDelete, onExportZip, o
           size="sm"
           variant="primary"
           onClick={zipReady ? onDownloadZip : onExportZip}
-          disabled={isExportingZip}
+          disabled={isLoading || storageBusy || isExportingZip}
           aria-busy={isExportingZip}
           title="Download one JSON file per saved sample in a ZIP. Pending videos are excluded."
         >
           {isExportingZip ? <Loader2 size={13} className="animate-spin" /> : <FolderArchive size={13} />}
           {isExportingZip ? 'Preparing ZIP' : zipReady ? 'Export as ZIP' : 'Prepare ZIP'}
         </Button>
-        <Button size="sm" variant="danger" onClick={onClearAll} title="Clear all saved landmark samples; pending videos remain.">
+        <Button size="sm" variant="danger" disabled={isLoading || storageBusy} onClick={onClearAll} title="Clear all saved landmark samples; pending videos remain.">
           Clear all
         </Button>
         </div>
@@ -60,7 +76,7 @@ function SequenceList({ collapsible = false, sequences, onDelete, onExportZip, o
       </div>}
       {exportError && <p role="alert" className="text-sm text-danger mb-3">{exportError}</p>}
 
-      {sequences.length === 0 && pendingVideos.length === 0 ? (
+      {!isLoading && !storageError && sequences.length === 0 && pendingVideos.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border bg-sky p-4"><p className="text-sm font-semibold">No saved samples yet</p><p className="text-xs text-text-2 mt-1">Record a take or save a reviewed sample.</p></div>
       ) : sequences.length > 0 && (
         <div className="flex flex-col gap-1.5 max-h-80 overflow-y-auto custom-scrollbar pr-1">
@@ -92,6 +108,7 @@ function SequenceList({ collapsible = false, sequences, onDelete, onExportZip, o
                 </div>
               </div>
               <button
+                disabled={isLoading || storageBusy}
                 onClick={() => onDelete(seq.id)}
                 className="shrink-0 text-text-2 hover:text-danger transition-colors p-2 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal"
                 aria-label={`Delete ${seq.label} sample`}

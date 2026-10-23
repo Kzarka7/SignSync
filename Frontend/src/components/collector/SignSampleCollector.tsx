@@ -32,7 +32,7 @@ export default function SignSampleCollector({
     durationLimitMs,
   });
   const locked =
-    recorder.isRecording ||
+    recorder.isLoading || recorder.isSaving || recorder.isRecording ||
     recorder.countdown !== null ||
     uploadBusy ||
     cameraBusy;
@@ -89,7 +89,7 @@ export default function SignSampleCollector({
     </Card>
   );
   const recordedSamples = (
-    <SequenceList
+    <SequenceList isLoading={recorder.isLoading} storageBusy={recorder.isSaving || uploadBusy} storageError={recorder.saveError} onRetry={recorder.refreshSequences}
       collapsible
       pendingVideos={pendingVideos}
       pendingLocked={locked}
