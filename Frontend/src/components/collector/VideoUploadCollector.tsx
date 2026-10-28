@@ -448,8 +448,8 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
     if (saving.current || boundary || !knownLabels.includes(replacementLabel) || !relabelTargets.length) return
     const ids = new Set(relabelTargets.map(take => take.id))
     setTakes(previous => previous.map(take => ids.has(take.id) && relabelable(take)
-      ? { ...take, label: replacementLabel, reviewed: false } : take))
-    setRelabelMessage(`Changed ${ids.size} ${ids.size === 1 ? 'take' : 'takes'} to ${replacementLabel}. Processing and intervals kept. Review the corrected labels before saving.`)
+      ? { ...take, label: replacementLabel } : take))
+    setRelabelMessage(`Changed ${ids.size} ${ids.size === 1 ? 'take' : 'takes'} to ${replacementLabel}. Processing, intervals and review checks kept.`)
   }
   const processed = takes.filter(take => take.result)
   const fullCount = processed.filter(take => isFullRecording(take.result!.start, take.result!.end, take.result!.duration)).length
@@ -577,7 +577,7 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
         <Button size="sm" disabled={isSaving || !takes.some(relabelable)} aria-expanded={relabelOpen}
           onClick={() => { setRelabelOpen(value => !value); setRelabelMessage('') }}>Change label</Button>
         {relabelOpen && <section aria-label="Correct queued sign labels" className="space-y-3 rounded-lg border border-border bg-sky p-3">
-          <p className="text-sm text-text-2">Correct existing queue labels without processing the videos again. Saved samples are excluded. Reviewed checks are cleared only for changed takes.</p>
+          <p className="text-sm text-text-2">Correct existing queue labels without processing the videos again. Saved samples are excluded. Existing review checks are preserved when labels change.</p>
           <LabelPicker knownLabels={knownLabels} selectedLabel={replacementLabel} labelText="New sign label"
             disabled={isSaving} onSelectLabel={value => { setReplacementLabel(value); setRelabelMessage('') }} />
           <label className="block text-sm font-semibold text-text-2">Apply to
