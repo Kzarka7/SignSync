@@ -121,20 +121,18 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
   }
 }
 
-test('batch label correction preserves processing and intervals, clears review and saves corrected metadata',async()=>{
+test('batch label correction preserves processing, intervals and reviews and saves corrected metadata',async()=>{
   const h=harness();await h.upload('first.mp4');await h.upload('second.mp4')
   h.key('C',{shiftKey:true})
   const before=h.preview().props.take, calls=h.processingOptions.length
   h.relabel('checked','THREE')
   const after=h.preview().props.take
-  assert.equal(after.label,'THREE');assert.equal(after.reviewed,false)
+  assert.equal(after.label,'THREE');assert.equal(after.reviewed,true)
   for(const key of ['id','file','fingerprint','result','fullResult','intervalReview','interval','qualityWindow','contextCandidate']) assert.equal(after[key],before[key],key+' is preserved')
   assert.equal(h.processingOptions.length,calls,'no inference runs again')
-  assert.ok(h.all(n=>/^Reviewed /.test(n.props?.['aria-label']??'')).every(n=>n.props['aria-label'].endsWith(' as THREE')&&!n.props.checked))
+  assert.ok(h.all(n=>/^Reviewed /.test(n.props?.['aria-label']??'')).every(n=>n.props['aria-label'].endsWith(' as THREE')&&n.props.checked))
   h.button('Save checked takes').props.onClick();await new Promise(resolve=>setImmediate(resolve));h.render()
-  assert.equal(h.saved().length,0)
-  h.key('C',{shiftKey:true});h.key('S',{shiftKey:true});await new Promise(resolve=>setImmediate(resolve));h.render()
-  assert.equal(h.saved().length,2)
+  assert.equal(h.saved().length,2,'reviewed takes save immediately after relabeling')
   assert.ok(h.saved().every(s=>s.label==='THREE'&&s.videoImport.review.label==='THREE'))
   assert.equal(h.saved()[1].frames,before.result.frames)
   await h.upload('third.mp4');assert.equal(h.preview().props.take.label,'HELLO','import default remains separate')
@@ -144,14 +142,17 @@ test('current/all relabel scopes protect saved takes and reject invalid labels w
   const h=harness();await h.upload('saved.mp4');h.key('c');h.key('s');await new Promise(resolve=>setImmediate(resolve));h.render()
   await h.upload('current.mp4');h.key('c')
   h.relabel('current','THREE');assert.equal(h.preview().props.take.label,'THREE')
-  h.key('c');h.relabel('current','THREE');assert.equal(h.preview().props.take.reviewed,true,'same label is a no-op')
+  assert.equal(h.preview().props.take.reviewed,true,'label change preserves review')
+  h.relabel('current','THREE');assert.equal(h.preview().props.take.reviewed,true,'same label is a no-op')
   h.relabel('all','UNKNOWN');assert.equal(h.preview().props.take.reviewed,true)
   assert.equal(h.preview().props.take.label,'THREE')
   await h.upload('other.mp4');h.relabel('all','THANK_YOU')
   assert.equal(h.saved()[0].label,'HELLO')
   const rows=h.all(n=>/^Reviewed /.test(n.props?.['aria-label']??''))
   assert.equal(rows[0].props['aria-label'],'Reviewed saved.mp4 as HELLO')
-  assert.ok(rows.slice(1).every(n=>n.props['aria-label'].endsWith(' as THANK_YOU')&&!n.props.checked))
+  assert.ok(rows.slice(1).every(n=>n.props['aria-label'].endsWith(' as THANK_YOU')))
+  assert.equal(rows[1].props.checked,true,'reviewed takes remain reviewed')
+  assert.equal(rows[2].props.checked,false,'unreviewed takes still require review')
 })
 
 test('collector shortcuts navigate, review and save with batch eligibility and typing guards', async () => {
