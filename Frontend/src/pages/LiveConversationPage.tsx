@@ -1,3 +1,4 @@
+import SecondsInput from '../components/shared/SecondsInput'
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslationStream } from '../hooks/useTranslationStream'
@@ -98,9 +99,9 @@ export default function LiveConversationPage() {
               <span className="text-xs text-text-2"><kbd className="px-1 py-0.5 rounded border border-border bg-sky font-mono">Space</kbd> start/stop · <kbd className="px-1 py-0.5 rounded border border-border bg-sky font-mono">Esc</kbd> cancel</span>
               <div className="flex items-center gap-1.5 text-sm text-text-2" role="group" aria-label="Recognition start delay">
                 <span>Delay:</span>
-                {[1,3,5].map(seconds=><button key={seconds} type="button" aria-pressed={capture.countdownSeconds===seconds}
-                  disabled={capture.running || capture.loading || capture.countdown!==null} onClick={()=>capture.setCountdownSeconds(capture.countdownSeconds===seconds ? 0 : seconds)}
-                  className={`px-2 py-0.5 rounded-md text-xs font-medium border disabled:opacity-50 ${capture.countdownSeconds===seconds ? 'bg-signal text-white border-signal' : 'bg-white text-text-2 border-border hover:border-signal'}`}>{seconds}s</button>)}
+                <SecondsInput label="Recognition start delay (seconds)" value={capture.countdownSeconds}
+                  disabled={capture.running || capture.loading || capture.countdown !== null} onChange={capture.setCountdownSeconds} />
+                <span className="text-xs">seconds (0 = none)</span>
               </div>
               </div>
               {feed.cameraReady && !feed.poseDetected && <p className="text-sm">Keep both shoulders in view.</p>}

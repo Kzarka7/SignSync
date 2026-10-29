@@ -96,5 +96,5 @@ export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEn
     return ()=>window.removeEventListener('keydown',key)
   }, [stop,start])
   return {feed,running,loading,status,error,start,stop,countdown,countdownSeconds,
-    setCountdownSeconds:(seconds:number)=>{if(!predictor.current && [0,1,3,5].includes(seconds))setCountdownSeconds(seconds)}}
+    setCountdownSeconds:(seconds:number)=>{if(!predictor.current && Number.isInteger(seconds) && seconds >= 0 && seconds <= 120)setCountdownSeconds(seconds)}}
 }

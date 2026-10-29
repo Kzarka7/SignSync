@@ -144,3 +144,23 @@ export async function buildPerSampleZipExport(
   const zipFilename = `signsync-dataset-${slug}-${sequences.length}x-${dateTimeStamp()}-samples.zip`
   return { blob, filename: zipFilename }
 }
+
+
+export async function buildOriginalVideosZipExport(takes: { label: string; file: Pick<File, 'name' | 'arrayBuffer'> }[]): Promise<{ blob: Blob; filename: string }> {
+  if (!takes.length) throw new Error('No queued videos to download.')
+  const zip = new JSZip()
+  const labels = takes.map(take => take.label.trim().toUpperCase()
+    .replace(/[\s-]+/g, '_').replace(/[^A-Z0-9_]/g, '') || 'SIGN')
+  const uniqueLabels = new Set(labels)
+  const sign = uniqueLabels.size === 1 ? labels[0] : 'MIXED_SIGNS'
+  const folder = `signsync-video-recordings-${sign}-${dateTimeStamp().split('_')[0]}`
+  const counts = new Map<string, number>()
+  for (const [index, take] of takes.entries()) {
+    const label = labels[index]
+    const number = (counts.get(label) ?? 0) + 1
+    counts.set(label, number)
+    const extension = take.file.name.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase() ?? 'mp4'
+    zip.file(`${label}-${number}.${extension}`, await take.file.arrayBuffer())
+  }
+  return { blob: await zip.generateAsync({ type: 'blob' }), filename: `${folder}.zip` }
+}
