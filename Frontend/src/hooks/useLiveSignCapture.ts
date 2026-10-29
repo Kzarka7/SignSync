@@ -112,22 +112,23 @@ export function useLiveSignCapture(sendSign: (request: SignRequest) => boolean, 
   const start = () => {
     if (automatic.current || !ready || !feed.cameraReady || !feed.poseDetected || phase !== 'idle') return
     setError(null)
-    setPhase('countdown')
-    let remaining = countdownSeconds
-    setCountdown(remaining)
-    countdownTimer.current = setInterval(() => {
-      remaining -= 1
-      if (remaining > 0) {
-        setCountdown(remaining)
-        return
-      }
-      if (countdownTimer.current) clearInterval(countdownTimer.current)
-      countdownTimer.current = null
+    const begin = () => {
       setCountdown(null)
       buffer.current = []
       recording.current = true
       setPhase('recording')
       limit.current = setTimeout(() => finishRef.current(), 8000)
+    }
+    if (countdownSeconds === 0) { begin(); return }
+    setPhase('countdown')
+    let remaining = countdownSeconds
+    setCountdown(remaining)
+    countdownTimer.current = setInterval(() => {
+      remaining -= 1
+      if (remaining > 0) { setCountdown(remaining); return }
+      if (countdownTimer.current) clearInterval(countdownTimer.current)
+      countdownTimer.current = null
+      begin()
     }, 1000)
   }
 
@@ -160,6 +161,6 @@ export function useLiveSignCapture(sendSign: (request: SignRequest) => boolean, 
 
   return { feed, phase, count, countdown, countdownSeconds, continuous, boundaryPhase, queued, startContinuous, stopContinuous,
     setCountdownSeconds: (seconds: number) => {
-      if (phase === 'idle' && [1, 3, 5].includes(seconds)) setCountdownSeconds(seconds)
+      if (phase === 'idle' && Number.isInteger(seconds) && seconds >= 0 && seconds <= 120) setCountdownSeconds(seconds)
     }, error, start, finish, cancel }
 }

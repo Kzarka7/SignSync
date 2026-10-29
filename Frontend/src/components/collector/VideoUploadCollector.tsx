@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import type { LabeledSequence, TrainingCollectionMetadata, VideoQualityWindow } from '../../types/dataset'
 import { deleteSequence, hasSourceFingerprint, saveSequence } from '../../services/dataset/datasetStorage'
-import { triggerDownload } from '../../services/dataset/datasetExport'
+import { buildOriginalVideosZipExport, triggerDownload } from '../../services/dataset/datasetExport'
 import { fingerprintVideo, IMPORT_FPS, processVideo, VIDEO_IMPORT_VERSION, BOUNDARY_IMPORT_VERSION } from '../../services/dataset/videoImport'
 import { drawVideoLandmarks, previewFrame } from '../../services/dataset/videoPreview'
 import { automaticSignInterval, reviewSignInterval, type ExpectedHands } from '../../services/dataset/videoDiagnostics'
@@ -237,6 +237,24 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
   const [removedTake, setRemovedTake] = useState<RemovedTakes | null>(null)
   const [removedAll, setRemovedAll] = useState<RemovedTakes | null>(null)
   const [saveError, setSaveError] = useState('')
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState('')
+  const downloading = useRef(false)
+  const downloadAll = async () => {
+    if (downloading.current || !takes.length) return
+    downloading.current = true
+    setIsDownloading(true)
+    setDownloadError('')
+    try {
+      const { blob, filename } = await buildOriginalVideosZipExport(takes.map(take => ({ label: take.label, file: take.file })))
+      triggerDownload(blob, filename)
+    } catch (error) {
+      setDownloadError(`Could not download videos: ${error instanceof Error ? error.message : 'Please try again.'}`)
+    } finally {
+      downloading.current = false
+      setIsDownloading(false)
+    }
+  }
   const [relabelOpen, setRelabelOpen] = useState(false)
   const [replacementLabel, setReplacementLabel] = useState('')
   const [relabelScope, setRelabelScope] = useState<'current' | 'checked' | 'all'>('checked')
@@ -564,7 +582,8 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
     {takes.length === 0 && controls && <Card><h2 className="font-semibold text-lg">Review queue</h2><p className="text-sm text-text-2 mt-3">No recordings added yet.</p></Card>}
     {takes.length > 0 && <Card><div className="space-y-3">
       <div className="flex items-center justify-between gap-3"><h2 className="font-semibold text-lg">Review queue <span className="text-text-2 font-normal">({takes.length})</span></h2>
-        <span className="text-xs text-text-2 tabular-nums">{takes.filter(take => take.status === 'Saved').length} saved · {takes.filter(take => take.reviewed && canReview(take)).length} checked</span></div>
+        <div className="flex flex-wrap items-center justify-end gap-3"><Button size="sm" disabled={isDownloading} title="Download all original videos in one ZIP" onClick={downloadAll}>{isDownloading ? 'Preparing download...' : 'Download all'}</Button><span className="text-xs text-text-2 tabular-nums">{takes.filter(take => take.status === 'Saved').length} saved · {takes.filter(take => take.reviewed && canReview(take)).length} checked</span></div></div>
+      {downloadError && <p role="alert" className="text-sm text-danger">{downloadError}</p>}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3 text-xs text-text-2 tabular-nums">
           <span>{processed.length}/{takes.length} samples processed</span>

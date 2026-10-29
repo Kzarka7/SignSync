@@ -1,6 +1,7 @@
 import { Circle, Square, Timer, Trash2, X } from 'lucide-react'
 import { useEffect, useState, type MutableRefObject, type ReactNode } from 'react'
 import Button from '../shared/Button'
+import SecondsInput from '../shared/SecondsInput'
 
 function LiveFps({ processedFramesRef }: { processedFramesRef: MutableRefObject<number> }) {
   const [fps, setFps] = useState<number | null>(null)
@@ -37,7 +38,6 @@ interface RecordingControlsProps {
   onDiscard: () => void
 }
 
-const COUNTDOWN_OPTIONS = [1, 3, 5]
 
 export default function RecordingControls({
   stopLabel = 'Stop & save',
@@ -84,41 +84,15 @@ export default function RecordingControls({
           <div className="flex items-center gap-1.5 text-sm text-text-2" role="group" aria-label="Recording delay">
             <Timer size={14} />
             <span>Delay:</span>
-            <div className="flex gap-1">
-              {COUNTDOWN_OPTIONS.map((seconds) => (
-                <button
-                  key={seconds}
-                  type="button"
-                  aria-pressed={countdownSeconds === seconds}
-                  onClick={() => onChangeCountdownSeconds(countdownSeconds === seconds ? 0 : seconds)}
-                  className={`px-2 py-0.5 rounded-md text-xs font-medium border transition-colors ${
-                    countdownSeconds === seconds
-                      ? 'bg-signal text-white border-signal'
-                      : 'bg-white text-text-2 border-border hover:border-signal'
-                  }`}
-                >
-                  {seconds}s
-                </button>
-              ))}
-            </div>
+            <SecondsInput label="Recording delay (seconds)" value={countdownSeconds} onChange={onChangeCountdownSeconds} />
+            <span className="text-xs">seconds (0 = none)</span>
           </div>
           <div className="flex shrink-0 items-center gap-1.5 text-sm text-text-2" role="group" aria-label="Sample duration">
             <Timer size={14} />
             <span>Duration:</span>
-            <div className="flex gap-1">
-              {COUNTDOWN_OPTIONS.map(seconds => (
-                <button key={seconds} type="button"
-                  aria-pressed={durationLimitMs === seconds * 1000}
-                  onClick={() => onChangeDurationLimitMs(durationLimitMs === seconds * 1000 ? undefined : seconds * 1000)}
-                  className={`px-2 py-0.5 rounded-md text-xs font-medium border transition-colors ${
-                    durationLimitMs === seconds * 1000
-                      ? 'bg-signal text-white border-signal'
-                      : 'bg-white text-text-2 border-border hover:border-signal'
-                  }`}>
-                  {seconds}s
-                </button>
-              ))}
-            </div>
+            <SecondsInput label="Sample duration (seconds)" value={(durationLimitMs ?? 0) / 1000} step={0.1}
+              onChange={seconds => onChangeDurationLimitMs(seconds === 0 ? undefined : seconds * 1000)} />
+            <span className="text-xs">seconds (0 = manual stop)</span>
           </div>
           </div>
         </>

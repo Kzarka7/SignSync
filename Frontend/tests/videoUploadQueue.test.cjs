@@ -17,6 +17,7 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
   }
   const slots = []; let cursor = 0, dirty = false, effects = [], tree, id = 0
   let saved = [], failDelete = false
+  const downloads = [], downloadBatches = []
   const pendingSaves = []
   const pending = []
   const processingOptions = []
@@ -55,6 +56,10 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
     if (name.endsWith('collectorShortcuts')) return loadService(path.resolve(__dirname, '../src/services/dataset/collectorShortcuts.ts'))
     if (name.endsWith('videoDiagnostics')) return { automaticSignInterval: () => suggestion }
     if (name.endsWith('videoQuality')) return { assessBoundaryVideoQuality: () => ({ result: 'Pass', findings: [] }), assessVideoQuality: (_frames, _hands, _timing, window) => ({ result: window ? 'Pass' : 'Review', findings: [] }) }
+    if (name.endsWith('datasetExport')) return {
+      buildOriginalVideosZipExport: async files => { downloadBatches.push(files); return { blob: files, filename: 'originals.zip' } },
+      triggerDownload: (blob, filename) => downloads.push({ blob, filename }),
+    }
     if (name.endsWith('datasetStorage')) return {
       hasSourceFingerprint: async fingerprint => saved.some(s => s.videoImport?.fingerprint === fingerprint),
       saveSequence: async sample => { if (holdSave) await new Promise(resolve => pendingSaves.push(resolve)); if (failSave) throw Error('QuotaExceededError: storage full'); saved.push(sample) },
@@ -101,7 +106,7 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
       previews[previews.length - 1].props.onClick(); render(); confirm()
     }
   }
-  return { pendingSaves, allowSave: () => { failSave = false }, render, all, button, upload, saved: () => saved, pending, confirm, processingOptions,
+  return { downloads, downloadBatches, pendingSaves, allowSave: () => { failSave = false }, render, all, button, upload, saved: () => saved, pending, confirm, processingOptions,
     relabel(scope,label) {
       if (!button('Change label').props['aria-expanded']) { button('Change label').props.onClick();render() }
       all(n=>n.props?.labelText==='New sign label')[0].props.onSelectLabel(label);render()
@@ -605,4 +610,20 @@ test('a take stays Saving until commit, rejects double saves, and failed saves r
   h.pendingSaves.shift()(); await retry; h.render()
   assert.equal(h.saved().length, 1)
   assert.ok(h.button('Undo save'))
+})
+
+
+test('Download all includes reviewed and unreviewed queue originals without saving samples', async () => {
+  const h = harness()
+  await h.upload('first.mp4'); h.key('c')
+  await h.upload('second.mp4')
+  const result = h.button('Download all').props.onClick(); h.render()
+  assert.equal(h.button('Preparing download...').props.disabled, true)
+  await result; h.render()
+  assert.deepEqual(Array.from(h.downloadBatches[0], take => take.file.name), ['first.mp4', 'second.mp4'])
+  assert.ok(h.downloadBatches[0].every(take => take.label === 'HELLO'))
+  assert.equal(h.downloads.length, 1)
+  assert.equal(h.downloads[0].filename, 'originals.zip')
+  assert.equal(h.saved().length, 0)
+  assert.equal(h.button('Download all').props.disabled, false)
 })
