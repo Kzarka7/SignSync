@@ -153,7 +153,7 @@ export async function buildOriginalVideosZipExport(takes: { label: string; file:
     .replace(/[\s-]+/g, '_').replace(/[^A-Z0-9_]/g, '') || 'SIGN')
   const uniqueLabels = new Set(labels)
   const sign = uniqueLabels.size === 1 ? labels[0] : 'MIXED_SIGNS'
-  const folder = `signsync-video-recordings-${sign}-${dateTimeStamp().split('_')[0]}`
+  const folder = `signsync-video-recordings-${sign}`
   const counts = new Map<string, number>()
   for (const [index, take] of takes.entries()) {
     const label = labels[index]

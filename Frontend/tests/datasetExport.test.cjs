@@ -139,7 +139,7 @@ test('original video ZIP contains SIGN-number videos directly at its root and pr
     file: { name: 'same.mp4', arrayBuffer: async () => bytes.buffer },
   })))
   const zip = await JSZip.loadAsync(await blob.arrayBuffer())
-  assert.match(filename, /^signsync-video-recordings-MIXED_SIGNS-\d{4}-\d{2}-\d{2}\.zip$/)
+  assert.equal(filename, 'signsync-video-recordings-MIXED_SIGNS.zip')
   const names = ['HELLO-1.mp4', 'THANK_YOU-1.mp4', 'HELLO-2.mp4']
   for (const [i, bytes] of inputs.entries()) {
     assert.deepEqual(await zip.file(names[i]).async('uint8array'), bytes)
@@ -147,7 +147,7 @@ test('original video ZIP contains SIGN-number videos directly at its root and pr
   assert.equal(Object.values(zip.files).filter(file => file.dir).length, 0)
   assert.equal(Object.values(zip.files).filter(file => !file.dir).length, 3)
   const single = await buildOriginalVideosZipExport([{ label: 'Thank you', file: { name: 'clip.MOV', arrayBuffer: async () => inputs[0].buffer } }])
-  assert.match(single.filename, /^signsync-video-recordings-THANK_YOU-\d{4}-\d{2}-\d{2}\.zip$/)
+  assert.equal(single.filename, 'signsync-video-recordings-THANK_YOU.zip')
   const singleZip = await JSZip.loadAsync(await single.blob.arrayBuffer())
   assert.ok(singleZip.file('THANK_YOU-1.mov'))
   await assert.rejects(buildOriginalVideosZipExport([]), /No queued videos/)
