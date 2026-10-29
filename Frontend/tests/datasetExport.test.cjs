@@ -129,3 +129,26 @@ test('ZIP sample filenames use full IDs and actual labels without numbering', as
   await assert.rejects(buildPerSampleZipExport([samples[0], samples[0]]), /duplicate filename/)
   await assert.rejects(buildPerSampleZipExport([{ ...base, id: '../unsafe' }]), /unsafe filename ID/)
 })
+
+
+test('original video ZIP contains SIGN-number videos directly at its root and preserves bytes', async () => {
+  const { buildOriginalVideosZipExport } = loadExport()
+  const inputs = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5]), new Uint8Array([6])]
+  const { blob, filename } = await buildOriginalVideosZipExport(inputs.map((bytes, index) => ({
+    label: index === 1 ? 'THANK_YOU' : 'HELLO',
+    file: { name: 'same.mp4', arrayBuffer: async () => bytes.buffer },
+  })))
+  const zip = await JSZip.loadAsync(await blob.arrayBuffer())
+  assert.match(filename, /^signsync-video-recordings-MIXED_SIGNS-\d{4}-\d{2}-\d{2}\.zip$/)
+  const names = ['HELLO-1.mp4', 'THANK_YOU-1.mp4', 'HELLO-2.mp4']
+  for (const [i, bytes] of inputs.entries()) {
+    assert.deepEqual(await zip.file(names[i]).async('uint8array'), bytes)
+  }
+  assert.equal(Object.values(zip.files).filter(file => file.dir).length, 0)
+  assert.equal(Object.values(zip.files).filter(file => !file.dir).length, 3)
+  const single = await buildOriginalVideosZipExport([{ label: 'Thank you', file: { name: 'clip.MOV', arrayBuffer: async () => inputs[0].buffer } }])
+  assert.match(single.filename, /^signsync-video-recordings-THANK_YOU-\d{4}-\d{2}-\d{2}\.zip$/)
+  const singleZip = await JSZip.loadAsync(await single.blob.arrayBuffer())
+  assert.ok(singleZip.file('THANK_YOU-1.mov'))
+  await assert.rejects(buildOriginalVideosZipExport([]), /No queued videos/)
+})

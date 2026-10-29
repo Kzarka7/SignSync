@@ -1,3 +1,4 @@
+import SecondsInput from '../shared/SecondsInput'
 import { Circle, Square, Timer, Trash2, X } from 'lucide-react'
 import type { useLiveSignCapture } from '../../hooks/useLiveSignCapture'
 import type { useTranslationStream } from '../../hooks/useTranslationStream'
@@ -65,23 +66,8 @@ export default function SignRecognitionPanel({ capture, stream }: {
             <div className="flex items-center gap-1.5 text-sm text-text-2">
               <Timer size={14} />
               <span id="live-recording-delay">Delay:</span>
-              <div className="flex gap-1" role="group" aria-labelledby="live-recording-delay">
-                {[1, 3, 5].map(seconds => (
-                  <button
-                    key={seconds}
-                    type="button"
-                    aria-pressed={capture.countdownSeconds === seconds}
-                    onClick={() => capture.setCountdownSeconds(seconds)}
-                    className={`px-2 py-0.5 rounded-md text-xs font-medium border transition-colors ${
-                      capture.countdownSeconds === seconds
-                        ? 'bg-signal text-white border-signal'
-                        : 'bg-white text-text-2 border-border hover:border-signal'
-                    }`}
-                  >
-                    {seconds}s
-                  </button>
-                ))}
-              </div>
+              <SecondsInput label="Recording delay (seconds)" value={capture.countdownSeconds} onChange={capture.setCountdownSeconds} />
+              <span className="text-xs">seconds (0 = none)</span>
             </div>
           </>
         ) : (
