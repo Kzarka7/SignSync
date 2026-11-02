@@ -37,3 +37,19 @@ python -c "import sys, unittest; sys.path.insert(0, 'scripts'); result = unittes
 
 See [LIVE_V5.md](LIVE_V5.md) for the v5 camera-to-conversation setup, artifact
 requirements, model choice, development limitations, and integration checks.
+
+## External image dataset preparation
+
+See [IMAGE_DATASETS.md](IMAGE_DATASETS.md) for the standalone, read-only external
+image importer, static/sequence separation, catalog review, provenance-aware
+splits and reproducible preparation commands. Entry point:
+`python scripts/prepare_image_dataset.py --help`. This does not train or deploy.
+
+After extraction, [IMAGE_REVIEW.md](IMAGE_REVIEW.md) explains automatic technical
+review, visual letter sheets, batch approvals and proposed catalogs. Entry point:
+`python scripts/review_image_dataset.py --help`.
+
+After approval, [STATIC_ALPHABET_PREPARATION.md](STATIC_ALPHABET_PREPARATION.md)
+describes preparing and auditing the 24-letter static arrays from the extraction
+cache, without training. Entry point:
+`python scripts/prepare_reviewed_static_dataset.py --help`.
