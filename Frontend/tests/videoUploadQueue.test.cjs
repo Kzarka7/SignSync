@@ -209,6 +209,34 @@ test('R removes and restores the selected take in order with its review and proc
   h.key('r');h.key('r');assert.equal(h.preview().props.take.id,original.id)
 })
 
+test('Q/E navigate from the removed preview position instead of restarting the queue',async()=>{
+  for(const action of ['q','e']) for(const removeWith of ['keyboard','button']) {
+    const h=harness()
+    for(const name of ['first.mp4','before.mp4','removed.mp4','after.mp4','last.mp4'])await h.upload(name)
+    h.all(n=>n.type==='button'&&n.props['aria-label']==='Preview / review')[2].props.onClick();h.render()
+    if(removeWith==='keyboard')h.key('r')
+    else {h.all(n=>n.type==='button'&&n.props['aria-label']==='Remove from queue')[2].props.onClick();h.render()}
+    assert.equal(h.preview(),undefined)
+    h.key(action)
+    assert.equal(h.preview().props.take.file.name,action==='q'?'before.mp4':'after.mp4',`${removeWith} ${action}`)
+    h.key(action)
+    assert.equal(h.preview().props.take.file.name,action==='q'?'first.mp4':'last.mp4')
+  }
+})
+
+test('navigation after removing the first, last or only preview stays within the remaining queue',async()=>{
+  for(const index of [0,2])for(const action of ['q','e']){
+    const h=harness()
+    for(const name of ['first.mp4','middle.mp4','last.mp4'])await h.upload(name)
+    h.all(n=>n.type==='button'&&n.props['aria-label']==='Preview / review')[index].props.onClick();h.render()
+    h.key('r');h.key(action)
+    assert.equal(h.preview().props.take.file.name,'middle.mp4')
+  }
+  const h=harness();await h.upload('only.mp4');h.key('r');h.key('q');h.key('e')
+  assert.equal(h.preview(),undefined)
+  h.key('r');assert.equal(h.preview().props.take.file.name,'only.mp4')
+})
+
 test('Shift+R removes and restores unsaved takes while protecting saved samples',async()=>{
   const h=harness();await h.upload('saved.mp4');h.key('c');h.key('s')
   await new Promise(resolve=>setImmediate(resolve));h.render()

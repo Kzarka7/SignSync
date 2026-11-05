@@ -234,6 +234,8 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
 }) {
   const [takes, setTakes] = useState<Take[]>([])
   const [selected, setSelected] = useState<string | null>(null)
+  // Position between the surviving neighbors while a removed preview is blank.
+  const removedPreviewPosition = useRef<number | null>(null)
   const [removedTake, setRemovedTake] = useState<RemovedTakes | null>(null)
   const [removedAll, setRemovedAll] = useState<RemovedTakes | null>(null)
   const [saveError, setSaveError] = useState('')
@@ -439,7 +441,14 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
       if (take.fingerprint && fingerprints.current.get(take.fingerprint) === take.id) fingerprints.current.delete(take.fingerprint)
     }
     setTakes(previous => previous.filter(take => !ids.has(take.id)))
-    if (selected && ids.has(selected)) setSelected(null)
+    if (selected && ids.has(selected)) {
+      const index = takes.findIndex(take => take.id === selected)
+      removedPreviewPosition.current = takes.slice(0, index).filter(take => !ids.has(take.id)).length
+      setSelected(null)
+    } else if (!selected && removedPreviewPosition.current !== null) {
+      const position = removedPreviewPosition.current
+      removedPreviewPosition.current -= items.filter(item => item.index < position).length
+    }
   }
   const restoreTakes = (snapshot: RemovedTakes | null, all: boolean) => {
     if (saving.current || !snapshot) return
@@ -455,6 +464,7 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
       if (take.fingerprint && !duplicate) fingerprints.current.set(take.fingerprint, take.id)
     }
     setTakes(restored)
+    removedPreviewPosition.current = null
     setSelected(snapshot.selected && restored.some(take => take.id === snapshot.selected) ? snapshot.selected : snapshot.items[0]?.take.id ?? null)
     if (all) setRemovedAll(null); else setRemovedTake(null)
   }
@@ -484,7 +494,11 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
         if (!takes.length || isSaving) return
         event.preventDefault()
         const index = takes.findIndex(take => take.id === selected)
-        const next = index < 0 ? 0 : Math.min(takes.length - 1, Math.max(0, index + (action === 'next' ? 1 : -1)))
+        const position = index < 0
+          ? removedPreviewPosition.current === null ? 0 : removedPreviewPosition.current + (action === 'previous' ? -1 : 0)
+          : index + (action === 'next' ? 1 : -1)
+        const next = Math.min(takes.length - 1, Math.max(0, position))
+        removedPreviewPosition.current = null
         setSelected(takes[next].id)
         // Only Q/E center rows. Change this scroll container alone so the page
         // stays in place and manual scrolling is never corrected on re-render.
