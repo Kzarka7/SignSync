@@ -6,7 +6,7 @@ const vm = require('node:vm')
 const ts = require('typescript')
 const React = require('react')
 
-function harness({ holdSave = false, failSave = false, holdProcessing = false, suggestion = null, reviewSuggestion = null, stationaryInterval = null, trimReason = 'Preparation pause could not be confirmed.', trimFails = false, trimRetake = false, training } = {}) {
+function harness({ holdSave = false, failSave = false, holdProcessing = false, suggestion = null, reviewSuggestion = null, stationaryInterval = null, sourceFrames, trimReason = 'Preparation pause could not be confirmed.', trimFails = false, trimRetake = false, training } = {}) {
   const serviceCache = new Map()
   function loadService(file) {
     if (serviceCache.has(file)) return serviceCache.get(file)
@@ -73,7 +73,9 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
       signal.throwIfAborted()
       trimOptions.push({ interval, qualityWindow })
       if (trimFails) throw Error('trim failed')
-      return { ...source, ...interval, qualityWindow, quality: { result: trimRetake ? 'Retake' : 'Pass', findings: [] } }
+      const frames = sourceFrames ? source.frames.filter(frame =>
+        frame.timestamp >= interval.start * 1000 && frame.timestamp < interval.end * 1000) : source.frames
+      return { ...source, ...interval, frames, qualityWindow, quality: { result: trimRetake ? 'Retake' : 'Pass', findings: [] } }
     } }
     if (name.endsWith('videoImport')) return {
       fingerprintVideo: async file => file.name, IMPORT_FPS: 30, VIDEO_IMPORT_VERSION: 'test', BOUNDARY_IMPORT_VERSION: 'boundary-test',
@@ -82,7 +84,7 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
         processingOptions[processingOptions.length - 1].interval = _interval
         if (holdProcessing) await new Promise(resolve => pending.push({ resolve, signal, onProgress }))
         if (_interval && trimFails) throw Error('decoder failed')
-        return { frames: [{ timestamp: 0 }, { timestamp: 500 }], qualityWindow: options.qualityWindow, sampling: { effectiveTargetFps: 20, achievedFps: 20 }, quality: { result: _interval && trimRetake ? 'Retake' : 'Pass', findings: [] }, start: _interval?.start ?? 0, end: _interval?.end ?? 1, duration: 1, width: 640, height: 480 }
+        return { frames: sourceFrames ?? [{ timestamp: 0 }, { timestamp: 500 }], qualityWindow: options.qualityWindow, sampling: { effectiveTargetFps: 20, achievedFps: 20 }, quality: { result: _interval && trimRetake ? 'Retake' : 'Pass', findings: [] }, start: _interval?.start ?? 0, end: _interval?.end ?? 1, duration: 1, width: 640, height: 480 }
       },
     }
     return { default: name.endsWith('Button') ? 'button' : 'section', __esModule: true }
@@ -568,6 +570,21 @@ test('stationary upload keeps a short trimmed interval visible as a retake', asy
   assert.match(take.result.quality.findings[0], /at least 10 frames/)
   assert.equal(h.check().props.disabled, true)
   assert.equal(h.saved().length, 0)
+})
+
+test('stationary upload adds only the clearance needed to pass the short-trim check', async () => {
+  const h = harness({ stationaryInterval: { start: .2, end: .65 },
+    sourceFrames: Array.from({ length: 20 }, (_, i) => ({ timestamp: i * 50 })) })
+  h.render()
+  h.all(n => n.type === 'select' && n.props.value === 'standard')[0].props.onChange({ target: { value: 'stationary' } })
+  await h.upload('hold-with-clearance.mp4', false)
+  const take = h.preview().props.take
+  assert.equal(h.trimOptions.length, 2)
+  assert.ok(take.result.start < .2 && take.result.end > .65)
+  assert.ok(take.result.frames.length >= 10)
+  assert.notEqual(take.result.quality.result, 'Retake')
+  assert.match(take.message, /short margin/)
+  assert.equal(h.check().props.checked, false)
 })
 
 test('end-only trim preserves the source beginning and still requires human review', async () => {
