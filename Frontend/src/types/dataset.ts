@@ -53,6 +53,7 @@ export interface VideoImportMetadata {
     duplicateTimestamps: number
     processingMs: number
     processingFps: number
+    reusedFrom?: { startMs: number; endMs: number; selectedFrames: number }
   }
   intervalReview?: {
     protocol: 'video-interval-review-v1'
