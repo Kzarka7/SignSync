@@ -5,7 +5,7 @@ import { deleteSequence, hasSourceFingerprint, saveSequence } from '../../servic
 import { buildOriginalVideosZipExport, triggerDownload } from '../../services/dataset/datasetExport'
 import { fingerprintVideo, IMPORT_FPS, processVideo, VIDEO_IMPORT_VERSION, BOUNDARY_IMPORT_VERSION } from '../../services/dataset/videoImport'
 import { drawVideoLandmarks, previewFrame } from '../../services/dataset/videoPreview'
-import { automaticSignInterval, reviewSignInterval, type ExpectedHands } from '../../services/dataset/videoDiagnostics'
+import { analyzeSignInterval, reviewSignInterval, stationarySignInterval, type ExpectedHands } from '../../services/dataset/videoDiagnostics'
 import { assessVideoQuality, assessBoundaryVideoQuality } from '../../services/dataset/videoQuality'
 import { bindVideoReplay } from '../../services/dataset/videoPlayback'
 import { confirmInterval, intervalReviewMatches, isFullRecording, type IntervalReview } from '../../services/dataset/videoIntervalReview'
@@ -16,6 +16,7 @@ import { Keyboard } from 'lucide-react'
 import CollectorShortcutHelp from './CollectorShortcutHelp'
 import LabelPicker from './LabelPicker'
 import { adjustedIntervalTime, collectorShortcut } from '../../services/dataset/collectorShortcuts'
+import { trimProcessedVideo } from '../../services/dataset/videoTrim'
 
 type Result = Awaited<ReturnType<typeof processVideo>> & { contextCandidate?: VideoQualityWindow }
 type Take = {
@@ -30,6 +31,8 @@ type Take = {
   intervalReview?: IntervalReview
   origin?: 'uploaded-file' | 'camera-recording'
   autoTrim?: boolean
+  stationaryTrim?: boolean
+  autoTrimmed?: boolean
   qualityWindow?: VideoQualityWindow
   contextCandidate?: VideoQualityWindow
 }
@@ -42,8 +45,13 @@ function purposeOf(take: Pick<Take, 'training'>) {
 function qualityFor(take: Take, result: Result, expectedHands: ExpectedHands) {
   const purpose = purposeOf(take)
   const timing = result.sampling ? { endMs: (result.end - result.start) * 1000, fps: result.sampling.effectiveTargetFps } : undefined
-  return purpose ? assessBoundaryVideoQuality(result.frames, purpose, expectedHands, timing)
+  const quality = purpose ? assessBoundaryVideoQuality(result.frames, purpose, expectedHands, timing)
     : assessVideoQuality(result.frames, expectedHands, timing, result.qualityWindow)
+  if (take.stationaryTrim && result.frames.length < 10) {
+    return { ...quality, result: 'Retake' as const,
+      findings: [`Only ${result.frames.length} frames remain. A stationary sign needs at least 10 frames.`, ...quality.findings] }
+  }
+  return quality
 }
 
 function hasPendingTrim(take: Take) {
@@ -74,7 +82,8 @@ function TakePreview({ locked = false, take, onTrim, onDraftChange, onHandsChang
   const [end, setEnd] = useState(take.draft?.end ?? take.result?.end ?? 0)
   const [duration, setDuration] = useState(take.result?.duration ?? 0)
   const [previewError, setPreviewError] = useState('')
-  const suggestion = useMemo(() => take.fullResult && !purposeOf(take) ? reviewSignInterval(take.fullResult.frames, take.fullResult.duration) : null, [take.fullResult, take.training])
+  const suggestion = useMemo(() => take.fullResult && !purposeOf(take) && !take.stationaryTrim
+    ? reviewSignInterval(take.fullResult.frames, take.fullResult.duration) : null, [take.fullResult, take.training, take.stationaryTrim])
   useEffect(() => {
     const objectUrl = URL.createObjectURL(take.file); setUrl(objectUrl)
     return () => URL.revokeObjectURL(objectUrl)
@@ -205,6 +214,8 @@ function TakePreview({ locked = false, take, onTrim, onDraftChange, onHandsChang
     <fieldset disabled={locked || take.status === 'Saving' || take.status === 'Processing' || take.status === 'Queued' || take.status === 'Saved' || take.status === 'Duplicate'} className="space-y-3 mt-3">
       {suggestion && <div className="border border-border rounded p-2 space-y-2 text-sm">
         <p>Suggested: {suggestion.start.toFixed(2)}–{suggestion.end.toFixed(2)}s</p>
+        <p className="text-xs font-semibold">{take.autoTrimmed ? 'Automatically applied—review before saving' : 'Suggested—needs review'}</p>
+        {take.message && <p className="text-xs text-text-2">{take.message}</p>}
         <p className="text-xs text-text-2">{suggestion.reason}</p>
         <Button size="sm" data-collector-shortcut="suggest" disabled={!canEdit} onClick={() => { setStart(suggestion.start); setEnd(suggestion.end); updateDraft(suggestion.start, suggestion.end); if (video.current) video.current.currentTime = suggestion.start }}>Use suggested interval</Button>
       </div>}
@@ -267,6 +278,7 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
   const saving = useRef(false)
   const [isSaving, setIsSaving] = useState(false)
   const [autoTrim, setAutoTrim] = useState(true)
+  const [stationaryTrim, setStationaryTrim] = useState(false)
   const boundary = !!purposeOf({ training })
   const allPreviewsCheckbox = useRef<HTMLInputElement>(null)
   const eligibleTakes = takes.filter(canReview)
@@ -329,40 +341,54 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
         fingerprints.current.set(fingerprint, take.id)
         update({ fingerprint })
         let result: Result = await processVideo(take.file, controller.signal, progress => {
-          if (alive.current) update({ progress: !take.interval && take.autoTrim ? Math.round(progress * .5) : progress })
+          if (alive.current) update({ progress })
         }, take.interval, { targetFps: IMPORT_FPS, qualityWindow: take.qualityWindow, samplePurpose: purposeOf(take) })
         result.contextCandidate = take.contextCandidate
         controller.signal.throwIfAborted()
         const fullResult = isFullRecording(result.start, result.end, result.duration) ? result : take.fullResult
         let message: string | undefined, intervalReview: IntervalReview | undefined
-        if (!take.interval && take.autoTrim) {
-          const suggested = automaticSignInterval(result.frames, result.duration)
-          if (suggested) {
-            update({ progress: 50, message: 'Auto-trimming and reprocessing the suggested interval…' })
+        let autoTrimmed = take.autoTrimmed ?? false
+        if (!take.interval && take.autoTrim && take.stationaryTrim) {
+          const interval = stationarySignInterval(result.frames, result.duration)
+          if (interval) {
+            result = trimProcessedVideo(result, interval, controller.signal)
+            autoTrimmed = true
+            message = 'Trimmed to the steady sign after entry movement. Preview both boundaries.'
+          } else {
+            message = 'No single steady sign was confirmed. Check the full recording and adjust the interval if needed.'
+          }
+        } else if (!take.interval && take.autoTrim) {
+          const analysis = analyzeSignInterval(result.frames, result.duration)
+          // Apply the same candidate offered in review, including the outer-trim
+          // fallback. Conservative confidence checks still govern quality-window
+          // exemptions; human review decides whether this is a complete sign.
+          const suggested = analysis.automatic ?? analysis.suggestion
+          if (suggested && !isFullRecording(suggested.start, suggested.end, result.duration)) {
+            update({ progress: 99, message: 'Applying suggested trim…' })
             try {
-              const qualityWindow: VideoQualityWindow = { protocol: 'gesture-context-v1', basis: 'automatic-hand-activity',
-                startMs: suggested.activityStartMs - suggested.start * 1000, endMs: suggested.activityEndMs - suggested.start * 1000 }
-              const trimmed = await processVideo(take.file, controller.signal, progress => {
-                if (alive.current) update({ progress: 50 + Math.round(progress * .49) })
-              }, { start: suggested.start, end: suggested.end }, { targetFps: IMPORT_FPS, qualityWindow })
+              const qualityWindow: VideoQualityWindow | undefined = analysis.automatic ? {
+                protocol: 'gesture-context-v1', basis: 'automatic-hand-activity',
+                startMs: suggested.activityStartMs - suggested.start * 1000, endMs: suggested.activityEndMs - suggested.start * 1000 } : undefined
+              const trimmed = trimProcessedVideo(result, { start: suggested.start, end: suggested.end }, controller.signal, qualityWindow)
               controller.signal.throwIfAborted()
               if (trimmed.quality.result === 'Retake') message = 'Automatic trim had too little usable data. Full recording retained; adjust boundaries manually.'
               else {
                 result = { ...trimmed, contextCandidate: qualityWindow }
-                message = 'Automatically trimmed and reprocessed. Preview one complete sign before checking Reviewed.'
+                autoTrimmed = true
+                message = 'Automatically trimmed. Preview one complete sign before checking Reviewed.'
               }
             } catch (error) {
               controller.signal.throwIfAborted()
-              message = 'Automatic reprocessing failed. Full recording retained; retry with manual boundaries.'
+              message = 'Automatic trim failed. Full recording retained; retry with manual boundaries.'
             }
-          } else message = 'No clear automatic trim found. Full recording selected. Preview and adjust manually if needed.'
+          } else message = suggested ? 'The suggested interval already covers the full recording. Preview before checking Reviewed.' : `Full recording retained. ${analysis.reason}`
         }
         controller.signal.throwIfAborted()
-        if (purposeOf(take) || take.expectedHands === 'both') result.quality = qualityFor(take, result, take.expectedHands ?? 'either')
+        if (purposeOf(take) || take.expectedHands === 'both' || take.stationaryTrim) result.quality = qualityFor(take, result, take.expectedHands ?? 'either')
         if (!purposeOf(take)) intervalReview = confirmInterval(result.start, result.end, result.duration, take.interval ? 'manual' : 'automatic')
         if (alive.current) update({ status: 'Ready', progress: 100, result,
           fullResult, interval: isFullRecording(result.start, result.end, result.duration) ? take.interval : { start: result.start, end: result.end },
-          qualityWindow: result.qualityWindow, contextCandidate: result.contextCandidate,
+          qualityWindow: result.qualityWindow, contextCandidate: result.contextCandidate, autoTrimmed,
           message, draft: undefined, reviewed: false, intervalReview })
       } catch (error) {
         if (alive.current) update({ status: controller.signal.aborted ? 'Cancelled' : 'Retake',
@@ -559,13 +585,23 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
           const added: Take[] = Array.from(event.target.files ?? []).map(file => ({ id: crypto.randomUUID(), file,
             label: label.trim(), training: training ? { ...training } : undefined,
             expectedHands: training?.category === 'rest' && training.taskId.includes('_both_') ? 'both' : 'either',
-            autoTrim: !boundary && autoTrim, origin: 'uploaded-file', status: 'Queued', progress: 0, reviewed: false }))
+            autoTrim: !boundary && autoTrim, stationaryTrim: !boundary && autoTrim && stationaryTrim,
+            origin: 'uploaded-file', status: 'Queued', progress: 0, reviewed: false }))
           setTakes(previous => [...previous, ...added]); if (!selected && added.length) setSelected(added[0].id)
           event.target.value = ''
         }} /></label>
       {!boundary && <div className="space-y-2 text-sm">
         <label className="flex items-center gap-2"><input type="checkbox" aria-label="Auto-trim and reprocess new recordings" className="w-4 h-4 accent-signal" checked={autoTrim} onChange={event => setAutoTrim(event.target.checked)} />Auto-trim videos</label>
-        <p className="text-xs text-text-2">Intervals are used automatically. Auto-trim removes leading idle or selects the first usable sign between clear pauses; otherwise the full recording is kept. Preview before saving and adjust repeated signs manually.</p>
+        <label className="flex flex-wrap items-center gap-2">Upload trim mode
+          <select className="rounded border border-border px-2 py-1" disabled={!autoTrim}
+            value={stationaryTrim ? 'stationary' : 'standard'} onChange={event => setStationaryTrim(event.target.value === 'stationary')}>
+            <option value="standard">Standard auto-trim</option>
+            <option value="stationary">Stationary sign only</option>
+          </select>
+        </label>
+        <p className="text-xs text-text-2">{stationaryTrim
+          ? 'Keeps the steady sign after entry movement, ending before exit movement if detected. Fewer than 10 frames requires a retake. Preview both boundaries before saving.'
+          : 'Auto-trim removes leading idle or selects the first usable sign between clear pauses. Preview before saving and adjust repeated signs manually.'}</p>
       </div>}
       {boundary && <p className="text-xs text-text-2">Full intervals are kept. Trim manually if needed.</p>}
       </div>
@@ -582,7 +618,7 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
       onHandsChange={expectedHands => patch(current.id, { expectedHands, reviewed: false,
         ...(current.result ? { result: { ...current.result, quality: qualityFor(current, current.result, expectedHands) } } : {}) })}
       onDraftChange={(start, end) => patch(current.id, { draft: { start, end }, reviewed: false, intervalReview: undefined })}
-      onTrim={(start, end) => patch(current.id, { interval: { start, end }, qualityWindow: undefined, contextCandidate: undefined, draft: undefined, status: 'Queued', result: undefined, reviewed: false, intervalReview: undefined })} />}
+      onTrim={(start, end) => patch(current.id, { interval: { start, end }, qualityWindow: undefined, contextCandidate: undefined, autoTrimmed: false, draft: undefined, status: 'Queued', result: undefined, reviewed: false, intervalReview: undefined })} />}
     </div>
     </div>
     <div className={controls ? 'contents xl:block xl:col-start-2 xl:row-start-1 xl:space-y-4' : ''}>
@@ -648,7 +684,7 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
       </div>
       <p className="text-xs text-text-2" aria-label="Queue interval summary">{processed.length - fullCount} trimmed · {fullCount} full recordings · {needIntervalReview} need interval confirmation</p>
       <p id="video-review-instructions" className="text-xs text-text-2">Review each take, then check it to enable saving.</p>
-      <ul ref={reviewQueue} aria-label="Review queue takes" className="space-y-2 max-h-96 overflow-auto overscroll-contain" style={{ scrollbarGutter: 'stable' }}>{takes.map(take => <li key={take.id} data-auto-trimmed={!!take.contextCandidate} className={`border rounded-lg p-3 relative ${selected === take.id ? 'border-signal bg-signal-light' : 'border-border'}`}>
+      <ul ref={reviewQueue} aria-label="Review queue takes" className="space-y-2 max-h-96 overflow-auto overscroll-contain" style={{ scrollbarGutter: 'stable' }}>{takes.map(take => <li key={take.id} data-auto-trimmed={!!take.autoTrimmed} className={`border rounded-lg p-3 relative ${selected === take.id ? 'border-signal bg-signal-light' : 'border-border'}`}>
         <div className="min-w-0 flex-1 space-y-2">
         <p className="text-sm truncate font-semibold pr-14" title={`${take.file.name} · ${take.label}`}>{take.file.name} · {take.label}</p>
         {take.training && <p className="text-xs text-text-2 pr-14">{take.training.taskTitle}</p>}
