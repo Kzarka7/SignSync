@@ -587,6 +587,36 @@ test('stationary upload adds only the clearance needed to pass the short-trim ch
   assert.equal(h.check().props.checked, false)
 })
 
+test('Review next advances through the unfiltered queue and skips reviewed takes', async () => {
+  const h = harness()
+  await h.upload('first.mp4', false)
+  await h.upload('second.mp4', false)
+  assert.equal(h.preview().props.take.file.name, 'first.mp4')
+  assert.equal(h.all(n => n.props?.['aria-label'] === 'Preview / review').length, 2)
+  h.check().props.onChange({ target: { checked: true } })
+  h.render()
+  h.button('Review next').props.onClick()
+  h.render()
+  assert.equal(h.preview().props.take.file.name, 'second.mp4')
+  assert.equal(h.button('Review next').props.disabled, true)
+})
+
+test('manual cached trim skips reprocessing, clears approval and counts the edit', async () => {
+  const h = harness()
+  await h.upload('cached-edit.mp4', false)
+  h.check().props.onChange({ target: { checked: true } })
+  h.render()
+  h.preview().props.onCachedTrim({ start: .2, end: .8 })
+  h.render()
+  const take = h.preview().props.take
+  assert.equal(h.processingOptions.length, 1)
+  assert.equal(take.result.start, .2)
+  assert.equal(take.result.end, .8)
+  assert.equal(take.intervalReview.selectionMethod, 'manual')
+  assert.equal(take.manualEdits, 1)
+  assert.equal(h.check().props.checked, false)
+})
+
 test('end-only trim preserves the source beginning and still requires human review', async () => {
   const h = harness({ suggestion: { start: 0, end: .8, activityStartMs: 0, activityEndMs: 550 } })
   await h.upload('end-only.mp4', false)
