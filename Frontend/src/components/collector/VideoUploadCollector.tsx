@@ -206,7 +206,9 @@ function TakePreview({ locked = false, take, onTrim, onDraftChange, onHandsChang
       <p className="text-xs text-text-2">{purposeOf(take) ? 'Confirm the assigned non-sign task and interval before saving.' : 'Confirm the complete sign and label before saving.'}</p>
     </div>}
     {previewError && <p role="alert">{previewError}</p>}
-    <details className="rounded-lg border border-border p-3 text-sm"><summary className="cursor-pointer font-semibold">Tracking timeline</summary><div className="mt-3 space-y-3">
+    <details open={take.stationaryTrim || undefined} className="rounded-lg border border-border p-3 text-sm"><summary
+      className={take.stationaryTrim ? 'font-semibold' : 'cursor-pointer font-semibold'}
+      onClick={take.stationaryTrim ? event => event.preventDefault() : undefined}>Tracking timeline</summary><div className="mt-3 space-y-3">
     {findingSource && <VideoTrackingTimeline frames={findingSource.frames} start={findingSource.start} end={findingSource.end} selectedStart={replayStart} selectedEnd={replayEnd}
       onSeek={seconds => { stopIntervalPlayback(); if (video.current) video.current.currentTime = seconds }} />}
     </div></details>
@@ -351,9 +353,28 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
         if (!take.interval && take.autoTrim && take.stationaryTrim) {
           const interval = stationarySignInterval(result.frames, result.duration)
           if (interval) {
-            result = trimProcessedVideo(result, interval, controller.signal)
+            const source = result
+            result = trimProcessedVideo(source, interval, controller.signal)
             autoTrimmed = true
             message = 'Trimmed to the steady sign after entry movement. Preview both boundaries.'
+            const hands = take.expectedHands ?? 'either'
+            const count = result.frames.length
+            const span = (result.frames[count - 1]?.timestamp ?? 0) - (result.frames[0]?.timestamp ?? 0)
+            if (count > 0 && (count < 10 || span < 399.99) &&
+              qualityFor(take, result, hands).result === 'Retake') {
+              // Keep the smallest clearance that passes the same quality checks.
+              for (const frames of [1, 2, 3]) {
+                const margin = Math.min(.1, frames / source.sampling.effectiveTargetFps)
+                const padded = trimProcessedVideo(source, {
+                  start: Math.max(source.start, interval.start - margin),
+                  end: Math.min(source.end, interval.end + margin),
+                }, controller.signal)
+                if (qualityFor(take, padded, hands).result === 'Retake') continue
+                result = padded
+                message = 'Added a short margin to the stationary trim. Preview both boundaries.'
+                break
+              }
+            }
           } else {
             message = 'No single steady sign was confirmed. Check the full recording and adjust the interval if needed.'
           }
@@ -600,7 +621,7 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
           </select>
         </label>
         <p className="text-xs text-text-2">{stationaryTrim
-          ? 'Keeps the steady sign after entry movement, ending before exit movement if detected. Fewer than 10 frames requires a retake. Preview both boundaries before saving.'
+          ? 'Keeps the steady sign and may add a short margin if the trim is too short. At least 10 frames are required. Preview both boundaries before saving.'
           : 'Auto-trim removes leading idle or selects the first usable sign between clear pauses. Preview before saving and adjust repeated signs manually.'}</p>
       </div>}
       {boundary && <p className="text-xs text-text-2">Full intervals are kept. Trim manually if needed.</p>}
