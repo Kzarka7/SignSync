@@ -27,6 +27,140 @@ function sample(timestamp = 0) {
   return { timestamp, raw: { timestamp, pose, leftHand: Array.from({ length: 21 }, () => ({ ...point })), rightHand: null } }
 }
 const { assessVideoQuality } = load('services/dataset/videoQuality')
+
+test('stationary trim isolates the hold between observed entry and exit motion', () => {
+  const { stationarySignInterval } = load('services/dataset/videoDiagnostics')
+  const rest = Array(12).fill(.9)
+  const performance = [.86, .76, .66, .56, .5, ...Array.from({ length: 9 }, (_, i) => .5 + (i % 2) * .001),
+    .55, .65, .75, .85, .9]
+  const framesFor = heights => heights.map((y, i) => {
+    const frame = sample(i * 1000 / 30)
+    frame.raw.pose.rightWrist.y = .9
+    frame.raw.leftHand = y === null ? null : frame.raw.leftHand.map(point => ({ ...point, y }))
+    return frame
+  })
+  const frames = framesFor([...rest, ...performance, ...rest])
+  const interval = stationarySignInterval(frames, frames.length / 30)
+  assert.equal(interval.start, frames[17].timestamp / 1000)
+  assert.equal(interval.end, frames[26].timestamp / 1000)
+  const repeated = framesFor([...rest, ...performance, ...rest, ...performance, ...rest])
+  assert.equal(stationarySignInterval(repeated, repeated.length / 30), null)
+  const dropout = framesFor([...rest, ...performance, ...rest])
+  dropout[21].raw.leftHand = null
+  assert.equal(stationarySignInterval(dropout, dropout.length / 30), null)
+})
+
+const { trimProcessedVideo } = load('services/dataset/videoTrim', {}, { performance })
+
+test('continuous hand tracking trims after one motion burst or between two', () => {
+  const { stationarySignInterval } = load('services/dataset/videoDiagnostics')
+  const entry = [...Array(12).fill(.5), .53, .53, .56, .59]
+  const hold = Array(9).fill(.59)
+  const exit = [.56, .53, .5, ...Array(12).fill(.5)]
+  const framesFor = heights => heights.map((y, i) => {
+    const frame = sample(i * 1000 / 30)
+    frame.raw.leftHand.forEach(point => { point.y = y })
+    return frame
+  })
+  const one = framesFor([...entry, ...hold])
+  const oneInterval = stationarySignInterval(one, one.length / 30)
+  assert.equal(oneInterval.start, one[16].timestamp / 1000)
+  assert.equal(oneInterval.end, one.length / 30)
+
+  const two = framesFor([...entry, ...hold, ...exit])
+  const twoInterval = stationarySignInterval(two, two.length / 30)
+  assert.equal(twoInterval.start, two[16].timestamp / 1000)
+  assert.equal(twoInterval.end, two[25].timestamp / 1000)
+  assert.equal(two.filter(frame => frame.timestamp / 1000 >= twoInterval.start && frame.timestamp / 1000 < twoInterval.end).length, 9)
+})
+
+test('stationary trim joins short lulls in the entry motion and handles tracking at clip edges', () => {
+  const { stationarySignInterval } = load('services/dataset/videoDiagnostics')
+  const framesFor = heights => heights.map((y, i) => {
+    const frame = sample(i * 40)
+    frame.raw.leftHand = y === null ? null : frame.raw.leftHand.map(point => ({ ...point, y }))
+    return frame
+  })
+  // 160 ms between moving observations used to split one entry into two bursts.
+  const entry = [.5, .53, .53, .53, .53, .56, .59]
+  const hold = Array(22).fill(.59)
+  for (const lead of [Array(12).fill(.5), Array(8).fill(null)]) {
+    const frames = framesFor([...lead, ...entry, ...hold])
+    const duration = frames.length * .04
+    const interval = stationarySignInterval(frames, duration)
+    assert.equal(interval.start, frames[lead.length + entry.length].timestamp / 1000)
+    assert.equal(interval.end, duration)
+  }
+
+  const frames = framesFor([...Array(16).fill(null), ...entry, ...hold, .55, .51, ...Array(10).fill(null)])
+  const interval = stationarySignInterval(frames, frames.length * .04)
+  assert.equal(interval.start, frames[16 + entry.length].timestamp / 1000)
+  assert.equal(interval.end, frames[16 + entry.length + hold.length].timestamp / 1000)
+
+  // A single same-hand detection near the edge precedes the sustained track.
+  frames[14].raw.leftHand = sample().raw.leftHand.map(point => ({ ...point, x: .01 }))
+  const withEdgeDetection = stationarySignInterval(frames, frames.length * .04)
+  assert.equal(withEdgeDetection.start, interval.start)
+  assert.equal(withEdgeDetection.end, interval.end)
+})
+
+function processedFixture() {
+  const frames = Array.from({ length: 90 }, (_, i) => ({ ...sample(i * 1000 / 30),
+    sourceTimestampMs: 500 + i * 1000 / 30, sourceDurationMs: 1000 / 30 }))
+  return { frames, start: .5, end: 3.5, duration: 4, width: 640, height: 480, inputWidth: 640, inputHeight: 480, maxDimension: 640,
+    quality: assessVideoQuality(frames), sampling: { method: 'decoded-source-frames-v1', requestedFps: 30, effectiveTargetFps: 30,
+      sourceAverageFps: 30, sourceMedianFps: 30, variableFrameRate: false, sourceTimeOriginSeconds: .123,
+      achievedFps: 30, decodedFrames: 100, selectedFrames: 90, skippedForTarget: 8, duplicateTimestamps: 2, processingMs: 3000, processingFps: 30 } }
+}
+
+test('cached trim keeps fractional source boundaries, original observations and honest sampling metadata', () => {
+  const source = processedFixture(), before = JSON.stringify(source)
+  const result = trimProcessedVideo(source, { start: 1.013, end: 2.501 }, new AbortController().signal)
+  const expected = source.frames.filter(f => f.sourceTimestampMs >= 1013 && f.sourceTimestampMs < 2501)
+  assert.equal(result.frames.length, expected.length)
+  result.frames.forEach((f, i) => {
+    assert.equal(f.sourceTimestampMs, expected[i].sourceTimestampMs)
+    assert.equal(f.sourceDurationMs, expected[i].sourceDurationMs)
+    assert.ok(Math.abs(f.timestamp - (f.sourceTimestampMs - 1013)) < .00001)
+    assert.equal(f.raw.timestamp, f.timestamp)
+    assert.equal(JSON.stringify(f.raw.leftHand), JSON.stringify(expected[i].raw.leftHand))
+  })
+  assert.equal(JSON.stringify(source), before, 'full recording must stay unchanged for restoration')
+  assert.equal(result.start, 1.013); assert.equal(result.end, 2.501)
+  assert.equal(result.sampling.selectedFrames, expected.length)
+  assert.equal(result.sampling.decodedFrames, result.sampling.selectedFrames + result.sampling.skippedForTarget + result.sampling.duplicateTimestamps)
+  assert.equal(result.sampling.sourceTimeOriginSeconds, .123)
+  assert.ok(result.sampling.processingMs >= 3000, 'do not report cached selection as the entire processing cost')
+  assert.equal(result.sampling.reusedFrom.selectedFrames, 90)
+  assert.equal(JSON.stringify(result.quality), JSON.stringify(assessVideoQuality(result.frames, 'either', { endMs: 1488, fps: 30 })))
+})
+
+test('cached trim preserves irregular cadence and missing-hand gaps, with exclusive endpoints', () => {
+  const source = processedFixture()
+  source.frames = [0, 30, 85, 150, 410, 780, 1000, 1100].map(t => ({ ...sample(t), sourceTimestampMs: 500 + t, sourceDurationMs: 30 }))
+  source.frames[4].raw.leftHand = null
+  const result = trimProcessedVideo(source, { start: .585, end: 1.5 }, new AbortController().signal)
+  assert.deepEqual(Array.from(result.frames, f => f.sourceTimestampMs), [585, 650, 910, 1280])
+  assert.equal(result.frames[2].raw.leftHand, null)
+  assert.equal(result.frames[0].timestamp, 0)
+  assert.equal(result.frames[0].raw.timestamp, 0)
+  assert.ok(Math.abs(result.sampling.achievedFps - 3000 / 695) < .00001)
+})
+
+test('cached trim recalculates context quality and rejects invalid windows, intervals and cancellation', () => {
+  const source = processedFixture(), signal = new AbortController().signal
+  const qualityWindow = { protocol: 'gesture-context-v1', basis: 'automatic-hand-activity', startMs: 100, endMs: 900 }
+  const result = trimProcessedVideo(source, { start: 1, end: 2 }, signal, qualityWindow)
+  assert.equal(result.quality.gesture.startMs, 100)
+  assert.equal(result.qualityWindow, qualityWindow)
+  const short = trimProcessedVideo(source, { start: 1, end: 1.1 }, signal)
+  assert.equal(short.quality.result, 'Retake')
+  for (const interval of [{ start: .4, end: 1 }, { start: 1, end: 3.6 }, { start: 2, end: 1 }, { start: NaN, end: 2 }])
+    assert.throws(() => trimProcessedVideo(source, interval, signal), /valid interval/)
+  assert.throws(() => trimProcessedVideo(source, { start: 1, end: 2 }, signal, { ...qualityWindow, endMs: 2000 }), /Invalid gesture/)
+  const controller = new AbortController(); controller.abort()
+  assert.throws(() => trimProcessedVideo(source, { start: 1, end: 2 }, controller.signal), /abort/i)
+})
 test('coverage distinguishes missing hands from rest and allows a single hand', () => {
   const frames = Array.from({ length: 20 }, (_, i) => sample(i * 50))
   for (const i of [0, 1, 18, 19]) frames[i].raw.leftHand = null

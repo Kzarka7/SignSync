@@ -6,7 +6,7 @@ const vm = require('node:vm')
 const ts = require('typescript')
 const React = require('react')
 
-function harness({ holdSave = false, failSave = false, holdProcessing = false, suggestion = null, trimFails = false, trimRetake = false, training } = {}) {
+function harness({ holdSave = false, failSave = false, holdProcessing = false, suggestion = null, reviewSuggestion = null, stationaryInterval = null, trimReason = 'Preparation pause could not be confirmed.', trimFails = false, trimRetake = false, training } = {}) {
   const serviceCache = new Map()
   function loadService(file) {
     if (serviceCache.has(file)) return serviceCache.get(file)
@@ -21,6 +21,7 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
   const pendingSaves = []
   const pending = []
   const processingOptions = []
+  const trimOptions = []
   const keyListeners = new Set()
   const props = { label: 'HELLO', knownLabels:['HELLO','THREE','THANK_YOU'], sequences: [], onBusy() {}, onSaved() { props.sequences = [...saved]; dirty = true } }
   if (training) { props.training = training; props.label = training.category === 'rest' ? 'REST' : 'IDLE_MOVEMENT' }
@@ -54,7 +55,10 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
     if (name === 'lucide-react') return { Keyboard: 'svg' }
     if (name.endsWith('videoIntervalReview')) return loadService(path.resolve(__dirname, '../src/services/dataset/videoIntervalReview.ts'))
     if (name.endsWith('collectorShortcuts')) return loadService(path.resolve(__dirname, '../src/services/dataset/collectorShortcuts.ts'))
-    if (name.endsWith('videoDiagnostics')) return { automaticSignInterval: () => suggestion }
+    if (name.endsWith('videoDiagnostics')) return {
+      analyzeSignInterval: () => ({ automatic: suggestion, suggestion: suggestion ?? reviewSuggestion, reason: trimReason }),
+      stationarySignInterval: () => stationaryInterval,
+    }
     if (name.endsWith('videoQuality')) return { assessBoundaryVideoQuality: () => ({ result: 'Pass', findings: [] }), assessVideoQuality: (_frames, _hands, _timing, window) => ({ result: window ? 'Pass' : 'Review', findings: [] }) }
     if (name.endsWith('datasetExport')) return {
       buildOriginalVideosZipExport: async files => { downloadBatches.push(files); return { blob: files, filename: 'originals.zip' } },
@@ -65,6 +69,12 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
       saveSequence: async sample => { if (holdSave) await new Promise(resolve => pendingSaves.push(resolve)); if (failSave) throw Error('QuotaExceededError: storage full'); saved.push(sample) },
       deleteSequence: id => { if (failDelete) throw Error('storage failure'); saved = saved.filter(s => s.id !== id) },
     }
+    if (name.endsWith('videoTrim')) return { trimProcessedVideo: (source, interval, signal, qualityWindow) => {
+      signal.throwIfAborted()
+      trimOptions.push({ interval, qualityWindow })
+      if (trimFails) throw Error('trim failed')
+      return { ...source, ...interval, qualityWindow, quality: { result: trimRetake ? 'Retake' : 'Pass', findings: [] } }
+    } }
     if (name.endsWith('videoImport')) return {
       fingerprintVideo: async file => file.name, IMPORT_FPS: 30, VIDEO_IMPORT_VERSION: 'test', BOUNDARY_IMPORT_VERSION: 'boundary-test',
       processVideo: async (_file, signal, onProgress, _interval, options) => {
@@ -106,7 +116,7 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
       previews[previews.length - 1].props.onClick(); render(); confirm()
     }
   }
-  return { downloads, downloadBatches, pendingSaves, allowSave: () => { failSave = false }, render, all, button, upload, saved: () => saved, pending, confirm, processingOptions,
+  return { downloads, downloadBatches, pendingSaves, allowSave: () => { failSave = false }, render, all, button, upload, saved: () => saved, pending, confirm, processingOptions, trimOptions,
     relabel(scope,label) {
       if (!button('Change label').props['aria-expanded']) { button('Change label').props.onClick();render() }
       all(n=>n.props?.labelText==='New sign label')[0].props.onSelectLabel(label);render()
@@ -513,10 +523,10 @@ test('uploads use fixed 30 FPS without exposing a per-take FPS control', async (
   assert.equal(h.preview().props.onFpsChange, undefined)
 })
 
-test('automatic trim reprocesses once and auto-use selects bounds without approving or saving', async () => {
+test('automatic trim reuses the full pass and auto-use selects bounds without approving or saving', async () => {
   const h = harness({ suggestion: { start: .2, end: .8 } }); await h.upload('auto.mp4', false)
-  assert.equal(h.processingOptions.length, 2)
-  assert.equal(h.processingOptions[1].interval.start, .2)
+  assert.equal(h.processingOptions.length, 1)
+  assert.equal(h.trimOptions[0].interval.start, .2)
   const take = h.preview().props.take
   assert.equal(take.result.start, .2)
   assert.equal(take.fullResult.start, 0)
@@ -536,14 +546,96 @@ test('automatic trim reprocesses once and auto-use selects bounds without approv
 test('start-only trim preserves the source ending and selects the interval automatically', async () => {
   const h = harness({ suggestion: { start: .2, end: 1, activityStartMs: 400, activityEndMs: 1000 } })
   await h.upload('start-only.mp4', false)
-  assert.equal(h.processingOptions.length, 2)
+  assert.equal(h.processingOptions.length, 1)
   assert.equal(h.preview().props.take.result.start, .2)
   assert.equal(h.preview().props.take.result.end, 1)
   assert.equal(h.preview().props.take.intervalReview.selectionMethod, 'automatic')
-  assert.equal(h.processingOptions[1].qualityWindow.endMs, 800)
+  assert.equal(h.trimOptions[0].qualityWindow.endMs, 800)
   assert.equal(h.check().props.disabled, false)
   assert.equal(h.check().props.checked, false)
   assert.equal(h.saved().length, 0)
+})
+
+test('stationary upload keeps a short trimmed interval visible as a retake', async () => {
+  const h = harness({ stationaryInterval: { start: .2, end: .4 } })
+  h.render()
+  h.all(n => n.type === 'select' && n.props.value === 'standard')[0].props.onChange({ target: { value: 'stationary' } })
+  await h.upload('short-hold.mp4', false)
+  const take = h.preview().props.take
+  assert.equal(take.result.start, .2)
+  assert.equal(take.result.end, .4)
+  assert.equal(take.result.quality.result, 'Retake')
+  assert.match(take.result.quality.findings[0], /at least 10 frames/)
+  assert.equal(h.check().props.disabled, true)
+  assert.equal(h.saved().length, 0)
+})
+
+test('end-only trim preserves the source beginning and still requires human review', async () => {
+  const h = harness({ suggestion: { start: 0, end: .8, activityStartMs: 0, activityEndMs: 550 } })
+  await h.upload('end-only.mp4', false)
+  assert.equal(h.processingOptions.length, 1)
+  assert.equal(h.preview().props.take.result.start, 0)
+  assert.equal(h.preview().props.take.result.end, .8)
+  assert.equal(h.trimOptions[0].qualityWindow.startMs, 0)
+  assert.equal(h.trimOptions[0].qualityWindow.endMs, 550)
+  assert.equal(h.check().props.checked, false)
+  assert.equal(h.saved().length, 0)
+})
+
+test('missing suggestion retains the full recording without reprocessing', async () => {
+  const trimReason = 'An internal hand-tracking gap exceeds 0.75 seconds.'
+  const h = harness({ trimReason }); await h.upload('uncertain.mp4', false)
+  assert.equal(h.processingOptions.length, 1)
+  assert.equal(h.preview().props.take.result.start, 0)
+  assert.equal(h.preview().props.take.result.end, 1)
+  assert.equal(h.preview().props.take.message, `Full recording retained. ${trimReason}`)
+  assert.equal(h.check().props.checked, false)
+})
+
+test('auto-trim applies review suggestions even when conservative boundary checks defer', async () => {
+  for (const trimReason of ['Preparation pause could not be confirmed.', 'An internal hand-tracking gap exceeds 0.75 seconds.', 'Insufficient motion.']) {
+    const h = harness({ reviewSuggestion: { start: .2, end: 1, activityStartMs: 450, activityEndMs: 1000 }, trimReason })
+    await h.upload('suggested.mp4', false)
+    const take = h.preview().props.take
+    assert.equal(h.processingOptions.length, 1)
+    assert.equal(take.result.start, .2)
+    assert.equal(take.result.end, 1)
+    assert.equal(take.fullResult.start, 0)
+    assert.equal(take.autoTrimmed, true)
+    assert.equal(take.contextCandidate, undefined, 'review fallback does not grant a confidence-based quality exemption')
+    assert.equal(h.trimOptions[0].qualityWindow, undefined)
+    assert.equal(take.intervalReview.selectionMethod, 'automatic')
+    assert.equal(h.check().props.checked, false)
+    assert.equal(h.saved().length, 0)
+    h.preview().props.onTrim(0, 1); h.render()
+    await new Promise(resolve => setImmediate(resolve)); h.render()
+    assert.equal(h.preview().props.take.result.start, 0)
+    assert.equal(h.preview().props.take.autoTrimmed, false)
+    assert.equal(h.processingOptions.length, 2, 'restore does not automatically reapply the suggestion')
+  }
+})
+
+test('a full-recording suggestion avoids a redundant processing pass', async () => {
+  const h = harness({ reviewSuggestion: { start: 0, end: 1 } })
+  await h.upload('full-suggestion.mp4', false)
+  assert.equal(h.processingOptions.length, 1)
+  assert.equal(h.preview().props.take.autoTrimmed, false)
+  assert.equal(h.check().props.checked, false)
+})
+
+test('review suggestions respect disabled auto-trim and failed or unusable reprocessing', async () => {
+  const reviewSuggestion = { start: .2, end: .8 }
+  const disabled = harness({ reviewSuggestion }); disabled.render()
+  disabled.all(n => n.props?.['aria-label'] === 'Auto-trim and reprocess new recordings')[0].props.onChange({ target: { checked: false } }); disabled.render()
+  await disabled.upload('disabled.mp4', false)
+  assert.equal(disabled.processingOptions.length, 1)
+  for (const options of [{ trimFails: true }, { trimRetake: true }]) {
+    const h = harness({ reviewSuggestion, ...options }); await h.upload('fallback.mp4', false)
+    assert.equal(h.processingOptions.length, 1)
+    assert.equal(h.preview().props.take.result.start, 0)
+    assert.equal(h.preview().props.take.autoTrimmed, false)
+    assert.equal(h.check().props.checked, false)
+  }
 })
 
 test('disabling auto-trim retains the original and does not reprocess', async () => {
@@ -593,13 +685,12 @@ test('check all skips unconfirmed and dirty previews; uncheck all keeps saved ta
   assert.equal(checks()[1].props.checked, false)
 })
 
-test('cancelling the automatic second pass never leaves a selected or approved partial trim', async () => {
+test('cancelling the full pass never applies or approves an automatic trim', async () => {
   const h = harness({ suggestion: { start: .2, end: .8 }, holdProcessing: true })
   await h.upload('cancel-auto.mp4', false)
-  h.pending[0].resolve(); await new Promise(resolve => setImmediate(resolve)); h.render()
-  assert.equal(h.pending.length, 2)
+  assert.equal(h.pending.length, 1)
   h.button('Cancel remaining').props.onClick(); h.render()
-  h.pending[1].resolve(); await new Promise(resolve => setImmediate(resolve)); h.render()
+  h.pending[0].resolve(); await new Promise(resolve => setImmediate(resolve)); h.render()
   assert.equal(h.preview().props.take.status, 'Cancelled')
   assert.equal(h.check().props.disabled, true)
   assert.equal(h.saved().length, 0)
@@ -608,7 +699,7 @@ test('cancelling the automatic second pass never leaves a selected or approved p
 test('manual reprocessing clears automatic context and keeps fixed 30 FPS', async () => {
   const h = harness({ suggestion: { start: .1, end: .9, activityStartMs: 300, activityEndMs: 700 } })
   await h.upload('context.mp4', false)
-  assert.equal(h.processingOptions.at(-1).qualityWindow.startMs, 200)
+  assert.equal(h.trimOptions.at(-1).qualityWindow.startMs, 200)
   assert.equal(h.processingOptions.at(-1).targetFps, 30)
   h.check().props.onChange({ target: { checked: true } }); h.render()
   h.preview().props.onTrim(0, 1); h.render()
