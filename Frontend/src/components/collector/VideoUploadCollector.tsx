@@ -16,7 +16,7 @@ import { Keyboard } from 'lucide-react'
 import CollectorShortcutHelp from './CollectorShortcutHelp'
 import LabelPicker from './LabelPicker'
 import { adjustedIntervalTime, collectorShortcut } from '../../services/dataset/collectorShortcuts'
-import { trimProcessedVideo } from '../../services/dataset/videoTrim'
+import { snapCachedInterval, trimProcessedVideo } from '../../services/dataset/videoTrim'
 
 type Result = Awaited<ReturnType<typeof processVideo>> & { contextCandidate?: VideoQualityWindow }
 type Take = {
@@ -33,10 +33,19 @@ type Take = {
   autoTrim?: boolean
   stationaryTrim?: boolean
   autoTrimmed?: boolean
+  queuedAt: number
+  readyAt?: number
+  savedAt?: number
+  processingMs?: number
+  manualEdits?: number
   qualityWindow?: VideoQualityWindow
   contextCandidate?: VideoQualityWindow
 }
 type RemovedTakes = { items: { take: Take; index: number }[]; selected: string | null }
+
+function isRetake(take: Take) {
+  return take.status === 'Retake' || take.result?.quality.result === 'Retake'
+}
 
 function purposeOf(take: Pick<Take, 'training'>) {
   const category = take.training?.category
@@ -63,8 +72,9 @@ function canReview(take: Take) {
     intervalReviewMatches(take.intervalReview, take.result.start, take.result.end, take.result.duration)
 }
 
-function TakePreview({ locked = false, take, onTrim, onDraftChange, onHandsChange, onConfirmInterval }: {
+function TakePreview({ locked = false, take, onTrim, onCachedTrim, onDraftChange, onHandsChange, onConfirmInterval }: {
   locked?: boolean; take: Take; onTrim: (start: number, end: number) => void; onDraftChange: (start: number, end: number) => void
+  onCachedTrim: (interval: { start: number; end: number }) => void
   onHandsChange: (expected: ExpectedHands) => void
   onConfirmInterval: () => void
 }) {
@@ -89,6 +99,9 @@ function TakePreview({ locked = false, take, onTrim, onDraftChange, onHandsChang
     return () => URL.revokeObjectURL(objectUrl)
   }, [take.file])
   const validDraft = [start, end, duration].every(Number.isFinite) && start >= 0 && end > start && end <= duration
+  const cache = take.fullResult ?? take.result
+  const cachedInterval = useMemo(() => cache && validDraft && take.draft && !purposeOf(take)
+    ? snapCachedInterval(cache, start, end) : null, [cache, validDraft, take.draft, take.training, start, end])
   const replayStart = validDraft ? start : take.result?.start ?? 0, replayEnd = validDraft ? end : take.result?.end ?? duration
   const stopIntervalPlayback = () => { setAutoReplay(false); setIntervalPlayback(false); video.current?.pause() }
   const updateDraft = (a: number, b: number) => { stopIntervalPlayback(); onDraftChange(a, b) }
@@ -228,6 +241,12 @@ function TakePreview({ locked = false, take, onTrim, onDraftChange, onHandsChang
         <Button size="sm" onClick={() => { const t = video.current?.currentTime ?? 0; setEnd(t); updateDraft(start, t) }}>Mark end here</Button>
         <Button size="sm" disabled={!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > duration || end - start > 120}
           onClick={() => onTrim(start, end)}>Reprocess interval</Button>
+        {!purposeOf(take) && <Button size="sm" disabled={!canEdit || !cachedInterval}
+          onClick={() => {
+            if (!cachedInterval) return
+            try { onCachedTrim(cachedInterval) }
+            catch (error) { setPreviewError(error instanceof Error ? error.message : 'Could not apply the cached trim.') }
+          }}>Use cached frames</Button>}
         <Button size="sm" onClick={() => { if (video.current) video.current.currentTime = Number.isFinite(start) ? start : 0 }}>Go to start</Button>
       </div>
       {purposeOf(take) !== 'idle_movement' && <label className="block text-sm">{purposeOf(take) ? 'Expected hand visibility' : 'Hands used'}<select aria-label="Expected hand coverage for this take" className="block border border-border rounded-lg p-2 mt-1 max-w-full" value={take.expectedHands ?? 'either'} onChange={event => onHandsChange(event.target.value as ExpectedHands)}>
@@ -303,7 +322,7 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
     setTakes(previous => [...previous, ...added.map(item => ({ id: item.id, file: item.file, label: item.label,
       training: item.training ? { ...item.training } : undefined,
       expectedHands: item.training?.category === 'rest' && item.training.taskId.includes('_both_') ? 'both' as const : 'either' as const,
-      autoTrim: !purposeOf(item) && autoTrim, origin: 'camera-recording' as const, status: 'Queued' as const, progress: 0, reviewed: false }))])
+      autoTrim: !purposeOf(item) && autoTrim, origin: 'camera-recording' as const, status: 'Queued' as const, progress: 0, reviewed: false, queuedAt: Date.now() }))])
     setSelected(added[added.length - 1].id); onIncomingConsumed?.(added.map(item => item.id))
   }, [incoming, onIncomingConsumed])
   // Recorded-sample deletion (including Clear all) also releases its queue item.
@@ -328,6 +347,7 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
     processingRuns.current.set(take.id, run)
     const update = (changes: Partial<Take>) => { if (processingRuns.current.get(take.id) === run) patch(take.id, changes) }
     active.current = { id: take.id, controller }
+    const began = Date.now()
     update({ status: 'Processing', progress: 0, message: undefined })
     void (async () => {
       try {
@@ -408,6 +428,7 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
         if (purposeOf(take) || take.expectedHands === 'both' || take.stationaryTrim) result.quality = qualityFor(take, result, take.expectedHands ?? 'either')
         if (!purposeOf(take)) intervalReview = confirmInterval(result.start, result.end, result.duration, take.interval ? 'manual' : 'automatic')
         if (alive.current) update({ status: 'Ready', progress: 100, result,
+          readyAt: take.readyAt ?? Date.now(),
           fullResult, interval: isFullRecording(result.start, result.end, result.duration) ? take.interval : { start: result.start, end: result.end },
           qualityWindow: result.qualityWindow, contextCandidate: result.contextCandidate, autoTrimmed,
           message, draft: undefined, reviewed: false, intervalReview })
@@ -417,7 +438,10 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
       } finally {
         active.current = null
         // Trigger the next item even when cancellation happened during a pending load.
-        if (alive.current) setTakes(previous => [...previous])
+        if (alive.current) {
+          update({ processingMs: (take.processingMs ?? 0) + Date.now() - began })
+          setTakes(previous => [...previous])
+        }
       }
     })()
   }, [takes])
@@ -452,7 +476,7 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
       patch(take.id, { status: 'Saving' })
       try { await saveSequence(sequence) }
       catch (error) { patch(take.id, { status: 'Ready' }); setSaveError(`Could not save ${take.file.name}: ${error instanceof Error ? error.message : 'browser storage may be full'}. Export saved samples and free space if needed; this take remains in the queue.`); break }
-      patch(take.id, { status: 'Saved' })
+      patch(take.id, { status: 'Saved', savedAt: Date.now() })
       onSampleSaved?.(sequence)
     }
     try { await onSaved() }
@@ -490,11 +514,11 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
     setTakes(previous => previous.filter(take => !ids.has(take.id)))
     if (selected && ids.has(selected)) {
       const index = takes.findIndex(take => take.id === selected)
-      removedPreviewPosition.current = takes.slice(0, index).filter(take => !ids.has(take.id)).length
+      removedPreviewPosition.current = takes.slice(0, Math.max(0, index)).filter(take => !ids.has(take.id)).length
       setSelected(null)
     } else if (!selected && removedPreviewPosition.current !== null) {
       const position = removedPreviewPosition.current
-      removedPreviewPosition.current -= items.filter(item => item.index < position).length
+      removedPreviewPosition.current -= takes.slice(0, position).filter(take => ids.has(take.id)).length
     }
   }
   const restoreTakes = (snapshot: RemovedTakes | null, all: boolean) => {
@@ -527,6 +551,27 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
     setRelabelMessage(`Changed ${ids.size} ${ids.size === 1 ? 'take' : 'takes'} to ${replacementLabel}. Processing, intervals and review checks kept.`)
   }
   const processed = takes.filter(take => take.result)
+  const savedTakes = takes.filter(take => take.status === 'Saved' && take.savedAt !== undefined)
+  const totalProcessingMs = takes.reduce((total, take) => total + (take.processingMs ?? 0), 0)
+  const manualEdits = takes.reduce((total, take) => total + (take.manualEdits ?? 0), 0)
+  const averageSavedTime = (from: 'queuedAt' | 'readyAt') => savedTakes.length
+    ? `${(savedTakes.reduce((total, take) => total + take.savedAt! - (take[from] ?? take.queuedAt), 0) / savedTakes.length / 1000).toFixed(1)} s`
+    : '—'
+  const selectedIndex = takes.findIndex(take => take.id === selected)
+  const nextForReview = [...takes.slice(selectedIndex + 1), ...takes.slice(0, Math.max(0, selectedIndex))]
+    .find(take => !take.reviewed && (take.status === 'Ready' || take.status === 'Retake'))
+  const selectQueueRow = (index: number) => {
+    removedPreviewPosition.current = null
+    setSelected(takes[index].id)
+    // Scroll the queue alone, leaving the rest of the page in place.
+    const queue = reviewQueue.current
+    const row = queue?.children.item(index)
+    if (!queue || !row) return
+    const bounds = queue.getBoundingClientRect(), item = row.getBoundingClientRect()
+    const top = bounds.top + queue.clientTop
+    const centered = queue.scrollTop + item.top + item.height / 2 - top - queue.clientHeight / 2
+    queue.scrollTop = Math.max(0, Math.min(queue.scrollHeight - queue.clientHeight, centered))
+  }
   const fullCount = processed.filter(take => isFullRecording(take.result!.start, take.result!.end, take.result!.duration)).length
   const needIntervalReview = processed.filter(take => hasPendingTrim(take) || !intervalReviewMatches(take.intervalReview, take.result!.start, take.result!.end, take.result!.duration)).length
   useEffect(() => {
@@ -540,23 +585,10 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
       if (['previous', 'next'].includes(action)) {
         if (!takes.length || isSaving) return
         event.preventDefault()
-        const index = takes.findIndex(take => take.id === selected)
-        const position = index < 0
+        const position = selectedIndex < 0
           ? removedPreviewPosition.current === null ? 0 : removedPreviewPosition.current + (action === 'previous' ? -1 : 0)
-          : index + (action === 'next' ? 1 : -1)
-        const next = Math.min(takes.length - 1, Math.max(0, position))
-        removedPreviewPosition.current = null
-        setSelected(takes[next].id)
-        // Only Q/E center rows. Change this scroll container alone so the page
-        // stays in place and manual scrolling is never corrected on re-render.
-        const queue = reviewQueue.current
-        const row = queue?.children.item(next) as HTMLElement | null
-        if (queue && row) {
-          const bounds = queue.getBoundingClientRect(), item = row.getBoundingClientRect()
-          const top = bounds.top + queue.clientTop
-          const centered = queue.scrollTop + item.top + item.height / 2 - top - queue.clientHeight / 2
-          queue.scrollTop = Math.max(0, Math.min(queue.scrollHeight - queue.clientHeight, centered))
-        }
+          : selectedIndex + (action === 'next' ? 1 : -1)
+        selectQueueRow(Math.min(takes.length - 1, Math.max(0, position)))
         return
       }
       if (isSaving) return
@@ -607,7 +639,7 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
             label: label.trim(), training: training ? { ...training } : undefined,
             expectedHands: training?.category === 'rest' && training.taskId.includes('_both_') ? 'both' : 'either',
             autoTrim: !boundary && autoTrim, stationaryTrim: !boundary && autoTrim && stationaryTrim,
-            origin: 'uploaded-file', status: 'Queued', progress: 0, reviewed: false }))
+            origin: 'uploaded-file', status: 'Queued', progress: 0, reviewed: false, queuedAt: Date.now() }))
           setTakes(previous => [...previous, ...added]); if (!selected && added.length) setSelected(added[0].id)
           event.target.value = ''
         }} /></label>
@@ -631,7 +663,7 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
     </div></Card>
     <div data-collector-preview className={controls ? 'min-w-0 order-3 xl:order-none' : ''}>
     {!current && controls && <Card><h2 className="font-semibold text-lg">Preview</h2><div className="aspect-video mt-3 rounded-lg border border-dashed border-border bg-sky flex items-center justify-center p-5 text-sm text-text-2 text-center">Add a recording to preview it here.</div></Card>}
-    {current && <TakePreview key={`${current.id}-${current.result?.start}-${current.result?.end}-${current.status === 'Ready'}`} take={current} locked={isSaving}
+    {current && <TakePreview key={`${current.id}-${current.result?.start}-${current.result?.end}-${current.status === 'Ready'}-${current.manualEdits ?? 0}`} take={current} locked={isSaving}
       onConfirmInterval={() => {
         if (current.status === 'Ready' && current.result && !hasPendingTrim(current)) patch(current.id, {
           intervalReview: confirmInterval(current.result.start, current.result.end, current.result.duration), reviewed: false })
@@ -639,7 +671,19 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
       onHandsChange={expectedHands => patch(current.id, { expectedHands, reviewed: false,
         ...(current.result ? { result: { ...current.result, quality: qualityFor(current, current.result, expectedHands) } } : {}) })}
       onDraftChange={(start, end) => patch(current.id, { draft: { start, end }, reviewed: false, intervalReview: undefined })}
-      onTrim={(start, end) => patch(current.id, { interval: { start, end }, qualityWindow: undefined, contextCandidate: undefined, autoTrimmed: false, draft: undefined, status: 'Queued', result: undefined, reviewed: false, intervalReview: undefined })} />}
+      onCachedTrim={interval => {
+        const source = current.fullResult ?? current.result
+        if (isSaving || current.status !== 'Ready' || !source || purposeOf(current)) return
+        const began = Date.now()
+        const result = trimProcessedVideo(source, interval, new AbortController().signal)
+        result.quality = qualityFor(current, result, current.expectedHands ?? 'either')
+        patch(current.id, { result, interval, qualityWindow: undefined, contextCandidate: undefined,
+          autoTrimmed: false, draft: undefined, reviewed: false,
+          intervalReview: confirmInterval(result.start, result.end, result.duration),
+          manualEdits: (current.manualEdits ?? 0) + 1, processingMs: (current.processingMs ?? 0) + Date.now() - began,
+          message: 'Applied to cached frames. Review the new boundaries before saving.' })
+      }}
+      onTrim={(start, end) => patch(current.id, { interval: { start, end }, qualityWindow: undefined, contextCandidate: undefined, autoTrimmed: false, draft: undefined, status: 'Queued', result: undefined, reviewed: false, intervalReview: undefined, manualEdits: (current.manualEdits ?? 0) + 1 })} />}
     </div>
     </div>
     <div className={controls ? 'contents xl:block xl:col-start-2 xl:row-start-1 xl:space-y-4' : ''}>
@@ -704,6 +748,22 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
       </label>
       </div>
       <p className="text-xs text-text-2" aria-label="Queue interval summary">{processed.length - fullCount} trimmed · {fullCount} full recordings · {needIntervalReview} need interval confirmation</p>
+      <section aria-label="Batch stats" className="rounded-lg border border-border p-3 text-sm">
+        <h3 className="font-semibold">Batch stats</h3>
+        <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 tabular-nums">
+          <dt>Processing time</dt><dd>{(totalProcessingMs / 1000).toFixed(1)} s</dd>
+          <dt>Average first preview ready to save</dt><dd>{averageSavedTime('readyAt')}</dd>
+          <dt>Average queued to saved</dt><dd>{averageSavedTime('queuedAt')}</dd>
+          <dt>Manual trim actions</dt><dd>{manualEdits}</dd>
+          <dt>Current retakes</dt><dd>{takes.filter(isRetake).length}</dd>
+          <dt>Saved takes</dt><dd>{savedTakes.length}</dd>
+        </dl>
+        <p className="mt-2 text-xs text-text-2">Stats cover takes still in this queue. Save averages use saved takes and include waiting time.</p>
+      </section>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Button size="sm" disabled={isSaving || !nextForReview}
+          onClick={() => { if (nextForReview) selectQueueRow(takes.indexOf(nextForReview)) }}>Review next</Button>
+      </div>
       <p id="video-review-instructions" className="text-xs text-text-2">Review each take, then check it to enable saving.</p>
       <ul ref={reviewQueue} aria-label="Review queue takes" className="space-y-2 max-h-96 overflow-auto overscroll-contain" style={{ scrollbarGutter: 'stable' }}>{takes.map(take => <li key={take.id} data-auto-trimmed={!!take.autoTrimmed} className={`border rounded-lg p-3 relative ${selected === take.id ? 'border-signal bg-signal-light' : 'border-border'}`}>
         <div className="min-w-0 flex-1 space-y-2">
@@ -715,6 +775,8 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
         {take.result && <p className="text-xs text-text-2 pr-14">Tracking: {take.result.quality.result} · {take.result.start.toFixed(2)}–{take.result.end.toFixed(2)}s</p>}
         {take.status === 'Processing' && <progress className="w-full" aria-label={`Processing ${take.file.name}`} value={take.progress} max="100" />}
         {take.message && !take.message.startsWith('Automatically trimmed') && <p className="text-xs text-text-2 line-clamp-1" title={take.message}>{take.message}</p>}
+        {take.result && take.result.quality.result !== 'Pass' && take.result.quality.findings[0] &&
+          <p className="text-xs text-text-2">{take.result.quality.findings[0]}</p>}
         <div data-queue-actions className="flex flex-wrap gap-x-6 gap-y-4">
           <div className="flex gap-2">
           <Button size="sm" aria-label="Preview / review" aria-pressed={selected === take.id} onClick={() => setSelected(take.id)}>Preview</Button>

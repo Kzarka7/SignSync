@@ -1,18 +1,10 @@
 import { FilesetResolver, HandLandmarker, PoseLandmarker, type HandLandmarkerResult, type PoseLandmarkerResult } from '@mediapipe/tasks-vision'
 import { UPPER_BODY_POSE_LANDMARK_NAMES, type HandLandmarkFrame, type LandmarkFrameSample, type LandmarkPoint, type PoseLandmarkFrame, type UpperBodyPoseLandmarkName } from '../../types/landmarks'
 
-// MediaPipe's hosted WASM runtime and models. Fetched by the browser at
-// runtime, not bundled - no local model files to manage.
-export const WASM_BASE_URL =
-  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
-export const HAND_MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
-// "Lite" variant - plenty of accuracy for the upper-body subset we keep
-// (shoulders/elbows/wrists/hips), and noticeably cheaper per-frame than
-// full/heavy, which matters since it now runs every tick alongside the
-// hand model. Same hosting convention as HAND_MODEL_URL above.
-export const POSE_MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+const VISION_ASSETS = '/vision/0.10.35'
+export const WASM_BASE_URL = `${VISION_ASSETS}/wasm`
+export const HAND_MODEL_URL = `${VISION_ASSETS}/hand_landmarker.task`
+export const POSE_MODEL_URL = `${VISION_ASSETS}/pose_landmarker_lite.task`
 
 // Indices into PoseLandmarker's standard 33-point output for the
 // upper-body subset we keep - see UPPER_BODY_POSE_LANDMARK_NAMES in

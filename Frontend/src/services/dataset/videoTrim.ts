@@ -4,6 +4,16 @@ import { assessVideoQuality } from './videoQuality'
 
 type VideoResult = Awaited<ReturnType<typeof processVideo>>
 
+export function snapCachedInterval(source: VideoResult, start: number, end: number) {
+  if (![start, end].every(Number.isFinite) || start < source.start || end > source.end || end <= start || !source.frames.length) return null
+  const boundaries = [...source.frames.map(frame =>
+    (frame.sourceTimestampMs ?? source.start * 1000 + frame.timestamp) / 1000), source.end]
+  const nearest = (time: number) => boundaries.reduce((best, value) =>
+    Math.abs(value - time) < Math.abs(best - time) ? value : best)
+  const snapped = { start: nearest(start), end: nearest(end) }
+  return snapped.end > snapped.start && snapped.end - snapped.start <= 120 ? snapped : null
+}
+
 // Reuse actual observations from the completed pass. Do not resample, interpolate
 // landmarks, or restart MediaPipe's temporal tracker at the new trim boundary.
 export function trimProcessedVideo(source: VideoResult, interval: { start: number; end: number },

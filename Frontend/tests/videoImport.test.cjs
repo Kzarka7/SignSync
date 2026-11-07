@@ -50,7 +50,7 @@ test('stationary trim isolates the hold between observed entry and exit motion',
   assert.equal(stationarySignInterval(dropout, dropout.length / 30), null)
 })
 
-const { trimProcessedVideo } = load('services/dataset/videoTrim', {}, { performance })
+const { snapCachedInterval, trimProcessedVideo } = load('services/dataset/videoTrim', {}, { performance })
 
 test('continuous hand tracking trims after one motion burst or between two', () => {
   const { stationarySignInterval } = load('services/dataset/videoDiagnostics')
@@ -112,6 +112,15 @@ function processedFixture() {
       sourceAverageFps: 30, sourceMedianFps: 30, variableFrameRate: false, sourceTimeOriginSeconds: .123,
       achievedFps: 30, decodedFrames: 100, selectedFrames: 90, skippedForTarget: 8, duplicateTimestamps: 2, processingMs: 3000, processingFps: 30 } }
 }
+
+test('manual cached trim snaps to source observations and preserves the recording endpoint', () => {
+  const source = processedFixture()
+  const interval = snapCachedInterval(source, .539, 3.499)
+  assert.ok(Math.abs(interval.start - source.frames[1].sourceTimestampMs / 1000) < .000001)
+  assert.equal(interval.end, source.end)
+  assert.equal(snapCachedInterval(source, .4, 2), null)
+  assert.equal(snapCachedInterval(source, .501, .502), null)
+})
 
 test('cached trim keeps fractional source boundaries, original observations and honest sampling metadata', () => {
   const source = processedFixture(), before = JSON.stringify(source)

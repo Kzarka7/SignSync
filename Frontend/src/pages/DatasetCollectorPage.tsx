@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import BoundarySampleCollector from '../components/collector/BoundarySampleCollector'
 import SignSampleCollector from '../components/collector/SignSampleCollector'
+import CollectorOfflineControl from '../components/collector/CollectorOfflineControl'
 
 export default function DatasetCollectorPage() {
   const [view, setView] = useState<'sign' | 'boundary'>('sign')
   const [locked, setLocked] = useState(false)
   return <>
+    <CollectorOfflineControl />
     <div className="grid grid-cols-2 sm:flex gap-1 mb-4 border-b border-border" role="group" aria-label="Collection purpose">
       {(['sign', 'boundary'] as const).map(value => <button key={value} disabled={locked}
         aria-pressed={view === value} onClick={() => setView(value)}
