@@ -72,14 +72,15 @@ function recorderHarness(options = {}, storageOptions = {}) {
   }
 }
 
-test('sign collection offers all 55 vocabulary labels, including the 35 expansion labels', async () => {
+test('sign collection offers the vocabulary and fingerspelling labels', async () => {
   const recorder = recorderHarness({ signsOnly: true }).render()
-  assert.equal(recorder.knownLabels.length, 55)
-  assert.equal(new Set(recorder.knownLabels).size, 55)
+  assert.equal(recorder.knownLabels.length, 65)
+  assert.equal(new Set(recorder.knownLabels).size, 65)
   for (const label of ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN',
     'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
     'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY',
-    'GOOD_MORNING', 'GOOD_AFTERNOON', 'GOOD_EVENING', 'YESTERDAY', 'TOMORROW', 'TODAY']) {
+    'GOOD_MORNING', 'GOOD_AFTERNOON', 'GOOD_EVENING', 'YESTERDAY', 'TOMORROW', 'TODAY',
+    'B', 'E', 'F', 'J', 'L', 'U', 'V', 'W', 'X', 'Z']) {
     assert.equal(recorder.knownLabels.includes(label), true, label)
   }
 })
