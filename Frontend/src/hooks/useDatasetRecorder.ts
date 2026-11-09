@@ -22,7 +22,7 @@ export const DEFAULT_SIGN_LABELS = [
   'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
   'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY',
   'GOOD_MORNING', 'GOOD_AFTERNOON', 'GOOD_EVENING', 'YESTERDAY', 'TOMORROW', 'TODAY',
-  'J', 'Z',
+  'B', 'E', 'F', 'J', 'L', 'U', 'V', 'W', 'X', 'Z',
 ]
 
 function createSequenceId(): string {
