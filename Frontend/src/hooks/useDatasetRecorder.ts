@@ -160,7 +160,7 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
     bufferRef.current.push({ timestamp: sample.timestamp, raw: sample })
   }, [])
 
-  const feed = useCameraFeed({ onFrame: handleFrame, detectionInputWidth })
+  const feed = useCameraFeed({ onFrame: handleFrame, detectionInputWidth, trackLiveTiming: true })
 
   // The actual recording - buffering frames, tracking frame count - starts
   // here, only once the countdown (if any) has finished. Camera detection

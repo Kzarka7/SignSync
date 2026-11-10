@@ -128,7 +128,7 @@ export default function CameraVideoRecorder({ label, onRecorded, onBusy, control
   return <div className="space-y-4">
     <CollectorCameraPreview countdown={countdown} showTrackingStatus={false} cameraToggleDisabled={opening || busy || countdown !== null}
       feed={{ enabled: ready || opening, cameraReady: ready, videoRef: video, canvasRef: canvas,
-        error, modelError: null, handsDetected: false, poseDetected: false,
+        error, modelError: null,
         toggleCamera: () => {
           if (ready) { stream.current?.getTracks().forEach(track => track.stop()); stream.current = null; setReady(false) }
           else void open()

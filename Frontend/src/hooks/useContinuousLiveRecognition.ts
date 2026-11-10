@@ -30,7 +30,7 @@ export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEn
   const onFrame = useCallback((sample:LandmarkFrameSample) => {
     void session.current?.observe(sample).catch(() => { stop(); setError('Recognition interrupted. Start again.') })
   }, [stop])
-  const feed = useCameraFeed({onFrame})
+  const feed = useCameraFeed({ onFrame, trackLiveTiming: true })
   useEffect(() => {
     if (!feed.enabled || feed.error || feed.modelError) stop()
   }, [feed.enabled,feed.error,feed.modelError,stop])

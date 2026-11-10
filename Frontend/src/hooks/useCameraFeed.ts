@@ -1,6 +1,6 @@
 import { WASM_BASE_URL, UPPER_BODY_POSE_INDEX, createHandLandmarker, createPoseLandmarker, buildFrameSample } from '../services/landmarks/visionRuntime';
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { createCameraProfile } from "../services/cameraProfile";
+import { createCameraProfile, createRecentCameraTiming, type DetectionTiming } from "../services/cameraProfile";
 import { createDetectionInput, type DetectionInputWidth } from "../services/detectionInput";
 import {
   FilesetResolver,
@@ -101,9 +101,16 @@ export interface CameraFeedState {
   startPerformanceProfile: () => void;
   stopPerformanceProfile: () => void;
   getPerformanceReport: () => string;
+  getLiveTiming: () => LiveCameraTiming | null;
 }
 
+export type LiveCameraTiming = NonNullable<ReturnType<ReturnType<typeof createRecentCameraTiming>["snapshot"]>> & {
+  handDelegate: string | null;
+  poseDelegate: string | null;
+};
+
 export interface UseCameraFeedOptions {
+  trackLiveTiming?: boolean;
   detectionInputWidth?: DetectionInputWidth;
   // Fired once per detection tick with synchronized hand + pose landmarks
   // for that frame. This is the hook for a future dataset collector to
@@ -124,6 +131,16 @@ export interface UseCameraFeedOptions {
 // requiring a further manual Start click.
 export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
   const profileRef = useRef(createCameraProfile());
+  const recentTimingRef = useRef(createRecentCameraTiming());
+  const trackLiveTiming = options?.trackLiveTiming ?? false;
+  const getLiveTiming = useCallback(() => {
+    const timing = recentTimingRef.current.snapshot(performance.now());
+    return timing && {
+      ...timing,
+      handDelegate: landmarkerRef.current ? profileInfoRef.current.handDelegate : null,
+      poseDelegate: poseLandmarkerRef.current ? profileInfoRef.current.poseDelegate : null,
+    };
+  }, []);
   const profileInfoRef = useRef({
     capture: {} as { width?: number; height?: number; configuredFps?: number },
     detectionInput: {} as { width?: number; height?: number; mode?: string },
@@ -367,12 +384,18 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
         if (profileRef.current.isActive() && !recordedProfileInfoRef.current) {
           recordedProfileInfoRef.current = { ...profileInfoRef.current, capture: { ...profileInfoRef.current.capture } };
         }
-        profileRef.current.add({
+        const timing: DetectionTiming = {
           handMs, poseMs, overlayMs, resizeMs, totalMs, completedAt,
           otherMs: totalMs - handMs - poseMs - overlayMs - resizeMs,
           presentedFrames: metadata?.presentedFrames,
           hidden: document.hidden,
-        });
+          handCount: handResult.landmarks.length,
+          singleHandSide: handResult.landmarks.length === 1
+            ? displayHandSide(handResult.handedness?.[0]?.[0]?.categoryName)
+            : undefined,
+        };
+        profileRef.current.add(timing);
+        if (trackLiveTiming) recentTimingRef.current.add(timing);
       }
 
       scheduleNextFrame();
@@ -431,9 +454,14 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
         }
       }
 
-      for (const hand of handResult.landmarks) {
-        ctx.strokeStyle = "#00FF00";
-        ctx.lineWidth = 3;
+      // Match Matplotlib's tab:blue and tab:orange in compare_landmarks.py.
+      const leftColor = "#1F77B4";
+      const rightColor = "#FF7F0E";
+      for (const [index, hand] of handResult.landmarks.entries()) {
+        const side = displayHandSide(handResult.handedness?.[index]?.[0]?.categoryName);
+        ctx.strokeStyle = side === "Left" ? leftColor : side === "Right" ? rightColor : "#FFFFFF";
+        ctx.fillStyle = side === "Left" ? rightColor : side === "Right" ? leftColor : "#FFE83B";
+        ctx.lineWidth = 4;
 
         for (const [start, end] of HAND_CONNECTIONS) {
           const p1 = hand[start];
@@ -445,21 +473,15 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
           ctx.stroke();
         }
 
+        ctx.lineWidth = 2;
         for (const point of hand) {
           const x = point.x * canvas.width;
           const y = point.y * canvas.height;
 
-          // Green outer circle
           ctx.beginPath();
-          ctx.arc(x, y, 8, 0, Math.PI * 2);
-          ctx.fillStyle = "#00FF00";
+          ctx.arc(x, y, 7, 0, Math.PI * 2);
           ctx.fill();
-
-          // Red inner circle
-          ctx.beginPath();
-          ctx.arc(x, y, 5, 0, Math.PI * 2);
-          ctx.fillStyle = "#FF0000";
-          ctx.fill();
+          ctx.stroke();
         }
       }
     }
@@ -502,6 +524,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     return () => {
       cancelled = true;
       profileRef.current.stop();
+      recentTimingRef.current.clear();
       if (rafId) cancelAnimationFrame(rafId);
       if (videoFrameId !== null && videoRef.current) {
         videoRef.current.cancelVideoFrameCallback(videoFrameId);
@@ -509,7 +532,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       stream?.getTracks().forEach((track) => track.stop());
       if (videoRef.current) videoRef.current.srcObject = null;
     };
-  }, [enabled]);
+  }, [enabled, trackLiveTiming]);
 
   // Full-unmount-only cleanup: release both MediaPipe models.
   useEffect(() => {
@@ -536,5 +559,14 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     startPerformanceProfile,
     stopPerformanceProfile,
     getPerformanceReport,
+    getLiveTiming,
   };
+}
+
+// The preview uses the unmirrored camera image. Correct the detector's
+// reported side for display only, leaving recognition features untouched.
+function displayHandSide(category: string | undefined) {
+  if (category === "Left") return "Right";
+  if (category === "Right") return "Left";
+  return undefined;
 }

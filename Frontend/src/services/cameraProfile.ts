@@ -8,6 +8,34 @@ export type DetectionTiming = {
   completedAt: number
   presentedFrames?: number
   hidden: boolean
+  handCount?: number
+  singleHandSide?: 'Left' | 'Right'
+}
+
+export function createRecentCameraTiming() {
+  const samples: DetectionTiming[] = []
+  const maxGapMs = 1000
+  return {
+    clear() { samples.length = 0 },
+    add(sample: DetectionTiming) {
+      const last = samples[samples.length - 1]
+      if (sample.hidden || (last && sample.completedAt - last.completedAt > maxGapMs)) samples.length = 0
+      if (sample.hidden) return
+      if (samples.length === 48) samples.shift()
+      samples.push(sample)
+    },
+    snapshot(now: number) {
+      const last = samples[samples.length - 1]
+      if (!last || now - last.completedAt > maxGapMs) return null
+      const first = samples[0]
+      const elapsed = last.completedAt - first.completedAt
+      const presented = first.presentedFrames !== undefined && last.presentedFrames !== undefined
+        ? last.presentedFrames - first.presentedFrames : null
+      return { latest: last, samples: samples.slice(),
+        processedFps: elapsed > 0 ? (samples.length - 1) * 1000 / elapsed : null,
+        presentedFps: elapsed > 0 && presented !== null && presented >= 0 ? presented * 1000 / elapsed : null }
+    },
+  }
 }
 
 // Scalar accumulators only: no landmarks, camera images, or per-frame React state.

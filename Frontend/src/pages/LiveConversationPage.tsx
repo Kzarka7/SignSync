@@ -81,9 +81,6 @@ export default function LiveConversationPage() {
             <CameraPanel
               feed={feed}
               countdown={capture.countdown}
-              isListening={speech.isListening}
-              isInterpreting={avatar.isRendering}
-              isPlaying={avatar.isPlaying}
             />
             <section className="rounded-xl border border-border bg-white p-4 space-y-3" aria-label="Sign recognition">
               <div className="flex items-center justify-between gap-3">

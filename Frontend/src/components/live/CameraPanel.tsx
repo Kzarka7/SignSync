@@ -1,74 +1,15 @@
-import { AlertTriangle, Loader2, Play, Square, VideoOff } from 'lucide-react'
-import { CameraFeedState } from '../../hooks/useCameraFeed'
+import { AlertTriangle, Loader2, VideoOff } from 'lucide-react'
+import CameraToolbar from '../shared/CameraToolbar'
+import type { CameraFeedState } from '../../hooks/useCameraFeed'
 
-type CameraStatus = 'Listening' | 'Detecting' | 'Interpreting' | 'Playing' | 'Error'
-
-// Colored dot per status, reusing the existing palette (tailwind.config.js)
-// rather than introducing new colors.
-const STATUS_DOT: Record<CameraStatus, string> = {
-  Listening: 'bg-signal',
-  Detecting: 'bg-success',
-  Interpreting: 'bg-amber',
-  Playing: 'bg-trust',
-  Error: 'bg-danger',
-}
-
-interface CameraPanelProps {
-  feed: CameraFeedState
-  countdown?: number | null
-  // Speech/avatar activity, owned by LiveConversationPage (same instances
-  // AvatarPanel renders from) - passed in rather than re-derived here so
-  // there's a single source of truth for what the system is doing.
-  isListening: boolean
-  isInterpreting: boolean
-  isPlaying: boolean
-}
-
-// One status, in priority order: a real error always wins; otherwise
-// whichever human/system activity is currently happening; DETECTING as a
-// baseline while a signer is in frame; WAITING when nothing is going on.
-function resolveStatus(feed: CameraFeedState, isListening: boolean, isInterpreting: boolean, isPlaying: boolean): CameraStatus {
-  if (feed.error || feed.modelError) return 'Error'
-  if (isListening) return 'Listening'
-  if (isInterpreting) return 'Interpreting'
-  if (feed.enabled && feed.cameraReady && feed.handsDetected) return 'Detecting'
-  return 'Playing'
-}
-
-// Renders the live camera feed with a hand-landmark overlay drawn by
-// useCameraFeed. Hands, face, and light are all real detection now;
-// microphone/speaker/AI status still come from the mocked/REST device
-// snapshot (see DetectionStatusPanel).
-export default function CameraPanel({ feed, isListening, isInterpreting, isPlaying, countdown = null }: CameraPanelProps) {
+export default function CameraPanel({ feed, countdown = null }: { feed: CameraFeedState; countdown?: number | null }) {
   const handsWarning = feed.enabled && !feed.error && !feed.modelError && !feed.handsDetected
   const lightWarning = feed.enabled && !feed.error && !feed.modelError && feed.lightLevel === 'warning'
-  const status = resolveStatus(feed, isListening, isInterpreting, isPlaying)
 
   return (
     <div>
       <div className="relative rounded-xl2 overflow-hidden bg-[#0F1B2B]" style={{ aspectRatio: '16 / 9' }}>
-        <div className="absolute top-3 left-3 right-3 flex justify-between z-10">
-          <div className="flex items-center gap-2">
-            <div className="bg-black/45 backdrop-blur-sm text-white text-sm font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${feed.enabled ? 'bg-danger' : 'bg-text-3'}`} />
-              {!feed.enabled ? 'Paused' : feed.cameraReady ? 'Live' : 'Waiting...'}
-            </div>
-            <button
-              onClick={feed.toggleCamera}
-              title={feed.enabled ? 'Stop camera' : 'Start camera'}
-              className="bg-black/45 backdrop-blur-sm text-white text-sm font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-black/60 transition-colors"
-            >
-              {feed.enabled ? <Square size={11} /> : <Play size={11} />}
-              {feed.enabled ? 'Stop' : 'Start'}
-            </button>
-          </div>
-          {feed.enabled && feed.cameraReady && (
-            <div className="bg-black/45 backdrop-blur-sm text-white text-sm font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 tracking-wide">
-              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[status]}`} />
-              {status}
-            </div>
-          )}
-        </div>
+        <CameraToolbar feed={feed} />
 
         {!feed.enabled ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white/50 px-8 text-center">
