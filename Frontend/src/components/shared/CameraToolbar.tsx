@@ -1,5 +1,5 @@
 import { Play, Square } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { CameraFeedState, LiveCameraTiming } from '../../hooks/useCameraFeed'
 
 const cameraControlClass = 'inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-black/70 px-2.5 text-sm font-semibold text-white'
@@ -7,9 +7,10 @@ const cameraControlClass = 'inline-flex min-h-10 items-center gap-1.5 rounded-lg
 export type CameraToolbarFeed = Pick<CameraFeedState, 'enabled' | 'cameraReady' | 'error' | 'modelError' | 'toggleCamera'>
   & Partial<Pick<CameraFeedState, 'getLiveTiming'>>
 
-export default function CameraToolbar({ feed, cameraToggleDisabled = false }: {
+export default function CameraToolbar({ feed, cameraToggleDisabled = false, topRightContent }: {
   feed: CameraToolbarFeed
   cameraToggleDisabled?: boolean
+  topRightContent?: ReactNode
 }) {
   const [timing, setTiming] = useState<LiveCameraTiming | null>(null)
   const readTiming = feed.getLiveTiming
@@ -55,11 +56,14 @@ export default function CameraToolbar({ feed, cameraToggleDisabled = false }: {
           readTiming && <span className={cameraControlClass}>{state}</span>
         )}
       </div>
-      {live && handCount > 0 && (
-        <span className={`ml-auto ${cameraControlClass}`}>
-          {handCount} {handCount === 1 ? 'hand' : 'hands'}
-          {handCount === 1 && live.latest.singleHandSide && ` · ${live.latest.singleHandSide}`}
-        </span>
+      {(topRightContent || (live && handCount > 0)) && (
+        <div className="ml-auto flex min-w-0 max-w-full flex-col items-end gap-2">
+          {topRightContent}
+          {live && handCount > 0 && <span className={cameraControlClass}>
+            {handCount} {handCount === 1 ? 'hand' : 'hands'}
+            {handCount === 1 && live.latest.singleHandSide && ` · ${live.latest.singleHandSide}`}
+          </span>}
+        </div>
       )}
     </div>
   )

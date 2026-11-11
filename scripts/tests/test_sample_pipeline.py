@@ -23,6 +23,20 @@ def schema():
 
 
 class SamplePipelineTests(unittest.TestCase):
+    def test_exploratory_split_requires_exact_coverage_and_recording_isolation(self):
+        rows = [dict(sequence_id=str(i), label='A', content_sha256=str(i),
+                     source_recording='') for i in range(3)]
+        config = dict(labels=['A'], splitMethod='stratified-clip-exploratory',
+                      splitSequenceIds=dict(training=['0'], validation=['1'], test=['2']))
+        self.assertEqual([len(v) for v in pipeline.assign_splits(rows, config).values()], [1, 1, 1])
+        rows[0]['source_recording'] = rows[1]['source_recording'] = 'shared'
+        with self.assertRaisesRegex(ValueError, 'Source recording crosses'):
+            pipeline.assign_splits(rows, config)
+        rows[0]['source_recording'] = rows[1]['source_recording'] = ''
+        config['splitSequenceIds']['test'] = ['0']
+        with self.assertRaisesRegex(ValueError, 'exactly once'):
+            pipeline.assign_splits(rows, config)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

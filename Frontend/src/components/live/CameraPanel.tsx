@@ -1,15 +1,21 @@
 import { AlertTriangle, Loader2, VideoOff } from 'lucide-react'
 import CameraToolbar from '../shared/CameraToolbar'
 import type { CameraFeedState } from '../../hooks/useCameraFeed'
+import type { ReactNode } from 'react'
 
-export default function CameraPanel({ feed, countdown = null }: { feed: CameraFeedState; countdown?: number | null }) {
-  const handsWarning = feed.enabled && !feed.error && !feed.modelError && !feed.handsDetected
+export default function CameraPanel({ feed, countdown = null, showHandsWarning = true, topRightContent }: {
+  feed: CameraFeedState
+  countdown?: number | null
+  showHandsWarning?: boolean
+  topRightContent?: ReactNode
+}) {
+  const handsWarning = showHandsWarning && feed.enabled && !feed.error && !feed.modelError && !feed.handsDetected
   const lightWarning = feed.enabled && !feed.error && !feed.modelError && feed.lightLevel === 'warning'
 
   return (
     <div>
       <div className="relative rounded-xl2 overflow-hidden bg-[#0F1B2B]" style={{ aspectRatio: '16 / 9' }}>
-        <CameraToolbar feed={feed} />
+        <CameraToolbar feed={feed} topRightContent={topRightContent} />
 
         {!feed.enabled ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white/50 px-8 text-center">
@@ -17,7 +23,7 @@ export default function CameraPanel({ feed, countdown = null }: { feed: CameraFe
             <span className="text-sm">Click "Start" to use camera detection.</span>
           </div>
         ) : feed.error ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-white/60 px-8 text-center">
+          <div role="alert" className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-white/60 px-8 text-center">
             <VideoOff size={40} />
             <span className="text-sm leading-relaxed max-w-xs">{feed.error}</span>
           </div>
@@ -46,7 +52,7 @@ export default function CameraPanel({ feed, countdown = null }: { feed: CameraFe
           (handsWarning || lightWarning || feed.modelError) && (
             <div className="absolute bottom-3 left-3 right-3 flex flex-col gap-1.5 z-10">
               {feed.modelError && (
-                <div className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-sm font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
+                <div role="alert" className="bg-amber/15 border border-amber/50 text-[#FDD98A] text-sm font-medium px-2.5 py-2 rounded-lg flex items-center gap-2">
                   <AlertTriangle size={14} />
                   {feed.modelError}
                 </div>

@@ -1,4 +1,4 @@
-import { TranslationSocketEvent, SignRequest, RecognitionMode } from '../../types/message'
+import { TranslationSocketEvent, SignRequest, RecognitionMode, LiveDiagnosticMode } from '../../types/message'
 
 export interface ITranslationSocket {
   readonly endpoint?: string
@@ -9,7 +9,7 @@ export interface ITranslationSocket {
 }
 
 class RealTranslationSocket implements ITranslationSocket {
-  constructor(private mode: RecognitionMode = 'v5', private diagnostics = false) {}
+  constructor(private mode: RecognitionMode | LiveDiagnosticMode = 'v5', private diagnostics = false) {}
   private socket: WebSocket | null = null
 
   get endpoint() {
@@ -57,6 +57,6 @@ class RealTranslationSocket implements ITranslationSocket {
 }
 
 // Recognition always uses the real backend, independently of dashboard mocks.
-export function createTranslationSocket(mode: RecognitionMode = 'v5', diagnostics = false): ITranslationSocket {
+export function createTranslationSocket(mode: RecognitionMode | LiveDiagnosticMode = 'v5', diagnostics = false): ITranslationSocket {
   return new RealTranslationSocket(mode, diagnostics)
 }

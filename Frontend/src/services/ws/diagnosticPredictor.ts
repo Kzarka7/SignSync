@@ -1,15 +1,19 @@
 import { createTranslationSocket } from './translationSocket'
-import type { SignPrediction, SignRequest } from '../../types/message'
+import type { SignPrediction, SignRequest, LiveDiagnosticMode } from '../../types/message'
 
 export const DIAGNOSTIC_RECOGNIZER_ID = 'p4-sign-rest-idle-nine-run-ensemble-graph-diagnostics'
 export type DiagnosticBackendInfo = {
   recognizerId: string; execution: 'graph'; protocol: 1; endpoint: string; runs: string[]; verifiedAt: string
+  supportsShortPreview: boolean
 }
 
 // A dedicated candidate-only connection prevents raw overlapping predictions
 // from entering useTranslationStream's automatic conversation transcript.
-export function createDiagnosticPredictor() {
-  const socket = createTranslationSocket('p4-candidate', true)
+export function createDiagnosticPredictor(mode: LiveDiagnosticMode | 'p4-candidate' = 'p4-candidate') {
+  const recognizerId = mode === 'p4-candidate' ? DIAGNOSTIC_RECOGNIZER_ID
+    : mode === 'lab-alphabet' ? 'lab-alphabet-j460-v2-seed43-graph-diagnostics'
+    : `${mode}-seed42-graph-diagnostics`
+  const socket = createTranslationSocket(mode, true)
   let pending: { id: string; resolve: (value: SignPrediction) => void; reject: (error: Error) => void } | null = null
   let ready = false, closed = false
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -33,24 +37,24 @@ export function createDiagnosticPredictor() {
           if (event.type === 'status') {
             if (event.payload.state === 'ready') {
               const info = event.payload
-              if (info.diagnosticsProtocol !== 1 || info.execution !== 'graph' || info.recognizerId !== DIAGNOSTIC_RECOGNIZER_ID) {
-                fail('Backend mismatch: the recognition lab requires graph-diagnostics v1. Restart the SignSync backend at the configured address and reload this page.'); return
+              if (info.diagnosticsProtocol !== 1 || info.execution !== 'graph' || info.recognizerId !== recognizerId) {
+                fail('Backend mismatch: recognition requires graph-diagnostics v1. Restart the SignSync backend at the configured address and reload this page.'); return
               }
               let endpoint = 'Configured recognition backend'
               if (socket.endpoint) {
                 const url = new URL(socket.endpoint)
                 url.username = ''; url.password = ''; url.search = ''; url.hash = ''
-                url.searchParams.set('model', 'p4-candidate'); url.searchParams.set('diagnostics', '1')
+                url.searchParams.set('model', mode); url.searchParams.set('diagnostics', '1')
                 endpoint = url.toString()
               }
               ready = true; clearTimer(); rejectConnection = null
               resolve({ recognizerId: info.recognizerId, execution: 'graph', protocol: 1,
-                endpoint, runs: info.runs ?? [], verifiedAt: new Date().toISOString() })
+                endpoint, runs: info.runs ?? [], verifiedAt: new Date().toISOString(), supportsShortPreview: info.supportsShortPreview === true })
             }
             else if (event.payload.state === 'disconnected') fail('Candidate disconnected. Start a new run.')
           } else if (event.type === 'error') fail(event.payload.message)
           else if (event.type === 'prediction' && pending?.id === event.payload.requestId) {
-            if (event.payload.model !== DIAGNOSTIC_RECOGNIZER_ID) {
+            if (event.payload.model !== recognizerId) {
               fail('Backend mismatch: received a prediction from an unverified recognizer. Restart the SignSync backend and start a new run.'); return
             }
             clearTimer(); const work = pending; pending = null; work.resolve(event.payload)

@@ -2,14 +2,14 @@
 
 Never trains or promotes a model. Refuses to overwrite an existing release.
 """
-from processed_paths import processed_artifact_path, processed_glob, resolve_artifact_path
+from processed_paths import processed_artifact_path, processed_glob, resolve_artifact_path, resolve_experiment_path
 from model_paths import model_artifact_folder
 import argparse
 from collections import Counter
 from datetime import datetime, timezone
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import shutil
 
 import numpy as np
@@ -57,6 +57,11 @@ def prepare(root, output):
 
     datasets, sign_sets, source_rows, schemas = {}, {}, {}, []
     all_ids = set()
+    frozen = resolve_experiment_path(root / 'experiments' / 'sign_rest_idle_v1_2026_10_17')
+    checksums = {
+        PureWindowsPath(path).as_posix(): digest
+        for path, digest in read(protect(frozen / 'checksums.json')).items()
+    }
     for participant in PARTICIPANTS:
         sign_path = protect(processed_artifact_path(root / 'processed', f'{participant}-dataset-v5.json'))
         signs = load_export(sign_path)
@@ -66,25 +71,20 @@ def prepare(root, output):
         sequences = list(signs['sequences'])
         sign_sets[participant] = {s['id'] for s in sequences}
         rows = [dict(sequenceId=s['id'], label=s['label'], source=str(sign_path.relative_to(root))) for s in sequences]
-        batch = root / 'clean' / participant / 'batch_rest_idle_2026_10_17'
-        manifest_path = protect(batch / 'manifest.json')
-        expected_hashes = {row['destination']: row['sha256'] for row in read(manifest_path)['files']}
+        relative = Path('datasets') / f'{participant}-sign-rest-idle-v1.json'
+        source = protect(frozen / relative)
+        expected = checksums[relative.as_posix()]
+        if protected[str(source.resolve())] != expected:
+            raise ValueError(f'Frozen REST/IDLE dataset checksum mismatch: {source}')
+        background = load_export(source)
+        if background['featureSchema'] != signs['featureSchema']:
+            raise ValueError(f'Incompatible REST/IDLE feature schema: {source}')
         for category, label, expected_count in [('rest', 'REST', 30), ('idle_movement', 'IDLE_MOVEMENT', 21)]:
-            files = sorted((batch / category).glob('*.json'))
-            if len(files) != expected_count:
-                raise ValueError(f'Wrong sample count: {participant} {category}')
-            for path in files:
-                protect(path)
-                if protected[str(path.resolve())] != expected_hashes[f'{category}/{path.name}']:
-                    raise ValueError(f'Sample differs from clean manifest: {path}')
-                data = load_export(path)
-                if data['featureSchema'] != signs['featureSchema'] or len(data['sequences']) != 1:
-                    raise ValueError(f'Incompatible sample: {path}')
-                sample = data['sequences'][0]
-                if sample['label'] != label or sample.get('training', {}).get('category') != category:
-                    raise ValueError(f'Category mismatch: {path}')
-                sequences.append(sample)
-                rows.append(dict(sequenceId=sample['id'], label=label, source=str(path.relative_to(root))))
+            samples = [s for s in background['sequences'] if s['label'] == label]
+            if len(samples) != expected_count or any(s.get('training', {}).get('category') != category for s in samples):
+                raise ValueError(f'Invalid background samples: {participant} {category}')
+            sequences.extend(samples)
+            rows.extend(dict(sequenceId=s['id'], label=label, source=str(source.relative_to(root))) for s in samples)
         for sample in sequences:
             if sample.get('evaluation') or sample['id'] in all_ids:
                 raise ValueError('Evaluation sample or duplicate sequence ID')

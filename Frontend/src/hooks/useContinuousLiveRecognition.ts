@@ -2,14 +2,20 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCameraFeed } from './useCameraFeed'
 import { createDiagnosticSession, type LabTranscriptEntry } from '../services/landmarks/recognitionDiagnostics'
 import { createDiagnosticPredictor } from '../services/ws/diagnosticPredictor'
+import { getRecognitionConfirmation, LIVE_RECOGNITION_POLICY } from '../services/landmarks/liveRecognitionPolicy'
 import type { LandmarkFrameSample } from '../types/landmarks'
 
-export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEntry) => void) {
+export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEntry) => void, {
+  mode = 'signs',
+  onWordBoundary,
+}: { mode?: 'signs' | 'fingerspelling'; onWordBoundary?: () => void } = {}) {
   const session = useRef<ReturnType<typeof createDiagnosticSession> | null>(null)
   const predictor = useRef<ReturnType<typeof createDiagnosticPredictor> | null>(null)
   const generation = useRef(0)
   const accepted = useRef(onAccepted)
   accepted.current = onAccepted
+  const wordBoundary = useRef(onWordBoundary)
+  wordBoundary.current = onWordBoundary
   const [running,setRunning] = useState(false)
   const [loading,setLoading] = useState(false)
   const [countdown,setCountdown] = useState<number|null>(null)
@@ -30,7 +36,7 @@ export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEn
   const onFrame = useCallback((sample:LandmarkFrameSample) => {
     void session.current?.observe(sample).catch(() => { stop(); setError('Recognition interrupted. Start again.') })
   }, [stop])
-  const feed = useCameraFeed({ onFrame, trackLiveTiming: true })
+  const feed = useCameraFeed({ onFrame, trackLiveTiming: true, landmarkMode: 'both' })
   useEffect(() => {
     if (!feed.enabled || feed.error || feed.modelError) stop()
   }, [feed.enabled,feed.error,feed.modelError,stop])
@@ -42,7 +48,10 @@ export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEn
   }, [])
   const start = async () => {
     if (predictor.current || !feed.cameraReady || !feed.poseDetected) return
-    const token=++generation.current, transport=createDiagnosticPredictor()
+    const alphabet = mode === 'fingerspelling'
+    const modelMode = alphabet ? 'lab-alphabet' : 'lab-signs43-similarity'
+    const confirmation = getRecognitionConfirmation()
+    const token=++generation.current, transport=createDiagnosticPredictor(modelMode)
     predictor.current=transport; setLoading(true); setError(null); setStatus('Loading model…')
     try {
       await transport.connect()
@@ -51,8 +60,14 @@ export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEn
       if (token!==generation.current) return
       setCountdown(null)
       let delivered=0
-      const current=createDiagnosticSession({source:'camera',name:'Live conversation',recognitionMode:'segmented',
-        segmentAcceptance:'confirmation',predict:request=>transport.predict(request),onChange:()=>{
+      const current=createDiagnosticSession({source:'camera',name:'Live conversation',...LIVE_RECOGNITION_POLICY,
+        modelMode, ...confirmation,
+        staticMotionCheck: modelMode === 'lab-signs43-similarity',
+        settleConfirmedHold: alphabet,
+        onWordBoundary: alphabet ? () => {
+          if (token === generation.current && session.current === current) wordBoundary.current?.()
+        } : undefined,
+        predict:request=>transport.predict(request),onChange:()=>{
           if (token!==generation.current || session.current!==current) return
           const state=current.state
           for (;delivered<state.transcript.length;delivered++) accepted.current(state.transcript[delivered])

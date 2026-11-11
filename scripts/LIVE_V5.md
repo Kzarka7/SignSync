@@ -44,8 +44,8 @@ if the backend is offline. The first connection loads and warms the models.
 The default artifact root is the sibling `SignSync Dataset` folder. Override with
 `SIGNSYNC_DATASET_ROOT` when starting the backend. Required artifacts:
 
-- `processed/gru_*_geometry_v3_recordings_v5/{metadata.json,gru_data.npz}` for all three participant splits.
-- `models/gru_model_train_test_geometry_v3_recordings_v5/<run>/{best_model.h5,evaluation.json}` for all nine runs.
+- `processed/baseline/recordings_v5/folds/gru_*_geometry_v3_recordings_v5/{metadata.json,gru_data.npz}` for all three participant splits.
+- `models/baseline/recordings_v5/<run>/{best_model.h5,evaluation.json}` for all nine runs.
 
 The development candidate averages probabilities equally across all three splits
 and seeds 42/43/44. Each member uses its own saved training normalization and label
@@ -98,3 +98,66 @@ npm run build
 Manual camera check: all 20 signs; no hands; missing shoulders; cancel mid-capture;
 stop/restart camera; repeat the same sign intentionally; disconnect/reconnect backend;
 end session and start another. Verify no automatic demo messages enter the timeline.
+
+
+## Optional P4 sign / rest / idle camera test
+
+In Live Conversation, select **P4 sign / rest / idle candidate (testing)**.
+Start the camera, wait for Ready, then click **Start continuous testing** once.
+Stay relaxed and still for about one second to calibrate your resting posture.
+Perform one sign, return to that same posture, and wait for **Ready for next sign**
+before performing the next sign. A clear rest of about 1.3 seconds separates
+captures. Each accepted sign is appended automatically to transcription and the
+conversation timeline with its model score percentage. Intentional repetitions
+produce separate entries; a held final posture remains one capture. REST, IDLE,
+uncertain results and signs blocked by missing hands are never transcribed.
+Manual single-capture controls are also available when continuous testing is off;
+accepted candidate results are auto-added in that mode too. Default v5 recognition
+still requires manual capture and confirmation.
+
+**Stop continuous testing** or Esc discards the unfinished gesture and queued
+captures. A completed capture already being classified may still finish and appear.
+Turning off the camera, disconnecting recognition, or switching model stops testing.
+The model selector is locked during continuous testing; stop testing before switching.
+Completed captures queue in order while the backend is busy (up to six waiting).
+If the queue fills, an explicit warning asks you to pause; additional captures are
+not submitted. Ending a session disconnects recognition and saves the transcript.
+
+This first continuous mode uses the shared motion/rest boundary detector. Motion
+starts a capture with 350 ms of pre-roll; returning to the calibrated posture for
+750 ms ends it, followed by a 500 ms rest to rearm. It does not split signs performed
+back-to-back without rest. A held gesture longer than eight seconds or 240 frames,
+tracking loss, or long frame gaps causes a visible discard rather than a sign.
+A stationary camera, visible shoulders, and a repeatable resting posture are
+needed. Finger and wrist movement both count as motion. An idle movement can form
+a capture too; the 22-class classifier decides whether it is a sign, REST or IDLE.
+The boundary status is a heuristic, not a model prediction of REST or IDLE.
+
+The backend lazily loads nine candidate checkpoints from
+`models/baseline/sign_rest_idle_p4_signs_v1_2026_10_18/models` and corresponding
+`processed/baseline/sign_rest_idle_p4_signs_v1_2026_10_18/folds/<fold>/{metadata.json,gru_data.npz}`. It uses each
+member's saved scaler and the existing 0.63 score / 0.15 margin thresholds.
+The current model remains the default on page load. No artifacts are replaced.
+Missing candidate artifacts report an error; restart the backend after code changes.
+
+Candidate signs require at least one detected hand in valid frames for at least
+50% of a capture. REST/IDLE inference still allows hands out of view; missing hands
+do not force an artificial REST/IDLE label. The UI explains blocked sign guesses.
+Model scores are not measured accuracy. Try touching hair and scratching the face
+as well as signs: those activities caused false sign accepts in the experiment.
+Automatic boundaries are provisional and require camera testing. The nine-model
+ensemble includes members trained on each of P1–P3, so this is a behavior check,
+not a reproduction of held-out accuracy. P4 contributed signs only. Captures are
+sent for inference, not saved as training recordings. Test transcriptions use the
+normal session history/export; review them for mistakes.
+
+
+P4 continuous testing now treats both hands absent (with valid shoulder/pose
+tracking) as a rule-based REST / IDLE state. No motion calibration is required
+in this state. Hands re-entering start a capture after the normal start debounce;
+continuous absence for 750 ms finishes it, followed by the normal rearm period.
+Brief hand dropouts do not split the capture. One hand disappearing while the
+other remains visible keeps the previous tracking-loss protection. Missing pose
+still requires recovery. The backend sign visibility safeguard and model scores
+are unchanged. REST / IDLE camera status is a no-sign rule, not a measured
+classifier score or a distinction between resting and idle movement.
