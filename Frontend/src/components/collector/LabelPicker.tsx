@@ -1,6 +1,6 @@
 import { memo, useId, useRef, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
-import { findSignLabels } from '../../services/dataset/signLabelSearch'
+import { ALPHABET_LABELS, findSignLabels } from '../../services/dataset/signLabelSearch'
 
 interface LabelPickerProps {
   knownLabels: string[]
@@ -17,7 +17,10 @@ function LabelPicker({ knownLabels, selectedLabel, onSelectLabel, disabled, labe
   const input = useRef<HTMLInputElement>(null)
   const originalSelection = useRef(selectedLabel)
   const id = useId()
-  const matches = query?.trim() ? findSignLabels(knownLabels, query) : knownLabels
+  const results = query?.trim() ? findSignLabels(knownLabels, query) : knownLabels
+  const alphabet = ALPHABET_LABELS.filter(label => results.includes(label))
+  const signs = results.filter(label => !ALPHABET_LABELS.includes(label))
+  const matches = [...alphabet, ...signs]
   const expanded = open && !disabled
   const activeIndex = active >= 0 && active < matches.length ? active : -1
 
@@ -116,20 +119,29 @@ function LabelPicker({ knownLabels, selectedLabel, onSelectLabel, disabled, labe
         </button>
         {expanded && <div id={`${id}-options`} role="listbox" aria-label="Matching signs"
           className="absolute left-0 right-0 z-20 mt-2 max-h-[220px] overflow-y-auto rounded-lg border border-border bg-white p-1 shadow-lg custom-scrollbar">
-          {matches.length ? matches.map((label, index) => <button
-            id={`${id}-option-${index}`}
-            key={label}
-            type="button"
-            role="option"
-            aria-selected={label === selectedLabel}
-            tabIndex={-1}
-            className={`flex min-h-10 w-full cursor-pointer items-center justify-between rounded-md my-1 px-3 py-2.5 text-left text-base font-semibold ${label === selectedLabel ? 'text-signal hover:bg-signal-light' : 'text-ink hover:bg-sky'} ${index === activeIndex || label === selectedLabel ? 'bg-signal-light' : ''}`}
-            onMouseDown={event => event.preventDefault()}
-            onClick={() => choose(label)}
-          >
-            {label}
-            {label === selectedLabel && <Check size={14} className="text-signal" aria-hidden="true" />}
-          </button>) : <p role="status" className="px-3 py-3 text-sm text-text-2">No matching signs.</p>}
+          {matches.length ? [
+            { title: 'Alphabet', labels: alphabet, offset: 0 },
+            { title: 'Signs', labels: signs, offset: alphabet.length },
+          ].map(group => group.labels.length > 0 && <div key={group.title} role="group" aria-label={group.title}>
+            <div aria-hidden="true" className="px-3 py-2 text-sm font-semibold text-text-2">{group.title}</div>
+            {group.labels.map((label, position) => {
+              const index = group.offset + position
+              return <button
+                  id={`${id}-option-${index}`}
+                  key={label}
+                  type="button"
+                  role="option"
+                  aria-selected={label === selectedLabel}
+                  tabIndex={-1}
+                  className={`flex min-h-10 w-full cursor-pointer items-center justify-between rounded-md my-1 px-3 py-2.5 text-left text-base font-semibold ${label === selectedLabel ? 'text-signal hover:bg-signal-light' : 'text-ink hover:bg-sky'} ${index === activeIndex || label === selectedLabel ? 'bg-signal-light' : ''}`}
+                  onMouseDown={event => event.preventDefault()}
+                  onClick={() => choose(label)}
+                >
+                  {label}
+                  {label === selectedLabel && <Check size={14} className="text-signal" aria-hidden="true" />}
+                </button>
+            })}
+          </div>) : <p role="status" className="px-3 py-3 text-sm text-text-2">No matching signs.</p>}
         </div>}
       </div>
     </div>

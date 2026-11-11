@@ -12,6 +12,7 @@ import {
   saveSequence,
 } from '../services/dataset/datasetStorage'
 import { downloadDatasetExport, buildPerSampleZipExport, triggerDownload } from '../services/dataset/datasetExport'
+import { ALPHABET_LABELS } from '../services/dataset/signLabelSearch'
 
 // Standard signs, supplemented by labels in previously saved recordings.
 export const DEFAULT_SIGN_LABELS = [
@@ -22,7 +23,7 @@ export const DEFAULT_SIGN_LABELS = [
   'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
   'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY',
   'GOOD_MORNING', 'GOOD_AFTERNOON', 'GOOD_EVENING', 'YESTERDAY', 'TOMORROW', 'TODAY',
-  'B', 'E', 'F', 'J', 'L', 'U', 'V', 'W', 'X', 'Z',
+  ...ALPHABET_LABELS,
 ]
 
 function createSequenceId(): string {

@@ -5,7 +5,7 @@ const path = require('node:path')
 const vm = require('node:vm')
 const ts = require('typescript')
 
-function pickerHarness() {
+function pickerHarness(extraLabels = []) {
   let selected = 'HELLO', disabled = false, cursor = 0
   const slots = []
   const selections = []
@@ -35,7 +35,7 @@ function pickerHarness() {
     return exports
   }
   const Picker = load(path.resolve(__dirname, '../src/components/collector/LabelPicker.tsx')).default
-  const labels = ['HELLO', 'THANK_YOU', 'ONE', 'TEN', 'JANUARY', 'GOOD_MORNING', 'GOOD_AFTERNOON', 'GOOD_EVENING']
+  const labels = ['HELLO', 'THANK_YOU', 'ONE', 'TEN', 'JANUARY', 'GOOD_MORNING', 'GOOD_AFTERNOON', 'GOOD_EVENING', ...extraLabels]
   function nodes(node) {
     if (Array.isArray(node)) return node.flatMap(nodes)
     if (!node || typeof node !== 'object') return []
@@ -57,6 +57,19 @@ function pickerHarness() {
     search(value) { this.input().props.onChange({ currentTarget: { value } }) },
   }
 }
+
+test('Alphabet lists A through Z and keyboard navigation follows the displayed groups', () => {
+  const letters = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ']
+  const h = pickerHarness([...letters].reverse())
+  h.open()
+  assert.ok(h.render().some(node => node.props?.role === 'group' && node.props['aria-label'] === 'Alphabet'))
+  assert.deepEqual(h.options().slice(0, 26).map(node => node.props.children[0]), letters)
+  for (let i = 0; i < 27; i++) h.key('ArrowDown')
+  h.key('Enter')
+  assert.equal(h.selected(), 'HELLO')
+  h.search('z')
+  assert.equal(h.selected(), 'Z')
+})
 
 test('sign search auto-selects names, unique fragments, and numeric aliases', () => {
   const h = pickerHarness()
