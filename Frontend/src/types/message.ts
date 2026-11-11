@@ -3,6 +3,7 @@
 // selected quick phrase.
 export type MessageSource = 'sign' | 'speech' | 'phrase'
 export type RecognitionMode = 'v5' | 'p4-candidate'
+export type LiveDiagnosticMode = 'lab-alphabet' | 'lab-signs43-similarity'
 
 // One score per recognition/translation pipeline stage. Which keys show
 // up depends on the message's source - a 'sign' message never carries
@@ -34,10 +35,20 @@ export interface SignRequest {
   requestId: string
   featureOrder: string[]
   frames: { timestamp: number; features: number[]; valid: boolean }[]
+  preview?: true
 }
 
 export interface SignPrediction {
-  rejectionReason?: 'insufficient_hand_visibility'
+  inputKind?: 'static' | 'temporal' | 'joint' | 'unusable'
+  inputReason?: string
+  motion?: number
+  rejectionReason?: 'insufficient_hand_visibility' | 'alphabet_input_mismatch' | 'alphabet_low_confidence' | 'alphabet_low_margin'
+    | 'stage2_low_confidence' | 'stage2_low_margin'
+  confidenceThreshold?: number
+  marginThreshold?: number
+  staticCandidate?: { label: string; score: number; margin: number }
+  temporalCandidate?: { label: string; score: number; margin: number }
+  jHandshapeSupported?: boolean
   requestId: string
   label: string
   score: number
@@ -51,7 +62,7 @@ export interface SignPrediction {
 export type TranslationSocketEvent =
   | { type: 'prediction'; payload: SignPrediction }
   | { type: 'status'; payload: { state: 'loading' | 'ready' | 'disconnected'; message: string;
-      diagnosticsProtocol?: number; recognizerId?: string; execution?: string; runs?: string[] } }
+      diagnosticsProtocol?: number; recognizerId?: string; execution?: string; runs?: string[]; supportsShortPreview?: boolean } }
   | { type: 'error'; payload: { requestId?: string; message: string } }
 
 export interface DeviceStatusEvent {

@@ -7,7 +7,8 @@ export const CONTINUOUS_SETTINGS = {
   nonSignMinScore: .63, nonSignMinMargin: .15,
   noHandsIdleMs: 500, frameFreshnessMs: 750, minShoulderVisibility: .5,
 } as const
-export const CONTINUOUS_POLICY_VERSION = 3
+export const CONTINUOUS_POLICY_VERSION = 6
+export const STAGE2_FAST_CONFIRMATION = { minScore: .90, minVoteSpanMs: 140 } as const
 export type ContinuousSettings = { [K in keyof typeof CONTINUOUS_SETTINGS]: number }
 export type FeatureFrame = SignRequest['frames'][number]
 export type RecognitionWindow = {
@@ -83,20 +84,21 @@ export type ActivityDecision = { activity: string; reason: string; emit: boolean
 export type AcceptanceEvent = { timestampMs: number; type: string; reason: string; source: 'model' | 'no-hands' | null; evidenceMs: number; label: string | null }
 // Provisional temporal policy, shared by camera and replay. Adjacent windows
 // overlap, so consistency is not independent evidence or calibrated confidence.
-export function createActivityPolicy(overrides: Partial<ContinuousSettings> = {}) {
+export function createActivityPolicy(overrides: Partial<ContinuousSettings> = {}, stage2FastConfirmation = false) {
   const settings = { ...CONTINUOUS_SETTINGS, ...overrides }
   let previousMs = -Infinity
-  let votes: { label: string | null; endMs: number }[] = []
+  let votes: { label: string | null; endMs: number; score: number }[] = []
   let latched = false, lastAcceptedLabel: string | null = null
   let evidenceSince: number | null = null, evidenceSource: AcceptanceState['boundarySource'] = null, timeMs = 0
   let evidenceThrough = 0
   let tracking: ObservationTracking | null = null
+  let acceptedAt = -Infinity, repeatStart: number | null = null
   const events: AcceptanceEvent[] = []
   const event = (type: string, reason: string) => events.push({ timestampMs: timeMs, type, reason,
     source: evidenceSource, evidenceMs: evidenceSince === null ? 0 : evidenceThrough - evidenceSince, label: lastAcceptedLabel })
   const clearCandidate = () => { votes = [] }
-  const vote = (label: string | null, endMs: number) => {
-    votes.push({ label, endMs })
+  const vote = (label: string | null, endMs: number, score = 0) => {
+    votes.push({ label, endMs, score })
     votes = votes.slice(-settings.confirmationHistory)
   }
   const interruptEvidence = (reason: string) => {
@@ -122,15 +124,19 @@ export function createActivityPolicy(overrides: Partial<ContinuousSettings> = {}
   return {
     get state() { return acceptance() },
     get events() { return events },
+    observeGestureBoundary(completedMs: number, startedMs: number) {
+      if (latched && startedMs > acceptedAt && startedMs > completedMs) repeatStart = startedMs
+    },
+    discardGestureBoundary() { repeatStart = null },
     observeTracking(observation: ObservationTracking) {
       const was = tracking?.state
       tracking = observation; timeMs = observation.timestampMs
       if (observation.state === 'no-hands') {
         clearCandidate(); addEvidence('no-hands')
-      } else if (observation.state !== 'visible') breakEvidence(observation.state)
+      } else if (observation.state !== 'visible') { repeatStart = null; breakEvidence(observation.state) }
       else if (was && was !== 'visible') breakEvidence('tracking_recovered')
     },
-    update(prediction: SignPrediction | null, endMs: number, blocked?: string): ActivityDecision {
+    update(prediction: SignPrediction | null, endMs: number, blocked?: string, startMs?: number, confirmationBlocked?: string): ActivityDecision {
       // Keep the observation clock monotonic when a camera result arrives late.
       timeMs = Math.max(timeMs, endMs)
       if (tracking?.state === 'no-hands') return decision('IDLE', 'no_hands_idle_rule')
@@ -139,7 +145,10 @@ export function createActivityPolicy(overrides: Partial<ContinuousSettings> = {}
       if (tracking?.state === 'frame-gap') return decision('TRACKING INTERRUPTED', 'camera_frame_gap')
       if (endMs - previousMs > settings.maxEvidenceGapMs) breakEvidence('prediction_evidence_gap')
       previousMs = endMs
-      if (!prediction || blocked || prediction.rejectionReason) {
+      const reason = prediction?.rejectionReason
+      const classificationRejection = reason?.startsWith('alphabet_') ||
+        reason === 'stage2_low_confidence' || reason === 'stage2_low_margin'
+      if (!prediction || blocked || prediction.rejectionReason && !classificationRejection) {
         const reason = blocked ?? prediction?.rejectionReason ?? 'no_prediction'
         breakEvidence(reason)
         return decision('UNCERTAIN', reason)
@@ -155,19 +164,30 @@ export function createActivityPolicy(overrides: Partial<ContinuousSettings> = {}
         return decision(displayActivity(prediction.label), latched ? 'non_sign_rearming' : 'non_sign')
       }
       interruptEvidence('sign_prediction')
-      if (!prediction.accepted) {
+      if (!prediction.accepted || prediction.rejectionReason) {
         vote(null, endMs)
-        return decision('UNCERTAIN', 'model_rejected')
+      return decision('UNCERTAIN', reason ?? 'model_rejected')
       }
-      vote(prediction.label, endMs)
+      // Only a window entirely inside the new gesture can release the latch.
+      // Old overlapping/in-flight windows must not print the previous hold again.
+      if (repeatStart !== null && startMs !== undefined && startMs >= repeatStart) {
+        clearCandidate(); latched = false; repeatStart = null
+        event('rearmed', 'completed_gesture_then_new_motion')
+      }
+      vote(prediction.label, endMs, prediction.score)
       if (latched && lastAcceptedLabel === prediction.label) return decision(displayActivity(prediction.label), 'duplicate_sign_suppressed')
       const supporting = votes.filter(item => item.label === prediction.label)
-      if (supporting.length < settings.confirmationWindows || endMs - supporting[0].endMs < settings.confirmationMs) {
+      const previous = votes[votes.length - 2]
+      const fastConfirmation = stage2FastConfirmation && prediction.inputKind === 'static'
+        && prediction.score >= STAGE2_FAST_CONFIRMATION.minScore && previous?.label === prediction.label
+        && previous.score >= STAGE2_FAST_CONFIRMATION.minScore && endMs - previous.endMs >= STAGE2_FAST_CONFIRMATION.minVoteSpanMs
+      if (confirmationBlocked) return decision('UNCERTAIN', confirmationBlocked)
+      if (!fastConfirmation && (supporting.length < settings.confirmationWindows || endMs - supporting[0].endMs < settings.confirmationMs)) {
         return decision(`POSSIBLE ${displayActivity(prediction.label)}`, 'confirming')
       }
       // Consume evidence: each new entry needs fresh supporting predictions.
       clearCandidate()
-      latched = true; lastAcceptedLabel = prediction.label; event('accepted', 'confirmed_sign')
+      latched = true; lastAcceptedLabel = prediction.label; acceptedAt = endMs; repeatStart = null; event('accepted', 'confirmed_sign')
       return decision(displayActivity(prediction.label), 'accepted_once', true)
     },
   }

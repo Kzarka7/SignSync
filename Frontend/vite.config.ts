@@ -36,5 +36,10 @@ function collectorOfflineAssets(): Plugin {
 
 export default defineConfig({
   plugins: [react(), collectorOfflineAssets()],
-  server: { port: 5173 }
+  server: { port: 5173 },
+  preview: {
+    allowedHosts: process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+      ? [process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS]
+      : undefined,
+  },
 })

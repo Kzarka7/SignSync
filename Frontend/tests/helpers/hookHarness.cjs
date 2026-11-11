@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const vm = require('node:vm')
 const ts = require('typescript')
 // Minimal synchronous hook runner for camera/socket callbacks; no DOM or devices.
-exports.hookHarness = function (file, exportName, imports, args = () => []) {
+exports.hookHarness = function (file, exportName, imports, args = () => [], globals = {}) {
   const slots = []; let cursor = 0, dirty = false, effects = [], result
   const same = (a, b) => a && b && a.length === b.length && a.every((x, i) => Object.is(x, b[i]))
   const react = {
@@ -38,6 +38,7 @@ exports.hookHarness = function (file, exportName, imports, args = () => []) {
     setTimeout: () => ++timer, clearTimeout() {}, setInterval: fn => {const id=++timer;intervals.set(id,fn);return id}, clearInterval(id) {intervals.delete(id)},
     crypto: { randomUUID: () => 'capture-' + ++timer },
     window: { addEventListener(type,fn) {listeners.set(type,fn)}, removeEventListener(type,fn) {if(listeners.get(type)===fn)listeners.delete(type)} }, console,
+    ...globals,
   })
   return {
     tickIntervals() {for(const fn of [...intervals.values()])fn()},

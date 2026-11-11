@@ -38,3 +38,17 @@ VITE_WS_URL=ws://localhost:8000/ws/translate
 ```
 
 Swagger: http://127.0.0.1:8000/docs
+
+## Test from another network
+
+On Windows, install `cloudflared` and complete the local setup first. The script uses the `.venv-gru` backend environment and the installed dependencies in `Frontend`. Stop any existing manual tunnels, FastAPI on port `8000`, and Vite preview on port `4173` before starting.
+
+From the SignSync repository root, run this in PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\scripts\remote-test.ps1
+```
+
+The script starts two Cloudflare tunnels, configures the backend and frontend URLs, builds the frontend, and starts FastAPI and Vite preview. Send testers the HTTPS URL printed after **Share this link**. They can open it in a browser on another network without installing anything. To test live recognition, start a conversation, allow camera access, wait for **Ready**, and record a supported sign.
+
+Keep your PC awake and the terminal open while people test. Press **Ctrl+C** to stop the test. Each run creates a new link. The test backend is unauthenticated, so use test data.

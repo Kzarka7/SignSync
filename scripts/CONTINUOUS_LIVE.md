@@ -6,17 +6,15 @@ a countdown). Confirmed signs enter the conversation automatically. Stop, camera
 failure, navigation, and session completion cancel pending recognition work.
 Speech and quick phrases continue using the normal conversation timeline.
 
-The live path uses `useContinuousLiveRecognition`, the shared segmentation/session
-services, and the P4 graph predictor. These modules retain diagnostic names because
-they are also used by local development tools. The Recognition Lab page, route,
-and sidebar entry are not part of this release.
+Signs mode uses 43 Similar Signs. Fingerspelling uses Alphabet A–Z and sends the draft
+after 1.2 seconds of observed hands-free tracking. Both modes use the saved recognition
+settings and verify the backend checkpoint identity before starting a run.
 
-The backend connection uses `model=p4-candidate&diagnostics=1`. It requires the
-protocol-1 graph handshake and P4 ensemble identity. The backend loads the existing
-nine P4 checkpoints and their saved scalers from
-`experiments/sign_rest_idle_p4_signs_v1_2026_10_18` under `SIGNSYNC_DATASET_ROOT`
-(or the sibling `SignSync Dataset` directory by default). Model files are not bundled in Git. Missing artifacts produce a
-visible error; there is no silent fallback to a different recognition model.
+43 Similar Signs uses its model and scaler packages under `models/current` and
+`processed/current`. The v5 and P4 artifacts are available under the corresponding
+`baseline` folders. Alphabet A–Z reads its checkpoint and scalers from the existing
+alphabet candidate package. These files are under `SIGNSYNC_DATASET_ROOT` or the sibling
+`SignSync Dataset` folder.
 
 Each gesture segment must independently confirm its prediction. A repeated label
 may be accepted in a fresh segment; duplicate suppression applies within a segment.

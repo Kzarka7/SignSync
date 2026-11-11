@@ -1,9 +1,10 @@
 const fs = require('node:fs')
 const path = require('node:path')
+const { experimentFolder } = require('./experimentPaths.cjs')
 const vm = require('node:vm')
 const ts = require('typescript')
 const [datasetRoot] = process.argv.slice(2)
-const location = path.join(datasetRoot, 'experiments/source_sampling_20261021')
+const location = experimentFolder(datasetRoot, 'reports/comparisons', 'source_sampling_20261021')
 function load(file) {
   const exports = {}
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText,
@@ -11,7 +12,7 @@ function load(file) {
   return exports
 }
 const { assessVideoQuality } = load(path.resolve(__dirname, '../src/services/dataset/videoQuality.ts'))
-const annotations = JSON.parse(fs.readFileSync(path.join(datasetRoot, 'experiments/fsl_reference_review_2026_10_19/reviewed-manifest.json'))).clips
+const annotations = JSON.parse(fs.readFileSync(path.join(experimentFolder(datasetRoot, 'reports/reviews', 'fsl_reference_review_2026_10_19'), 'reviewed-manifest.json'))).clips
 const rows = []
 for (const fps of [20, 30, 60]) {
   const folder = path.join(location, `aligned${fps}`)

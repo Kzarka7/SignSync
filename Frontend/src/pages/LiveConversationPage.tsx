@@ -1,5 +1,5 @@
 import SecondsInput from '../components/shared/SecondsInput'
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslationStream } from '../hooks/useTranslationStream'
 import { useContinuousLiveRecognition } from '../hooks/useContinuousLiveRecognition'
@@ -30,11 +30,33 @@ export default function LiveConversationPage() {
   }, [isReadyToBegin, navigate])
 
   const stream = useTranslationStream(true)
-  const { messages, endSession, exportSession, submitSpeech, submitPhrase } = stream
+  const { messages, endSession, exportSession, submitSpeech, submitPhrase, submitFingerspelling } = stream
+  const [recognitionMode, setRecognitionMode] = useState<'signs' | 'fingerspelling'>('signs')
+  const [draft, setDraft] = useState('')
+  const currentDraft = useRef<{ text: string; letterScores: number[] }>({ text: '', letterScores: [] })
+  function updateDraft(text: string, letterScores = currentDraft.current.letterScores) {
+    currentDraft.current = { text, letterScores: text.trim() ? letterScores : [] }
+    setDraft(text)
+  }
+  function sendDraft() {
+    const { text, letterScores } = currentDraft.current
+    if (submitFingerspelling(text, letterScores)) updateDraft('')
+  }
+  const fingerspelling = recognitionMode === 'fingerspelling'
   const lastMessage = messages[messages.length - 1]
   const lastSpokenOrPhraseMessage = [...messages].reverse().find((m) => m.source === 'speech' || m.source === 'phrase')
-  const capture = useContinuousLiveRecognition(stream.appendConfirmedSign)
+  const capture = useContinuousLiveRecognition(entry => {
+    if (!fingerspelling) stream.appendConfirmedSign(entry)
+    else if (/^[A-Z]$/.test(entry.label)) {
+      const { text, letterScores } = currentDraft.current
+      updateDraft(text + entry.label, [...letterScores, entry.score])
+    }
+  }, {
+    mode: recognitionMode,
+    onWordBoundary: sendDraft,
+  })
   const { feed } = capture
+  const captureActive = capture.running || capture.loading || capture.countdown !== null
   const speech = useSpeechRecognition()
   const avatar = useAvatarRenderer()
   function handleEnd() {
@@ -81,14 +103,34 @@ export default function LiveConversationPage() {
             <CameraPanel
               feed={feed}
               countdown={capture.countdown}
-              isListening={speech.isListening}
-              isInterpreting={avatar.isRendering}
-              isPlaying={avatar.isPlaying}
+              topRightContent={fingerspelling && draft.length > 0 && <form className="relative max-w-full rounded-lg bg-black/80 text-base font-semibold" onSubmit={event => {
+                event.preventDefault()
+                sendDraft()
+              }}>
+                <span aria-hidden="true" className="invisible block min-h-10 overflow-hidden whitespace-pre px-2.5">{draft}</span>
+                <input aria-label="Fingerspelling draft" value={draft} onChange={event => updateDraft(event.currentTarget.value)}
+                  autoComplete="off" spellCheck={false}
+                  className="absolute inset-0 w-full rounded-lg bg-transparent px-2.5 text-right text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal" />
+              </form>}
             />
             <section className="rounded-xl border border-border bg-white p-4 space-y-3" aria-label="Sign recognition">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="font-semibold">Live sign recognition <span className="text-xs text-text-2">· P4 experimental</span></h2>
+                <h2 className="font-semibold">Live sign recognition
+                  {!fingerspelling && <span className="text-xs text-text-2"> · 43 Similar Signs</span>}
+                </h2>
                 <span className="text-sm" role="status">{capture.status}</span>
+              </div>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Recognition mode">
+                {(['signs', 'fingerspelling'] as const).map(mode => <Button key={mode} type="button" size="sm"
+                  aria-pressed={recognitionMode === mode}
+                  variant={recognitionMode === mode ? 'primary-ghost' : 'default'}
+                  onClick={() => {
+                    if (recognitionMode === mode) return
+                    if (captureActive) capture.stop()
+                    setRecognitionMode(mode)
+                  }}>
+                  {mode === 'signs' ? 'Signs' : 'Fingerspelling'}
+                </Button>)}
               </div>
               <div className="flex items-center gap-3 flex-wrap">
               <Button data-sign-capture-control aria-keyshortcuts="Space Escape" variant={capture.running || capture.loading || capture.countdown!==null ? 'danger-solid' : 'primary'}

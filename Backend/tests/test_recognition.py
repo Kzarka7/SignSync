@@ -15,6 +15,7 @@ from app.recognition import (FEATURE_ORDER, EXPERIMENTS, REPO, SignRequest, V5Re
                              P4CandidateRecognizer, get_recognizer, raw_geometry_features,
                              standardize_for_model, validate_capture)
 from app.main import app
+from processed_paths import processed_artifact_path
 
 
 def capture():
@@ -27,6 +28,22 @@ def capture():
 class CaptureTests(unittest.TestCase):
     def test_accepts_complete_capture(self):
         validate_capture(SignRequest.model_validate(capture()))
+
+    def test_short_duration_is_allowed_only_for_supported_previews(self):
+        data = capture()
+        data['frames'] = data['frames'][:8]
+        for i, frame in enumerate(data['frames']):
+            frame['timestamp'] = i * 50
+        with self.assertRaisesRegex(ValueError, 'complete sign'):
+            validate_capture(SignRequest.model_validate(data), supports_short_preview=True)
+        data['preview'] = True
+        request = SignRequest.model_validate(data)
+        with self.assertRaisesRegex(ValueError, 'complete sign'):
+            validate_capture(request)
+        validate_capture(request, supports_short_preview=True)
+        request.frames[-1].timestamp -= 1
+        with self.assertRaisesRegex(ValueError, '350 ms'):
+            validate_capture(request, supports_short_preview=True)
 
     def test_rejects_idle_and_missing_pose(self):
         for field in ("hands", "pose"):
@@ -181,13 +198,15 @@ class SocketTests(unittest.TestCase):
 class ArtifactTests(unittest.TestCase):
     def test_p4_candidate_scalers_and_real_predictions(self):
         root = REPO.parent / 'SignSync Dataset'
-        release = root / 'experiments' / 'sign_rest_idle_p4_signs_v1_2026_10_18'
+        from processed_paths import p4_prepared_folder, resolve_experiment_path
+        release = resolve_experiment_path(root / 'experiments' / 'sign_rest_idle_p4_signs_v1_2026_10_18')
         recognizer = get_recognizer('p4-candidate')
         self.assertEqual(len(recognizer.members), 9)
         requests = []
-        for folder in sorted((release / 'folds').iterdir()):
+        prepared = p4_prepared_folder(release)
+        for folder in sorted((prepared / 'folds').iterdir()):
             meta = json.loads((folder / 'metadata.json').read_text())
-            source = json.loads((release / 'datasets' / (meta['testParticipant'] + '-sign-rest-idle-v1.json')).read_text())
+            source = json.loads((prepared / 'datasets' / (meta['testParticipant'] + '-sign-rest-idle-v1.json')).read_text())
             seqs = {seq['id']: seq for seq in source['sequences']}
             labels = sorted(meta['labelToIndex'], key=meta['labelToIndex'].get)
             with np.load(folder / 'gru_data.npz', allow_pickle=False) as data:
@@ -215,9 +234,9 @@ class ArtifactTests(unittest.TestCase):
         root = REPO.parent / "SignSync Dataset"
         valid_sequence = None
         for experiment in EXPERIMENTS:
-            folder = root / "processed" / experiment
+            folder = processed_artifact_path(root / "processed", experiment)
             meta = json.loads((folder / "metadata.json").read_text())
-            source = json.loads((root / "processed" / f"{meta['testParticipant']}-dataset-v5.json").read_text())
+            source = json.loads((processed_artifact_path(root / "processed", f"{meta['testParticipant']}-dataset-v5.json")).read_text())
             self.assertEqual(source["featureSchema"]["order"], FEATURE_ORDER)
             sequences = {s["id"]: s for s in source["sequences"]}
             with np.load(folder / "gru_data.npz", allow_pickle=False) as arrays:

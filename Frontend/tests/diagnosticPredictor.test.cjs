@@ -7,7 +7,7 @@ const model = 'p4-sign-rest-idle-nine-run-ensemble-graph-diagnostics'
 const readyStatus = { type: 'status', payload: { state: 'ready', recognizerId: model,
   execution: 'graph', diagnosticsProtocol: 1, runs: ['member'] } }
 
-function setup() {
+function setup(mode = 'p4-candidate') {
   const socket = { endpoint: 'ws://localhost:8000/ws/translate?model=p4-candidate&diagnostics=1',
     disconnects: 0, connect(fn) { this.emit = fn }, disconnect() { this.disconnects++ }, sendSign() { return true } }
   const timers = new Map(); let counter = 0
@@ -15,11 +15,28 @@ function setup() {
   const code = ts.transpileModule(fs.readFileSync('src/services/ws/diagnosticPredictor.ts', 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText
-  vm.runInNewContext(code, { exports, URL, require: () => ({ createTranslationSocket(mode, diagnostics) {
-    assert.equal(mode, 'p4-candidate'); assert.equal(diagnostics, true); return socket
+  vm.runInNewContext(code, { exports, URL, require: () => ({ createTranslationSocket(selected, diagnostics) {
+    assert.equal(selected, mode); assert.equal(diagnostics, true); return socket
   } }), setTimeout(callback) { timers.set(++counter, callback); return counter }, clearTimeout(id) { timers.delete(id) } })
-  return { client: exports.createDiagnosticPredictor(), socket, timers }
+  return { client: exports.createDiagnosticPredictor(mode), socket, timers }
 }
+
+test('live models verify their own checkpoint identity and reject the other model', async () => {
+  for (const [mode, identity, otherModel] of [
+    ['lab-signs43-similarity', 'lab-signs43-similarity-seed42-graph-diagnostics', model],
+    ['lab-alphabet', 'lab-alphabet-j460-v2-seed43-graph-diagnostics', model],
+  ]) {
+    const { client, socket } = setup(mode)
+    const loading = client.connect()
+    socket.emit({ type: 'status', payload: { ...readyStatus.payload, recognizerId: identity } })
+    const info = await loading
+    assert.equal(new URL(info.endpoint).searchParams.get('model'), mode)
+    const response = client.predict({ requestId: 'one' })
+    const rejected = assert.rejects(response, /unverified recognizer/)
+    socket.emit({ type: 'prediction', payload: { requestId: 'one', model: otherModel } })
+    await rejected
+  }
+})
 
 test('diagnostic transport correlates responses and rejects pending work on stop', async () => {
   const { client, socket, timers } = setup()

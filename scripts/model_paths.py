@@ -2,7 +2,8 @@
 from pathlib import Path
 
 MODEL_LAYOUT = {
-    'gru_model_train_test_geometry_v3_recordings_v5': 'current/recordings_v5',
+    'gru_model_train_test_geometry_v3_recordings_v5': 'baseline/recordings_v5',
+    'samples_43_signs_similarity_v1': 'current/samples_43_signs_similarity_v1',
     'gru_model_train_test_geometry_v3_recordings_v6': 'candidates/recordings_v6',
     'gru_model_train_test_geometry_v3': 'archive/geometry_v3',
     'gru_model_train_test_handshape_v2': 'archive/handshape_v2',
@@ -11,6 +12,10 @@ MODEL_LAYOUT = {
     'prediction-reports': 'reports/predictions',
     'idle_hand_v1_readiness': 'reports/readiness/idle_hand_v1',
     'v5_v6_ensemble_comparison_20261016': 'reports/comparisons/v5_v6_ensemble_20261016',
+}
+PREVIOUS_MODEL_LAYOUT = {
+    'gru_model_train_test_geometry_v3_recordings_v5': 'current/recordings_v5',
+    'samples_43_signs_similarity_v1': 'candidates/samples_43_signs_similarity_v1',
 }
 for version in (2, 3, 4):
     MODEL_LAYOUT[f'gru_model_train_test_geometry_v3_recordings_v{version}'] = f'archive/recordings_v{version}'
@@ -38,11 +43,13 @@ def model_artifact_folder(root, name):
     """
     legacy = root / name
     organized = root / MODEL_LAYOUT.get(name, name)
-    if legacy != organized and legacy.exists():
-        if organized.exists():
-            raise ValueError(f'Ambiguous model artifact: {legacy} and {organized}')
-        return legacy
-    return organized
+    locations = {legacy, organized}
+    if name in PREVIOUS_MODEL_LAYOUT:
+        locations.add(root / PREVIOUS_MODEL_LAYOUT[name])
+    existing = sorted(path for path in locations if path.exists())
+    if len(existing) > 1:
+        raise ValueError(f'Ambiguous model artifact: {existing}')
+    return existing[0] if existing else organized
 
 
 def resolve_model_artifact_path(path):
@@ -53,6 +60,10 @@ def resolve_model_artifact_path(path):
             relative = path.relative_to(parent)
             if relative.parts[0] in MODEL_LAYOUT:
                 return model_artifact_folder(parent, relative.parts[0]).joinpath(*relative.parts[1:])
+            for name, previous in PREVIOUS_MODEL_LAYOUT.items():
+                prefix = Path(previous)
+                if relative.is_relative_to(prefix):
+                    return model_artifact_folder(parent, name) / relative.relative_to(prefix)
     return path
 
 

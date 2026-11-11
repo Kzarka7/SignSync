@@ -34,6 +34,22 @@ test('external recognition opens no legacy socket and deduplicates confirmed ent
   assert.equal(harness.render().messages[0].confidence,96.7)
   harness.unmount()
 })
+
+test('sending a reviewed fingerspelling draft averages the confirmed letter scores', () => {
+  const { harness } = setup(true)
+  assert.equal(harness.render().submitFingerspelling('  ', [.91]), false)
+  assert.equal(harness.render().messages.length, 0)
+  assert.equal(harness.render().submitFingerspelling(' EZ ', [.99, .865]), true)
+  const { messages } = harness.render()
+  assert.equal(messages.length, 1)
+  assert.equal(messages[0].source, 'sign')
+  assert.equal(messages[0].text, 'EZ')
+  assert.equal(messages[0].confidence, 92.8)
+  assert.equal(messages[0].confidenceBreakdown.handSignRecognition, 92.8)
+  harness.render().submitFingerspelling('Typed draft', [])
+  assert.equal(harness.render().messages[1].confidence, undefined)
+  harness.unmount()
+})
 test('candidate auto-transcribes separate accepted signs once, preserving repeats and percentages', () => {
   const { harness, ready, predict, sockets } = setup()
   harness.render().selectMode('p4-candidate'); harness.render(); ready()
