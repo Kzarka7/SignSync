@@ -12,13 +12,13 @@ function load(relative) {
     if (cache.has(file)) return cache.get(file)
     const exports = {}; cache.set(file, exports)
     vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText,
-      { exports, Blob, TextEncoder, crypto: crypto.webcrypto, require: name => name.startsWith('.') ? at(path.resolve(path.dirname(file), name + '.ts')) : require(name) })
+      { exports, Blob, TextEncoder, performance, crypto: crypto.webcrypto, require: name => name.startsWith('.') ? at(path.resolve(path.dirname(file), name + '.ts')) : require(name) })
     return exports
   }
   return at(path.resolve(__dirname, '../src', relative + '.ts'))
 }
 const { assessVideoQuality, assessBoundaryVideoQuality } = load('services/dataset/videoQuality')
-const { automaticSignInterval, reviewSignInterval } = load('services/dataset/videoDiagnostics')
+const { analyzeSignInterval, automaticSignInterval, reviewSignInterval } = load('services/dataset/videoDiagnostics')
 const { assessTrainingSample, reviewTrainingSamples, buildTrainingPackage } = load('services/dataset/trainingPackage')
 const { suggestSignInterval, videoDiagnostics } = load('services/dataset/videoDiagnostics')
 const { confirmInterval, intervalReviewMatches, intervalFindings } = load('services/dataset/videoIntervalReview')
@@ -140,12 +140,38 @@ test('suggestions preserve short detections and margins, never classify hidden h
   for (let i = 0; i < 5; i++) frames[i].raw.leftHand = null
   for (let i = 15; i < 20; i++) frames[i].raw.leftHand = null
   const suggestion = suggestSignInterval(frames, 1)
-  assert.equal(suggestion.start, 0); assert.equal(suggestion.end, 1)
+  assert.equal(suggestion.start, .15); assert.equal(suggestion.end, .85)
   assert.equal(suggestion.movingFrames, 0, 'stationary signs are allowed')
   assert.equal(videoDiagnostics(frames).filter(tick => tick.left).length, 10)
   frames.forEach(frame => frame.raw.leftHand = null)
   assert.equal(suggestSignInterval(frames, 1), null)
 })
+test('trim clearance retains only a few missing-hand frames at the edges without cutting visible fragments', () => {
+  for (const fps of [20, 30, 60]) {
+    const frames = repeatedSignFrames(fps, [[1000, 2000]])
+    frames.forEach(f => { if (f.timestamp < 1000 || f.timestamp >= 2000) f.raw.leftHand = null })
+    // A brief internal tracking loss must remain within the saved interval.
+    frames.forEach(f => { if (f.timestamp >= 1400 && f.timestamp < 1500) f.raw.leftHand = null })
+    const interval = reviewSignInterval(frames, 5)
+    const selected = frames.filter(f => f.timestamp >= interval.start * 1000 && f.timestamp < interval.end * 1000)
+    const first = selected.findIndex(f => f.raw.leftHand)
+    const last = selected.findLastIndex(f => f.raw.leftHand)
+    assert.ok(first >= 1 && first <= 3, `${fps} FPS leading clearance`)
+    assert.ok(selected.length - last - 1 >= 1 && selected.length - last - 1 <= 3, `${fps} FPS trailing clearance`)
+    assert.equal(selected.filter(f => f.timestamp >= 1400 && f.timestamp < 1500).length, fps / 10)
+    assert.equal(selected.filter(f => f.raw.leftHand).length, frames.filter(f => f.raw.leftHand).length)
+    // Even an isolated observation at either edge is retained.
+    frames[2].raw.leftHand = fixture().frames[0].raw.leftHand
+    frames[frames.length - 3].raw.leftHand = fixture().frames[0].raw.leftHand
+    const outer = suggestSignInterval(frames, 5)
+    assert.ok(outer.start * 1000 <= frames[2].timestamp)
+    assert.ok(outer.end * 1000 > frames[frames.length - 3].timestamp)
+  }
+  const slow = repeatedSignFrames(5, [[1000, 2000]])
+  slow.forEach(f => { if (f.timestamp < 1000 || f.timestamp >= 2000) f.raw.leftHand = null })
+  assert.equal(suggestSignInterval(slow, 5).start, .9, 'low cadence cannot expand clearance beyond 100 ms')
+})
+
 test('package excludes duplicate sources/content and evaluation samples with specific reasons', async () => {
   const first = fixture(), duplicate = fixture(), evaluation = fixture()
   duplicate.id = 'sample-2'; evaluation.id = 'sample-3'; evaluation.evaluation = { taskId: 'held-out' }
@@ -193,6 +219,31 @@ test('source-frame v4 exports retain irregular real timestamps and pass training
   assert.notEqual(assessTrainingSample(sample).state, 'Ready for training')
 })
 
+test('a cached automatic trim remains ready for training and exports source provenance', async () => {
+  const { trimProcessedVideo } = load('services/dataset/videoTrim')
+  const sample = fixture(), meta = sample.videoImport
+  const sampling = { method: 'decoded-source-frames-v1', requestedFps: 20, effectiveTargetFps: 20,
+    sourceAverageFps: 20, sourceMedianFps: 20, variableFrameRate: false, sourceTimeOriginSeconds: 0,
+    achievedFps: 20, decodedFrames: 20, selectedFrames: 20, skippedForTarget: 0, duplicateTimestamps: 0, processingMs: 2000, processingFps: 10 }
+  const source = { frames: sample.frames.map(f => ({ ...f, sourceTimestampMs: 500 + f.timestamp, sourceDurationMs: 50 })),
+    start: .5, end: 1.5, duration: 2, width: 1920, height: 1080, inputWidth: 640, inputHeight: 360, maxDimension: 640, sampling }
+  const trimmed = trimProcessedVideo(source, { start: .6, end: 1.45 }, new AbortController().signal)
+  sample.frames = trimmed.frames
+  sample.durationMs = trimmed.frames.at(-1).timestamp - trimmed.frames[0].timestamp
+  meta.processingVersion = meta.review.processingVersion = 'video-import-v5-mp0.10.35-gesture-context'
+  meta.preprocessing.orientation = 'source-display-transform'
+  meta.sampling = trimmed.sampling; meta.sampleFps = trimmed.sampling.achievedFps; meta.quality = trimmed.quality
+  meta.trimStartMs = meta.review.trimStartMs = 600
+  meta.trimEndMs = meta.review.trimEndMs = 1450
+  meta.intervalReview = confirmInterval(.6, 1.45, 2, 'automatic')
+  assert.equal(assessTrainingSample(sample).state, 'Ready for training')
+  const pkg = await buildTrainingPackage([sample]), archive = await JSZip.loadAsync(await pkg.blob.arrayBuffer())
+  const exported = JSON.parse(await archive.file('dataset.json').async('string')).sequences[0]
+  assert.equal(exported.frames[0].sourceTimestampMs, 600)
+  assert.equal(exported.frames[0].timestamp, 0)
+  assert.equal(exported.videoImport.sampling.reusedFrom.selectedFrames, 20)
+})
+
 test('source selection rejects duplicate timestamps and never fabricates low-rate frames', () => {
   const selector = sourceFrameSelector(60, 0, 1)
   assert.equal(selector.accept(0), true)
@@ -226,8 +277,8 @@ test('automatic boundaries keep margins and defer stationary, fragmented or boun
     return frame
   })
   const suggested = automaticSignInterval(frames, 5)
-  assert.equal(suggested.start, .75)
-  assert.equal(suggested.end, 2.8)
+  assert.equal(suggested.start, .9)
+  assert.equal(suggested.end, 2.65)
   const stationary = JSON.parse(JSON.stringify(frames))
   stationary.forEach(frame => { if (frame.raw.leftHand) frame.raw.leftHand = template.raw.leftHand })
   assert.equal(automaticSignInterval(stationary, 5), null)
@@ -257,7 +308,7 @@ test('auto-trim selects only the first complete idle-bounded activity at differe
   for (const fps of [20, 30, 60]) {
     const interval = automaticSignInterval(repeatedSignFrames(fps), 5)
     assert.ok(interval, `expected interval at ${fps} FPS`)
-    assert.ok(Math.abs(interval.start - .75) < .06)
+    assert.ok(Math.abs(interval.start - (1 - Math.min(.1, 2 / fps))) < .06)
     assert.ok(interval.end > 2 && interval.end < 2.5, 'completion margin stays before second performance')
     assert.ok(interval.activityStartMs >= 1000 && interval.activityEndMs < 2500)
     assert.match(interval.reason, /first usable activity/)
@@ -319,10 +370,78 @@ test('review retains a start-trim suggestion when continuous repeated signing re
   })
   assert.equal(automaticSignInterval(frames,5).end,5, 'leading idle is trimmed automatically while preserving the ending')
   const suggestion = reviewSignInterval(frames,5)
-  assert.equal(suggestion.start,.75)
+  assert.equal(suggestion.start,.933)
   assert.equal(suggestion.end,5, 'the user chooses the end between repetitions')
   assert.match(suggestion.reason,/adjust the end manually/)
   assert.equal(reviewSignInterval([],5),null)
+})
+
+test('suggested leading trim explains missing preparation evidence without weakening the pause requirement', () => {
+  const frames = repeatedSignFrames(30, [[1133, 5000]])
+  frames.forEach(frame => {
+    if (frame.timestamp < 1133) {
+      frame.raw.leftHand = null
+      frame.raw.pose.leftWrist.visibility = .1
+    }
+  })
+  const analysis = analyzeSignInterval(frames, 5)
+  assert.equal(analysis.automatic, null)
+  assert.equal(analysis.code, 'unconfirmed-preparation')
+  assert.ok(Math.abs(analysis.suggestion.start - 1.067) < .04)
+  assert.equal(analysis.suggestion.end, 5)
+  assert.equal(reviewSignInterval(frames, 5).start, analysis.suggestion.start)
+  assert.match(reviewSignInterval(frames, 5).reason, /keeps all detected hand activity/)
+  frames.forEach(frame => { frame.raw.pose.leftWrist.visibility = 1 })
+  const supported = analyzeSignInterval(frames, 5)
+  assert.equal(supported.code, 'automatic')
+  assert.equal(supported.automatic.end, 5)
+})
+
+test('end-only trim requires observed completion and preserves the exact source beginning across frame rates', () => {
+  for (const fps of [20, 30, 60]) {
+    const frames = repeatedSignFrames(fps, [[0, 3000]])
+    frames.forEach(frame => { if (frame.timestamp >= 3000) frame.raw.leftHand = null })
+    // Also exercise variable source cadence without introducing long gaps.
+    for (const sample of [frames, frames.filter((_, i) => i % 3 !== 1)]) {
+      const analysis = analyzeSignInterval(sample, 5)
+      assert.equal(analysis.code, 'automatic', `${fps} FPS`)
+      assert.equal(analysis.automatic.start, 0)
+      const steps = sample.slice(1).map((f, i) => f.timestamp - sample[i].timestamp).sort((a, b) => a - b)
+      const step = steps[Math.floor(steps.length / 2)]
+      const lastVisible = sample.filter(f => f.raw.leftHand).at(-1).timestamp
+      assert.ok(Math.abs(analysis.automatic.end * 1000 - (lastVisible + step + Math.min(100, step * 2))) <= 1.001)
+      assert.match(analysis.reason, /source beginning is preserved/)
+    }
+    frames.forEach(frame => {
+      if (frame.timestamp >= 3000) frame.raw.pose.leftWrist.visibility = .1
+    })
+    const uncertain = analyzeSignInterval(frames, 5)
+    assert.equal(uncertain.automatic, null)
+    assert.equal(uncertain.code, 'unconfirmed-completion')
+    assert.ok(uncertain.suggestion.end < 5)
+  }
+})
+
+test('end-only trimming retains duration, movement, internal-gap and multi-performance safeguards', () => {
+  const endOnly = () => {
+    const frames = repeatedSignFrames(30, [[0, 3000]])
+    frames.forEach(frame => { if (frame.timestamp >= 3000) frame.raw.leftHand = null })
+    return frames
+  }
+  const stationary = endOnly()
+  stationary.forEach(frame => { frame.raw.leftHand?.forEach(point => { point.x = .5 }) })
+  assert.equal(analyzeSignInterval(stationary, 5).code, 'insufficient-motion')
+  const short = endOnly()
+  short.forEach(frame => { if (frame.timestamp >= 300) frame.raw.leftHand = null })
+  assert.equal(analyzeSignInterval(short, 5).code, 'short-activity')
+  const lost = endOnly()
+  lost.forEach(frame => { if (frame.timestamp >= 1000 && frame.timestamp < 2000) frame.raw.leftHand = null })
+  assert.equal(analyzeSignInterval(lost, 5).code, 'tracking-gap')
+  const separated = repeatedSignFrames(30, [[0, 1500], [3000, 5000]])
+  assert.equal(analyzeSignInterval(separated, 5).code, 'separate-activities')
+  assert.equal(analyzeSignInterval([], 5).code, 'invalid-recording')
+  const unseen = endOnly(); unseen.forEach(frame => { frame.raw.leftHand = null })
+  assert.equal(analyzeSignInterval(unseen, 5).code, 'no-hands')
 })
 
 test('ONE_6 actual-video landmarks select the first sign despite cropped resting wrists', () => {
@@ -336,9 +455,9 @@ test('ONE_6 actual-video landmarks select the first sign despite cropped resting
   assert.equal(suggestSignInterval(frames,data.duration).end, 3, 'old all-activity suggestion includes both performances')
   const interval = automaticSignInterval(frames,data.duration)
   assert.ok(interval)
-  assert.equal(interval.start, .67)
-  assert.equal(interval.end, 1.97)
-  assert.equal(reviewSignInterval(frames,data.duration).end,1.97, 'review prefers the first complete performance over the outer trim')
+  assert.equal(interval.start, .84)
+  assert.equal(interval.end, 1.8)
+  assert.equal(reviewSignInterval(frames,data.duration).end,1.8, 'review prefers the first complete performance over the outer trim')
   const selected = frames.filter(f => f.timestamp >= interval.start*1000 && f.timestamp < interval.end*1000)
     .map(f => ({ ...f,timestamp:f.timestamp-interval.start*1000 }))
   const quality = assessVideoQuality(selected,'either', { endMs:(interval.end-interval.start)*1000,fps:25 },

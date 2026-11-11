@@ -5,7 +5,7 @@ import shutil
 
 import numpy as np
 
-from sample_pipeline import digest, read_csv, assign_splits, safe_name, SPLITS, SUFFIXES
+from sample_pipeline import digest, read_csv, assign_splits, safe_name, SPLITS, SUFFIXES, GEOMETRY_V3
 
 
 def validate_candidate(folder, metadata):
@@ -23,6 +23,8 @@ def validate_candidate(folder, metadata):
     config = json.loads((folder / 'config.json').read_text(encoding='utf-8'))
     if safe_name(config['name']) != metadata['experiment']:
         raise ValueError('Candidate version differs from its frozen config')
+    if config.get('featureVariant', GEOMETRY_V3) != metadata.get('featureVariant', GEOMETRY_V3):
+        raise ValueError('Candidate feature variant differs from its frozen config')
     if any(r['status'] != 'approved' for r in rows):
         raise ValueError('Candidate includes unapproved samples')
     partitions = assign_splits(rows, config)
@@ -80,9 +82,13 @@ def copy_preparation(folder, output, metadata):
     # even if training happens after preparation scripts have evolved.
     training_source = output / 'training_source'
     training_source.mkdir()
-    for name in ('train_gru.py', 'sample_training.py', 'sample_pipeline.py',
+    sources = ('train_gru.py', 'sample_training.py', 'sample_pipeline.py',
                  'preprocess_dataset.py', 'prepare_handshape_experiments.py',
-                 'gesture_geometry.py', 'model_paths.py', 'processed_paths.py'):
+                 'gesture_geometry.py', 'model_paths.py', 'processed_paths.py',
+                 'shape_motion_sequence.py', 'stage2_features.py')
+    if 'similarity_training.npz' in metadata['artifactSha256']:
+        sources += ('prepare_similarity_pilot.py',)
+    for name in sources:
         shutil.copy2(Path(__file__).with_name(name), training_source / name)
     import platform
     from importlib.metadata import version

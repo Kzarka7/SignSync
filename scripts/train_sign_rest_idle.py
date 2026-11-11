@@ -1,5 +1,5 @@
 """Train and evaluate an isolated 22-class candidate; never update live models."""
-from processed_paths import processed_glob, resolve_artifact_path
+from processed_paths import processed_glob, resolve_artifact_path, active_source_hashes, resolve_experiment_path
 from model_paths import model_artifact_folder
 import argparse
 from collections import Counter
@@ -65,8 +65,24 @@ def score(probabilities, labels, truth):
     return result
 
 
+def preparation_protection(hashes, prepared):
+    """Keep frozen inputs protected and record the code used by this run."""
+    protected = active_source_hashes(hashes)
+    repo = Path(__file__).resolve().parent.parent
+    for name, expected in list(protected.items()):
+        path = Path(name)
+        if path.parent == repo / 'scripts':
+            snapshot = prepared / 'source' / path.name
+            if snapshot.is_file() and sha(snapshot) == expected:
+                protected[str(snapshot)] = expected
+                del protected[name]
+    recognition = repo / 'Backend/app/recognition.py'
+    protected[str(recognition)] = sha(recognition)
+    return protected
+
+
 def run(dataset_root, prepared, output):
-    dataset_root, prepared, output = dataset_root.resolve(), prepared.resolve(), output.resolve()
+    dataset_root, prepared, output = dataset_root.resolve(), resolve_experiment_path(prepared).resolve(), resolve_experiment_path(output).resolve()
     if output.exists() or dataset_root / 'experiments' not in output.parents:
         raise ValueError('Use a NEW output folder inside dataset-root/experiments')
     checks = read(prepared / 'checksums.json')
@@ -74,7 +90,7 @@ def run(dataset_root, prepared, output):
         if sha(prepared / relative) != expected:
             raise ValueError('Prepared dataset checksum mismatch: ' + relative)
     manifest = read(prepared / 'manifest.json')
-    protected = dict(manifest['protectedFileSha256'])
+    protected = preparation_protection(manifest['protectedFileSha256'], prepared)
     # Include live service code and every prepared artifact in the integrity check.
     repo = Path(__file__).resolve().parent.parent
     for p in [repo / 'Backend/app/recognition.py', *[p for p in prepared.rglob('*') if p.is_file()]]:
@@ -292,11 +308,11 @@ if __name__=='__main__':
     parser.add_argument('--compare-only',action='store_true',help='Finish comparison for nine completed runs; never retrain')
     args=parser.parse_args()
     if args.compare_only:
-        output=args.output.resolve(); prepared=args.prepared.resolve()
+        output=resolve_experiment_path(args.output).resolve(); prepared=resolve_experiment_path(args.prepared).resolve()
         protocol=read(output/'protocol.json')
-        if protocol['prepared'] != str(prepared) or (output/'comparison.json').exists():
+        if resolve_experiment_path(protocol['prepared']).resolve() != prepared or (output/'comparison.json').exists():
             raise ValueError('Prepared data mismatch or comparison already completed')
-        protected=protocol['protectedFileSha256']
+        protected=active_source_hashes(protocol['protectedFileSha256'])
         for p,expected in protected.items():
             if sha(p)!=expected: raise ValueError('Protected source changed: '+p)
         per_run=read(output/'training_progress.json')

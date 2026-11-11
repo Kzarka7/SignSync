@@ -3,7 +3,7 @@ import json
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
-from app.recognition import SignRequest, get_recognizer, get_diagnostic_recognizer
+from app.recognition import SignRequest, get_recognizer, get_diagnostic_recognizer, LIVE_DIAGNOSTIC_MODELS
 from app.ws.manager import manager
 
 router = APIRouter()
@@ -15,20 +15,25 @@ async def translate_socket(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         mode = websocket.query_params.get('model', 'v5')
-        if mode not in ('v5', 'p4-candidate'):
+        if mode not in ('v5', 'p4-candidate', *LIVE_DIAGNOSTIC_MODELS):
             await websocket.send_json({'type': 'error', 'payload': {'message': 'Unknown recognition model.'}})
             await websocket.close(code=1008)
             return
-        name = 'P4 candidate' if mode == 'p4-candidate' else 'V5'
+        name = {'v5': 'V5', 'p4-candidate': 'P4 candidate',
+                'lab-alphabet': 'Fingerspelling', 'lab-signs43-similarity': '43 Similar Signs'}[mode]
         diagnostics = websocket.query_params.get('diagnostics', '0')
-        if diagnostics not in ('0', '1') or (diagnostics == '1' and mode != 'p4-candidate'):
-            await websocket.send_json({'type': 'error', 'payload': {'message': 'Diagnostics require the optional P4 candidate.'}})
+        if (diagnostics not in ('0', '1') or (diagnostics == '1' and mode == 'v5') or
+                (mode in LIVE_DIAGNOSTIC_MODELS and diagnostics != '1')):
+            await websocket.send_json({'type': 'error', 'payload': {'message': 'Select a supported diagnostic model.'}})
             await websocket.close(code=1008)
             return
         await websocket.send_json({'type': 'status', 'payload': {'state': 'loading', 'message': f'Loading {name} recognition...'}})
         try:
-            recognizer = (await asyncio.to_thread(get_diagnostic_recognizer) if diagnostics == '1'
-                          else await asyncio.to_thread(get_recognizer, mode))
+            if mode in LIVE_DIAGNOSTIC_MODELS:
+                recognizer = await asyncio.to_thread(get_diagnostic_recognizer, mode)
+            else:
+                recognizer = (await asyncio.to_thread(get_diagnostic_recognizer) if diagnostics == '1'
+                              else await asyncio.to_thread(get_recognizer, mode))
         except Exception:
             logger.exception('Unable to load %s artifacts', name)
             await websocket.send_json({'type': 'error', 'payload': {'message': f'{name} model unavailable. Check backend dependencies and the SignSync Dataset folder, or select the current live model.'}})
@@ -40,6 +45,8 @@ async def translate_socket(websocket: WebSocket):
         }
         if diagnostics == '1':
             ready_payload.update({'diagnosticsProtocol': 1, 'recognizerId': recognizer.model_id, 'execution': 'graph'})
+            if getattr(recognizer, 'supports_short_preview', False):
+                ready_payload['supportsShortPreview'] = True
         await websocket.send_json({'type': 'status', 'payload': ready_payload})
         seen = set()
         while True:

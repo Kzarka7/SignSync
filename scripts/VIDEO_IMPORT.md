@@ -123,7 +123,8 @@ inference, and their contact-sheet boundaries have approximately ±300 ms uncert
 
 Uploads now include a tracking timeline for each hand, shoulders, movement and
 edge proximity. The seek slider uses source time. The suggested interval covers
-all detected hand activity with 250 ms margins; it is advisory and never labels
+all detected hand activity with about two processed frames of clearance per side
+(capped at 100 ms); it is advisory and never labels
 missing hands as REST or certifies a complete gesture. Applying it changes the
 draft only. Reprocess before approval. A stationary sign is allowed.
 
@@ -274,14 +275,50 @@ See [the manual test guide](VIDEO_COLLECTOR_TESTING.md) for the full workflow.
 
 ## Automatic trimming and batch approval
 
-New uploads and preserved camera recordings capture two enabled-by-default options:
-**Auto-trim and reprocess new recordings** and **Automatically use trimmed intervals**.
-The first runs a full pass, then reprocesses one clear suggestion with 250 ms margins.
-Automatic candidates must have margins inside both source boundaries, at least
-400 ms span, movement evidence and no internal detected-activity gap over 750 ms.
+New uploads and preserved camera recordings capture the enabled-by-default
+**Auto-trim videos** option. It runs a full pass, then applies the
+same interval offered in review. The first usable complete performance is preferred;
+when conservative checks defer, the outer suggestion is applied for human review.
+Outer suggestions preserve all detected hand activity with two processed-frame
+intervals of clearance per side (about 67 ms at 30 FPS, capped at 100 ms) and
+never remove internal tracking gaps. A suggestion covering the full recording
+does not trigger a redundant processing pass.
+
+Conservative candidates require at least 400 ms activity span, at least three moving
+hand observations and no internal detected-activity gap over 750 ms. The first
+usable performance between sustained observed lowered-hand pauses is preferred;
+the conservative path never merges separate performances across an observed pause. Pauses require
+300 ms of positive hand/arm evidence, with reliable shoulders and all active arms
+lowered. An unseen unused arm or cropped hips do not block the existing checks.
+For conservative start-only trimming, an observed preparation pause is required;
+conservative end-only trimming requires an observed completion pause. These
+one-sided trims preserve the opposite source endpoint. Missing
+hand detections or a stationary raised hand alone never establish a pause.
 These are conservative tracking heuristics, not recognition or certified gesture boundaries.
-Unclear candidates retain the full result for manual interval selection. An unusable
-or failed second pass also falls back to the full result; cancellation never approves a result.
+These confidence conditions govern gesture/context quality exemptions, not whether
+an available review suggestion is applied. Review fallback trims receive normal
+full-interval quality checks without a context exemption. An unusable or failed
+trim falls back to the full result; cancellation never approves a result.
+
+Automatic trimming reuses the completed pass's actual landmark observations.
+There is no second decoding/inference pass: `trimProcessedVideo` selects observations
+within the source interval, rebases both sample and raw timestamps, and recalculates
+quality. Source timestamps/durations and missing-hand gaps remain intact. The
+full result is not mutated. MediaPipe's temporal state is retained from the original
+pass rather than restarted at the trim boundary, so observations may differ from
+a separate manual reprocessing run.
+
+Sampling metadata updates selected frames and achieved FPS. Decoded/duplicate
+counts still describe the original pass; discarded trim observations join the
+skipped count so the decoded-frame accounting remains consistent. Processing
+time includes the original inference cost and trim assessment. `sampling.reusedFrom`
+records the processed source interval and its selected-frame count. Manual
+reprocessing and restoring the full recording still run explicit processing.
+
+Processing and preview share `analyzeSignInterval`, which returns the automatic
+candidate, review suggestion, decision code and reason. The queue prefers the
+conservative candidate, otherwise uses the review suggestion. The preview marks
+successfully applied trims **Automatically applied—review before saving**.
 
 Automatic use records `intervalReview.selectionMethod: automatic` for a successful
 trim. It does not check Reviewed or save. Manual confirmation records `manual`;
@@ -302,7 +339,7 @@ timestamps, feature order and retained observations use the v4 source-frame poli
 Existing v3/v4 quality and export validation remain unchanged.
 
 For a clear automatic trim, the first/last detected activity before adding the
-250 ms padding supplies a provisional gesture assessment window. Metadata
+brief frame-based padding supplies a provisional gesture assessment window. Metadata
 `qualityWindow` uses protocol `gesture-context-v1`, relative start/end milliseconds
 and basis `automatic-hand-activity`. Each margin is limited to 350 ms and the
 gesture window must span at least 400 ms. Arbitrary internal missing-hand gaps

@@ -41,7 +41,7 @@ class ModelPathTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             name = 'gru_model_train_test_geometry_v3_recordings_v5'
-            organized = root/'current'/'recordings_v5'
+            organized = root/'baseline'/'recordings_v5'
             self.assertEqual(model_artifact_folder(root, name), organized)
             legacy = root/name
             legacy.mkdir(parents=True)
@@ -62,10 +62,11 @@ class ModelPathTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)/'models'
             old = root/'gru_model_train_test_geometry_v3_recordings_v5'/'run'/'best_model.h5'
-            new = root/'current'/'recordings_v5'/'run'/'best_model.h5'
+            new = root/'baseline'/'recordings_v5'/'run'/'best_model.h5'
             new.parent.mkdir(parents=True)
             new.write_bytes(b'checkpoint')
             self.assertEqual(resolve_model_artifact_path(old), new)
+            self.assertEqual(resolve_model_artifact_path(root/'current'/'recordings_v5'/'run'/'best_model.h5'), new)
             untouched = processed_artifact_path(root.parent/'processed', 'metadata.json')
             self.assertEqual(resolve_model_artifact_path(untouched), untouched)
 

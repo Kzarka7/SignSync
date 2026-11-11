@@ -1,5 +1,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
+const { experimentFolder } = require('./experimentPaths.cjs')
 const vm = require('node:vm')
 const ts = require('typescript')
 const [datasetRoot, experiment] = process.argv.slice(2)
@@ -10,7 +11,7 @@ function load(file) {
   return exports
 }
 const { assessVideoQuality } = load(path.resolve(__dirname, '../src/services/dataset/videoQuality.ts'))
-const manifest = JSON.parse(fs.readFileSync(path.join(datasetRoot, 'experiments/fsl_reference_review_2026_10_19/reviewed-manifest.json'))).clips
+const manifest = JSON.parse(fs.readFileSync(path.join(experimentFolder(datasetRoot, 'reports/reviews', 'fsl_reference_review_2026_10_19'), 'reviewed-manifest.json'))).clips
 const results = []
 for (const folder of fs.readdirSync(experiment)) {
   const location = path.join(experiment, folder)
