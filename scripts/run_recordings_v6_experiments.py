@@ -1,10 +1,10 @@
 """Prepare and train four-participant geometry-v3 experiments without overwrites.
 
-P1-P3 retain their v5 recordings; P4 uses the reviewed merge-input-v5 folder.
+P1-P3 use their frozen v5 datasets; P4 uses the prepared v6 dataset.
 Each fold trains on three participants and holds the fourth out of training
 and validation. Existing split settings, architecture, and seeds are retained.
 """
-from processed_paths import processed_artifact_path, processed_glob, resolve_artifact_path
+from processed_paths import processed_artifact_path, processed_glob, resolve_artifact_path, resolve_experiment_path
 from model_paths import model_artifact_folder
 import argparse
 from collections import Counter
@@ -18,7 +18,6 @@ import sys
 
 import numpy as np
 
-from merge_dataset import merge
 from preprocess_dataset import load_export, stratified_train_validation_split
 from run_recordings_v5_experiments import raw_geometry_features, standardize_for_model
 from gesture_geometry import feature_names
@@ -42,19 +41,9 @@ def experiment_name(held_out):
     return 'gru_' + '_'.join('p'+p[-2:] for p in train) + '_train_p'+held_out[-2:]+'_test_geometry_v3_recordings_v6'
 
 
-def prepare(root, output):
-    input_folder = root/'clean'/'participant_04'/'merge-input-v5'
-    p4, warnings, scanned = merge(input_folder)
-    if warnings or scanned != 400 or len(p4['sequences']) != 400:
-        raise ValueError('P4 merge failed: '+str(warnings))
-    p4_path = processed_artifact_path(root/'processed', 'participant_04-dataset-v6.json')
-    if p4_path.exists():
-        old = read(p4_path)
-        if any(old[k] != p4[k] for k in ('featureSchema','labels','sequenceCount','sequences')):
-            raise ValueError('Existing P4 merged source differs; choose a new dataset version')
-    else:
-        p4_path.write_text(json.dumps(p4, indent=2), encoding='utf-8')
 
+def prepare(root, output):
+    p4_path = processed_artifact_path(root / 'processed', 'participant_04-dataset-v6.json')
     paths = {p: processed_artifact_path(root/'processed', p+'-dataset-v5.json') for p in PARTICIPANTS[:3]}
     paths['participant_04'] = p4_path
     sources = {p:load_export(path) for p,path in paths.items()}
@@ -140,7 +129,7 @@ def prepare(root, output):
             (folder/'metadata.json').write_text(json.dumps(meta,indent=2),encoding='utf-8')
         print('Prepared',name,'960 training / 240 validation / 400 test',flush=True)
     provenance = dict(createdAt=datetime.now(timezone.utc).isoformat(),sourceSha256=hashes,
-        p4InputSha256={p.name:sha(p) for p in sorted(input_folder.glob('*.json'))},v5Parity=parity)
+        p4InputSha256={p4_path.name: hashes[str(p4_path.resolve())]},v5Parity=parity)
     (output/'provenance.json').write_text(json.dumps(provenance,indent=2),encoding='utf-8')
 
 
@@ -194,7 +183,7 @@ def main():
     parser.add_argument('--dataset-root',type=Path,required=True)
     parser.add_argument('--prepare-only',action='store_true')
     args = parser.parse_args()
-    root = args.dataset_root.resolve()
+    root = resolve_experiment_path(args.dataset_root).resolve()
     output = model_artifact_folder(root / 'models', 'geometry_v3_recordings_v6_comparison')
     output.mkdir(parents=True, exist_ok=True)
     prepare(root,output)

@@ -1,5 +1,5 @@
 """Compare isolated P4 WHICH replacement retraining with saved v6 models."""
-from processed_paths import processed_artifact_path, resolve_artifact_path
+from processed_paths import processed_artifact_path, resolve_artifact_path, active_source_hashes, resolve_experiment_path
 from model_paths import model_artifact_folder
 import argparse
 import hashlib
@@ -22,7 +22,7 @@ def main():
     parser.add_argument('--dataset-root', required=True, type=Path)
     parser.add_argument('--candidate-root', required=True, type=Path)
     args = parser.parse_args()
-    baseline, candidate = args.dataset_root.resolve(), args.candidate_root.resolve()
+    baseline, candidate = args.dataset_root.resolve(), resolve_experiment_path(args.candidate_root).resolve()
     result = {'runs': [], 'ensembles': {}, 'splitChecks': {}}
     old_p4 = {s['id']: s for s in read(processed_artifact_path(baseline / 'processed', 'participant_04-dataset-v6.json'))['sequences']}
     new_p4 = {s['id']: s for s in read(processed_artifact_path(candidate / 'processed', 'participant_04-dataset-v6.json'))['sequences']}
@@ -84,7 +84,7 @@ def main():
     for name in ('source-provenance.json', 'baseline-model-hashes.json'):
         document = read(candidate / name)
         hashes = document['sourceSha256'] if name == 'source-provenance.json' else document
-        for path, expected in hashes.items():
+        for path, expected in active_source_hashes(hashes).items():
             assert hashlib.sha256(resolve_artifact_path(path).read_bytes()).hexdigest() == expected, path
     result['baselineIntegrityVerified'] = True
     (candidate / 'replacement-comparison.json').write_text(json.dumps(result, indent=2), encoding='utf-8')

@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 import shutil
 import numpy as np
+from processed_paths import p4_prepared_folder, resolve_experiment_path
 from run_p4_idle_rejection_experiment import read,write,rejection_metrics,BASE_RULE,sha
 
 PRESETS={f'score{int(c*100)}':dict(confidence=c,margin=.25,maxNonSignMass=.10,minAgreement=2/3) for c in (.80,.90,.95)}
@@ -13,10 +14,10 @@ PRESETS={f'score{int(c*100)}':dict(confidence=c,margin=.25,maxNonSignMass=.10,mi
 def run(output):
     plan=read(output/'acceptance_presets_protocol.json')
     if plan['rules']!=PRESETS: raise ValueError('Declared presets differ')
-    protocol=read(output/'protocol.json'); baseline=Path(protocol['baseline'])
+    protocol=read(output/'protocol.json'); baseline=resolve_experiment_path(protocol['baseline'])
     results={};pooled={}
     for fold in protocol['folds']:
-        meta=read(baseline/'folds'/fold/'metadata.json');labels=np.asarray(sorted(meta['labelToIndex'],key=meta['labelToIndex'].get))
+        meta=read(p4_prepared_folder(baseline)/'folds'/fold/'metadata.json');labels=np.asarray(sorted(meta['labelToIndex'],key=meta['labelToIndex'].get))
         val={'current':[],'idleWeighted':[]};test={'current':[],'idleWeighted':[]}
         for seed in protocol['seeds']:
             name=fold+f'_seed{seed}'

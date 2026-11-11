@@ -95,8 +95,10 @@ parser.add_argument("--seed", type=int, default=42, help="Training randomness se
 parser.add_argument("--dataset-root", type=Path, help="Dataset location when running from a worktree")
 parser.add_argument("--prepared", type=Path, help="Manifest candidate folder produced by sample_pipeline.py prepare")
 parser.add_argument("--model-output", type=Path, help="New model run folder (only with --prepared)")
+parser.add_argument("--checkpoint-format", choices=("keras", "h5"),
+                    help="Checkpoint format for a prepared candidate (default: keras)")
 arguments = parser.parse_args()
-if arguments.prepared is None and (arguments.experiment not in EXPERIMENTS or arguments.model_output):
+if arguments.prepared is None and (arguments.experiment not in EXPERIMENTS or arguments.model_output or arguments.checkpoint_format):
     parser.error('Choose a registered legacy --experiment, or use --prepared for a sample candidate')
 if not 0 <= arguments.seed < 2**32:
     parser.error("--seed must be between 0 and 4294967295")
@@ -104,10 +106,12 @@ RANDOM_SEED = arguments.seed
 
 EXPERIMENT_NAME = arguments.experiment
 experiment = EXPERIMENTS.get(EXPERIMENT_NAME, {})
+similarity = None
 if arguments.prepared:
     candidate_metadata = json.loads((arguments.prepared / 'metadata.json').read_text(encoding='utf-8'))
     from sample_training import validate_candidate
-    validate_candidate(arguments.prepared, candidate_metadata)
+    config = validate_candidate(arguments.prepared, candidate_metadata)
+    similarity = config.get('similarityTraining')
     EXPERIMENT_NAME = candidate_metadata['experiment']
     experiment = {'trainingParticipants': [], 'testParticipant': None}
 TRAINING_PARTICIPANTS = experiment["trainingParticipants"]
@@ -162,6 +166,8 @@ if arguments.prepared:
     MODEL_FOLDER = arguments.model_output or DATASET_FOLDER / 'models' / 'candidates' / EXPERIMENT_NAME / RUN_NAME
 
 CHECKPOINT_NAME = 'best_model.h5' if EXPERIMENT_NAME.endswith(('_geometry_v3_recordings_v4', '_geometry_v3_recordings_v5', '_geometry_v3_recordings_v6')) else 'best_model.keras'
+if arguments.checkpoint_format:
+    CHECKPOINT_NAME = f'best_model.{arguments.checkpoint_format}'
 
 DATA_PATH = PREPROCESSED_FOLDER / "gru_data.npz"
 METADATA_PATH = PREPROCESSED_FOLDER / "metadata.json"
@@ -238,6 +244,33 @@ for split, x, y in (
         if len(participants) != len(x) or set(participants) != expected:
             raise ValueError(f"{split}: incorrect participant membership")
 
+train_weights = None
+if similarity:
+    from prepare_similarity_pilot import BASELINE, CANDIDATE
+    from sample_pipeline import digest, read_json
+    if (EXPERIMENT_NAME, similarity['baseline'], RANDOM_SEED) != (CANDIDATE, BASELINE, 42):
+        raise ValueError('The similarity pilot is frozen to the approved baseline and seed 42')
+    baseline_folder = DATASET_FOLDER / 'models' / 'candidates' / BASELINE / BASELINE
+    baseline_checkpoint = baseline_folder / 'best_model.h5'
+    baseline_meta = read_json(baseline_folder / 'evaluation.json')['preprocessingMetadata']
+    if (digest(baseline_checkpoint.read_bytes()) != similarity['checkpointSha256']
+            or any(metadata[k] != baseline_meta[k] for k in ('sequenceIds', 'sourceSha256', 'labelToIndex', 'featureVariant'))):
+        raise ValueError('The warm-start checkpoint differs from the frozen data or vocabulary')
+    original_labels = dict(zip(metadata['sequenceIds']['training'], y_train))
+    with np.load(PREPROCESSED_FOLDER / 'similarity_training.npz', allow_pickle=False) as augmented:
+        extra_x, extra_y = augmented['X'], augmented['y']
+        source_ids = augmented['source_ids']
+        if (extra_x.shape != (similarity['augmentedRows'], sequence_length, feature_count)
+                or extra_y.shape != (len(extra_x),) or source_ids.shape != extra_y.shape
+                or not np.isfinite(extra_x).all()
+                or any(original_labels.get(sid) != label for sid, label in zip(source_ids, extra_y))):
+            raise ValueError('Augmentations must derive from frozen training samples with matching labels')
+    X_train = np.concatenate((X_train, extra_x))
+    y_train = np.concatenate((y_train, extra_y))
+    pair_indices = [label_to_index[label] for label in similarity['pairLabels']]
+    train_weights = np.where(np.isin(y_train, pair_indices), similarity['pairTrainingWeight'], 1.).astype(np.float32)
+    EPOCHS, BATCH_SIZE = similarity['epochs'], similarity['batchSize']
+
 print("Loaded dataset")
 print("Experiment:", EXPERIMENT_NAME)
 print("Training seed:", RANDOM_SEED)
@@ -262,6 +295,8 @@ import tensorflow as tf
 from sklearn.metrics import ConfusionMatrixDisplay, classification_report
 
 tf.random.set_seed(RANDOM_SEED)
+if similarity:
+    tf.keras.utils.set_random_seed(RANDOM_SEED)
 MODEL_FOLDER.mkdir(parents=True, exist_ok=False)
 if arguments.prepared:
     from sample_training import copy_preparation
@@ -304,8 +339,13 @@ model = tf.keras.Sequential(
     name="signsync_gru_baseline",
 )
 
+if similarity:
+    model = tf.keras.models.load_model(baseline_checkpoint, compile=False)
+    if tuple(model.input_shape[1:]) != (sequence_length, feature_count) or model.output_shape[-1] != number_of_classes:
+        raise ValueError('Unexpected warm-start checkpoint shape')
+
 model.compile(
-    optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+    optimizer=tf.keras.optimizers.Adam(learning_rate=similarity['learningRate'] if similarity else 0.001),
     loss="sparse_categorical_crossentropy",
     metrics=["accuracy"],
 )
@@ -347,11 +387,12 @@ callbacks = [
 history = model.fit(
     X_train,
     y_train,
+    sample_weight=train_weights,
     validation_data=(X_validation, y_validation),
     epochs=EPOCHS,
     batch_size=BATCH_SIZE,
     callbacks=callbacks,
-    verbose=1,
+    verbose=2 if similarity else 1,
 )
 
 
@@ -424,6 +465,8 @@ evaluation = {
 }
 
 if calibration is not None:
+    if arguments.checkpoint_format:
+        evaluation['checkpoint'] = CHECKPOINT_NAME
     evaluation['acceptance'] = threshold_metrics(y_test, probabilities, label_names, calibration['selected']['threshold'])
     evaluation['thresholdSelection'] = 'validation only; see threshold_selection.json'
     evaluation['continuousEvaluation'] = calibration['continuousEvaluation']
@@ -433,6 +476,8 @@ if calibration is not None:
         {'actual': label_names[i], 'predicted': label_names[j], 'count': int(matrix[i, j])}
         for i in range(number_of_classes) for j in range(number_of_classes) if i != j and matrix[i, j]
     ], key=lambda row: -row['count'])
+if similarity:
+    evaluation['similarityTraining'] = similarity
 
 with (MODEL_FOLDER / "evaluation.json").open(
     "w",

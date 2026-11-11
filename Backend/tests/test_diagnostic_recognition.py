@@ -11,9 +11,30 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.main import app
 from app.recognition import GraphP4DiagnosticRecognizer
+from app.alphabet_recognition import AlphabetDiagnosticRecognizer
 
 
 class DiagnosticRecognitionTests(unittest.TestCase):
+    def test_live_models_route_to_the_selected_diagnostic_checkpoint(self):
+        for mode in ('lab-alphabet', 'lab-signs43-similarity'):
+            recognizer_id = AlphabetDiagnosticRecognizer.model_id if mode == 'lab-alphabet' else mode + '-seed42-graph-diagnostics'
+            members = [('seed42',)]
+            supports_short_preview = False
+            recognizer = SimpleNamespace(members=members, model_id=recognizer_id, supports_short_preview=supports_short_preview)
+            with patch('app.ws.translate.get_diagnostic_recognizer', return_value=recognizer) as load, TestClient(app) as client:
+                with client.websocket_connect('/ws/translate?model=' + mode + '&diagnostics=1') as socket:
+                    self.assertEqual(socket.receive_json()['payload']['state'], 'loading')
+                    ready = socket.receive_json()['payload']
+                    self.assertEqual(ready['model'], mode)
+                    self.assertEqual(ready['recognizerId'], recognizer.model_id)
+                    self.assertEqual(ready['execution'], 'graph')
+                    self.assertEqual(ready['runs'], [member[0] for member in members])
+                    self.assertEqual(ready.get('supportsShortPreview', False), supports_short_preview)
+                load.assert_called_once_with(mode)
+                with client.websocket_connect('/ws/translate?model=' + mode) as socket:
+                    self.assertEqual(socket.receive_json()['type'], 'error')
+                load.assert_called_once_with(mode)
+
     def test_graph_wrapper_shares_weights_scalers_and_lock(self):
         calls = []
         def model(features, training=False):

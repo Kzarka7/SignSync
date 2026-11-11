@@ -1,6 +1,7 @@
 // Compare advisory intervals with the SHA256-matched, previously reviewed originals.
 const fs = require('node:fs')
 const path = require('node:path')
+const { experimentFolder } = require('./experimentPaths.cjs')
 const vm = require('node:vm')
 const ts = require('typescript')
 const [datasetRoot, output] = process.argv.slice(2)
@@ -11,7 +12,7 @@ function load(file) {
 }
 const { suggestSignInterval } = load(path.resolve(__dirname, '../src/services/dataset/videoDiagnostics.ts'))
 const baseline = path.join(datasetRoot, 'experiments/video_collector_20261020/baseline640')
-const manifest = JSON.parse(fs.readFileSync(path.join(datasetRoot, 'experiments/fsl_reference_review_2026_10_19/reviewed-manifest.json'))).clips
+const manifest = JSON.parse(fs.readFileSync(path.join(experimentFolder(datasetRoot, 'reports/reviews', 'fsl_reference_review_2026_10_19'), 'reviewed-manifest.json'))).clips
 const clips = fs.readdirSync(baseline).filter(name => /^(visible|rest)-.*\.json$/.test(name)).map(name => {
   const data = JSON.parse(fs.readFileSync(path.join(baseline, name)))
   const reviewed = manifest.find(item => item.label === 'THANK_YOU' && item.sha256 === data.sha256)

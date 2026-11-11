@@ -4,7 +4,7 @@ const vm = require('node:vm')
 const ts = require('typescript')
 
 // Local offline tooling; executes repository modules, never code from exports.
-module.exports = function loadTypeScript(entry) {
+module.exports = function loadTypeScript(entry, globals = {}) {
   const cache = new Map()
   function load(file) {
     file = path.resolve(file)
@@ -13,7 +13,7 @@ module.exports = function loadTypeScript(entry) {
     const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
     }).outputText
-    vm.runInNewContext(code, { exports,
+    vm.runInNewContext(code, { ...globals, exports,
       require: name => {
         if (!name.startsWith('.')) throw new Error('Unexpected runtime dependency: ' + name)
         return load(path.resolve(path.dirname(file), name + '.ts'))

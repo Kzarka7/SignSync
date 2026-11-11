@@ -4,6 +4,7 @@ const path = require('node:path')
 const load = require('../scripts/loadTypeScript.cjs')
 const { createRecognitionWindows, createActivityPolicy, createObservationTracking, CONTINUOUS_SETTINGS } = load(path.resolve('src/services/landmarks/continuousRecognition.ts'))
 const { createDiagnosticSession } = load(path.resolve('src/services/landmarks/recognitionDiagnostics.ts'))
+const { assessSignMotion } = load(path.resolve('src/services/landmarks/signMotionEvidence.ts'))
 
 function feature(t, valid = true, hands = true) {
   const features = Array(164).fill(0); features[36] = hands ? 1 : 0; features[7] = features[11] = 1
@@ -19,6 +20,225 @@ function raw(t, hands = true, valid = true) {
 }
 const prediction = (label, accepted = !['REST', 'IDLE_MOVEMENT'].includes(label)) => ({
   requestId: 'test', label, accepted, score: .99, top3: [{ label, score: .99 }, { label: 'OTHER', score: .01 }], model: 'test', inferenceMs: 5, frameCount: 31,
+})
+
+test('a completed gesture followed by new motion permits a confirmed repeat with fresh windows', () => {
+  const policy = createActivityPolicy()
+  policy.update(prediction('Z'), 1500, undefined, 0)
+  assert.equal(policy.update(prediction('Z'), 1850, undefined, 350).emit, true)
+  for (let t = 2200; t <= 3250; t += 350) {
+    assert.equal(policy.update(prediction('Z'), t, undefined, t - 1500).reason, 'duplicate_sign_suppressed')
+  }
+  policy.observeGestureBoundary(3300, 3500)
+  // Overlap with the previous gesture cannot count as a new performance.
+  assert.equal(policy.update(prediction('Z'), 3950, undefined, 2450).emit, false)
+  assert.equal(policy.update(prediction('Z'), 5000, undefined, 3500).emit, false)
+  assert.equal(policy.update(prediction('Z'), 5350, undefined, 3850).emit, true)
+  assert.equal(policy.update(prediction('Z'), 5700, undefined, 4200).emit, false)
+  assert.ok(policy.events.some(e => e.reason === 'completed_gesture_then_new_motion'))
+})
+
+test('old boundaries and interrupted gestures cannot release a held sign', () => {
+  for (const interrupt of [false, true]) {
+    const policy = createActivityPolicy()
+    policy.update(prediction('J'), 1500)
+    policy.update(prediction('J'), 1850)
+    policy.observeGestureBoundary(interrupt ? 1900 : 1700, interrupt ? 2000 : 1800)
+    if (interrupt) policy.discardGestureBoundary()
+    for (let t = 2200; t <= 3250; t += 350) assert.equal(policy.update(prediction('J'), t, undefined, 2100).emit, false)
+  }
+})
+
+test('rolling session prints the same sign twice after two motion episodes but not during the hold', async () => {
+  const session = createDiagnosticSession({ source: 'video', name: 'repeat', recognitionMode: 'rolling',
+    onChange() {}, now: () => 0, id: () => 'repeat', predict: async () => prediction('Z') })
+  for (let t = 0; t <= 7500; t += 50) {
+    const f = feature(t)
+    const x = t <= 1000 ? t / 1000 : t < 3500 ? 1 : t <= 4500 ? 1 + (t - 3500) / 1000 : 2
+    for (let j = 0; j < 21; j++) f.features[37 + j * 3] = x
+    await session.observeFeatures(f)
+  }
+  assert.equal(session.state.transcript.length, 2)
+  assert.ok(session.report().acceptanceEvents.some(e => e.reason === 'completed_gesture_then_new_motion'))
+})
+
+test('alphabet confidence rejections count as one failed vote while tracking rejection clears evidence', () => {
+  for (const reason of ['alphabet_low_confidence', 'alphabet_low_margin', 'alphabet_input_mismatch',
+    'stage2_low_confidence', 'stage2_low_margin', 'insufficient_hand_visibility']) {
+    const policy = createActivityPolicy({ confirmationWindows: 3, confirmationHistory: 4, confirmationMs: 400 })
+    policy.update(prediction('Z'), 0)
+    policy.update({ ...prediction('Z', false), rejectionReason: reason }, 200)
+    policy.update(prediction('Z'), 400)
+    const result = policy.update(prediction('Z'), 600)
+    assert.equal(result.emit, reason !== 'insufficient_hand_visibility', reason)
+  }
+})
+
+test('43-sign Lab sessions suppress predictions from one unbroken motion and permit a fresh segment', async () => {
+  for (const modelMode of ['lab-signs43-numbers', 'lab-signs43-shape-motion', 'lab-signs43-similarity']) {
+    const session = createDiagnosticSession({ source: 'video', name: 'changing prediction', modelMode,
+      recognitionMode: 'segmented', segmentAcceptance: 'confirmation',
+      settings: { strideMs: 150, confirmationWindows: 2, confirmationHistory: 3, confirmationMs: 150 },
+      onChange() {}, now: () => 0, id: () => 'lab-confirmation',
+      predict: async ({ frames }) => {
+        const end = frames.at(-1).timestamp
+        return prediction(end >= 1050 && end < 1900 ? 'WHAT' : 'ONE')
+      } })
+    for (let t = 0; t <= 3400; t += 50) {
+      const frame = feature(t)
+      const firstMotion = Math.min(t, 1650)
+      const secondMotion = Math.max(0, Math.min(t - 2250, 900))
+      for (let j = 0; j < 21; j++) frame.features[37 + j * 3] = (firstMotion + secondMotion) / 1000
+      await session.observeFeatures(frame)
+    }
+    const { rows, transcript } = session.state
+    assert.deepEqual(Array.from(transcript, entry => entry.label), ['ONE', 'ONE'])
+    assert.ok(rows.some(row => row.reason === 'waiting_for_new_sign' && !row.emit))
+    assert.equal(new Set(rows.filter(row => row.emit).map(row => row.segmentId)).size, 2)
+  }
+})
+
+for (const [modelMode, initialLabel, movingLabel, holdLabel] of [
+  ['lab-signs43-similarity', 'ONE', 'WHAT', 'SIX'],
+  ['lab-alphabet', 'I', 'J', 'X'],
+]) test(`${modelMode} can confirm the next sign while the hand stays visible`, async () => {
+  for (const source of ['video','camera']) for (const transition of ['motion after a hold','handshape during motion','handshape to hold']) {
+    const session = createDiagnosticSession({source,name:transition,modelMode,
+      recognitionMode:'segmented',segmentAcceptance:'confirmation',
+      settings:{strideMs:150,confirmationWindows:3,confirmationHistory:4,confirmationMs:400},
+      onChange(){},now:()=>0,id:()=>transition,predict:async ({frames})=>{
+        const first=frames[0], last=frames.at(-1)
+        const isNext=transition === 'motion after a hold' ? last.features[37]-first.features[37] >= .15
+          : last.features[41]-last.features[38] >= .10
+        return prediction(isNext ? (transition === 'motion after a hold' ? movingLabel : holdLabel) : initialLabel)
+      } })
+    for(let t=0;t<=2375;t+=25){
+      const f=feature(t)
+      const progress=Math.max(0,Math.min(1,(t-1050)/200))
+      const entry=.12*Math.min(1,t/150)
+      const x=transition === 'handshape during motion' ? t/1300 : entry+(transition === 'motion after a hold' ? .48*progress : 0)
+      for(let j=0;j<21;j++){
+        f.features[37+j*3]=x
+        if(j>0 && transition !== 'motion after a hold') f.features[38+j*3]=.16*progress
+      }
+      await session.observeFeatures(f)
+      if(source==='camera') await new Promise(resolve=>setImmediate(resolve))
+    }
+    const {rows,transcript}=session.state
+    assert.deepEqual(Array.from(transcript,e=>e.label),[initialLabel,transition==='motion after a hold'?movingLabel:holdLabel],`${source} ${transition}`)
+    const [first,second]=rows.filter(r=>r.emit)
+    assert.equal(second.segmentId,first.segmentId,transition)
+    assert.ok(second.startMs>=first.endMs,transition)
+  }
+})
+
+test('43-sign confirmation does not accept a motion-required label from a steady hold',async()=>{
+  const session=createDiagnosticSession({source:'video',name:'steady',modelMode:'lab-signs43-similarity',
+    recognitionMode:'segmented',segmentAcceptance:'confirmation',settings:{strideMs:150},
+    onChange(){},now:()=>0,id:()=> 'steady',predict:async()=>prediction('WHAT')})
+  for(let t=0;t<=1550;t+=25){
+    const f=feature(t)
+    for(let j=0;j<21;j++) f.features[37+j*3]=t<150 ? .016*(-1)**(t/25) : 0
+    await session.observeFeatures(f)
+  }
+  assert.equal(session.state.transcript.length,0)
+  assert.ok(session.state.rows.some(row=>row.reason==='sign_requires_motion'))
+})
+
+test('Lab minimum confidence and confirmation time independently control transcript acceptance',async()=>{
+  for(const [minimumConfidence,confirmationMs,expectedMs] of [[.75,400,850],[.75,650,1150],[.80,650,null]]) {
+    const session=createDiagnosticSession({source:'video',name:'tuned confirmation',modelMode:'lab-signs43-similarity',
+      recognitionMode:'segmented',segmentAcceptance:'confirmation',minimumConfidence,
+      settings:{strideMs:150,confirmationWindows:3,confirmationHistory:7,confirmationMs},
+      onChange(){},now:()=>0,id:()=> 'tuned',predict:async()=>({...prediction('SIX'),score:.78})})
+    for(let t=0;t<=1600;t+=25){
+      const f=feature(t)
+      for(let j=0;j<21;j++) f.features[37+j*3]=Math.min(t,300)/1000
+      await session.observeFeatures(f)
+    }
+    const report=session.report()
+    assert.equal(report.transcript[0]?.decisionMs ?? null,expectedMs)
+    assert.equal(report.minimumConfidence,minimumConfidence)
+    assert.equal(report.settings.confirmationMs,confirmationMs)
+    if(expectedMs===null) assert.ok(report.rows.some(row=>row.reason==='below_minimum_confidence' && row.prediction.accepted))
+  }
+})
+
+function signFeature(t, {shift=0,index=0,gap=1.3}={}) {
+  const f=feature(t)
+  const joint=(i,x,y)=>{f.features[37+i*3]=x+shift;f.features[38+i*3]=y}
+  for(let j=0;j<21;j++) joint(j,0,0)
+  joint(9,0,.2); joint(4,0,.4)
+  joint(8,index,.4-.2*gap); joint(12,0,.4-.2*gap)
+  return f
+}
+
+test('sideways reversals and finger opening/closing separate the moving labels from held numbers',()=>{
+  const frames=make=>Array.from({length:41},(_,i)=>make(i*25))
+  const held=frames(t=>signFeature(t,{shift:t*.00006}))
+  const slide=frames(t=>signFeature(t,{shift:t*.00030}))
+  const what=frames(t=>signFeature(t,{index:.24*Math.sin(t/130)}))
+  const no=frames(t=>signFeature(t,{gap:.9+.65*Math.sin(t/100)}))
+  assert.equal(assessSignMotion(held,'ONE').reason,null)
+  assert.equal(assessSignMotion(slide,'WHAT').reason,'awaiting_sideways_reversal')
+  assert.equal(assessSignMotion(what,'WHAT').reason,null)
+  assert.equal(assessSignMotion(what,'ONE').reason,'motion_conflicts_with_number')
+  for(const label of ['TWO','THREE']) {
+    assert.equal(assessSignMotion(held,label).reason,null)
+    assert.equal(assessSignMotion(no,label).reason,'motion_conflicts_with_number')
+  }
+  assert.equal(assessSignMotion(held,'NO').reason,'awaiting_finger_reversal')
+  assert.equal(assessSignMotion(no,'NO').reason,null)
+  assert.equal(assessSignMotion(no.filter((_,i)=>i%20===0),'NO').reason,'motion_tracking_incomplete')
+  const sparseTurn=[0,0,.24,0,0].map((index,i)=>signFeature(i*100,{index}))
+  const settledTail=Array.from({length:16},(_,i)=>signFeature(425+i*25))
+  assert.equal(assessSignMotion([...sparseTurn,...settledTail],'WHAT').reason,null)
+})
+
+test('finger motion can start a fresh NO after TWO or THREE with a stationary wrist',async()=>{
+  for(const label of ['TWO','THREE']) {
+    const session=createDiagnosticSession({source:'video',name:'finger transition',modelMode:'lab-signs43-similarity',
+      recognitionMode:'segmented',segmentAcceptance:'confirmation',staticMotionCheck:true,minimumConfidence:.75,
+      settings:{strideMs:150,confirmationWindows:5,confirmationHistory:7,confirmationMs:650},
+      onChange(){},now:()=>0,id:()=> 'finger-transition',predict:async ({frames})=>prediction(frames.at(-1).timestamp>1250?'NO':label)})
+    for(let t=0;t<=3100;t+=25){
+      const shift=.12*Math.min(1,t/150)
+      const gap=t<1200?1.3:.8+.5*Math.cos((t-1200)/100)
+      await session.observeFeatures(signFeature(t,{shift,gap}))
+    }
+    const accepted=session.state.rows.filter(row=>row.emit)
+    assert.deepEqual(Array.from(accepted,row=>row.prediction.label),[label,'NO'])
+    assert.equal(accepted[0].segmentId,accepted[1].segmentId)
+    assert.equal(accepted[1].signMotion.cue,'thumb_finger_turn')
+  }
+})
+
+test('Stage 2 fast confirmation requires two strong handshape votes', () => {
+  for (const [label, inputKind, strong, expected] of [
+    ['FIVE', 'static', true, true], ['FIVE', 'static', false, false],
+    ['J', 'joint', true, false], ['Z', 'joint', true, false], ['TEN', 'joint', true, false],
+  ]) {
+    const policy = createActivityPolicy({ confirmationWindows: 3, confirmationHistory: 4, confirmationMs: 400 }, true)
+    const result = { ...prediction(label), inputKind }
+    policy.update({ ...result, score: strong ? .99 : .85 }, 0)
+    assert.equal(policy.update(result, 150).emit, expected, label)
+  }
+})
+
+test('Stage 2 replay can confirm a handshape while the hand is moving', async () => {
+  const session = createDiagnosticSession({ source: 'video', name: 'Stage 2 replay', modelMode: 'lab-stage2',
+    settings: { strideMs: 150, confirmationWindows: 3, confirmationHistory: 4, confirmationMs: 400 },
+    onChange() {}, now: () => 0, id: () => 'stage2-replay',
+    predict: async () => ({ ...prediction('E'), inputKind: 'static', inputReason: 'recent_handshape_only' }),
+  })
+  for (let t = 0; t <= 1650; t += 50) {
+    const frame = feature(t)
+    for (let j = 0; j < 21; j++) frame.features[37 + j * 3] = t / 1000
+    await session.observeFeatures(frame)
+  }
+  const { rows, transcript } = session.state
+  assert.deepEqual(Array.from(rows, row => row.emit), [false, true])
+  assert.deepEqual(Array.from(transcript, entry => entry.label), ['E'])
 })
 
 test('windows keep advancing during rest and motion, and require fresh coverage after a gap', () => {

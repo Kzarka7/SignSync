@@ -2,7 +2,7 @@
 
 Reads frozen P4 candidate tensors. Never writes to deployed artifacts or app code.
 """
-from processed_paths import resolve_artifact_path
+from processed_paths import resolve_artifact_path, active_source_hashes, resolve_experiment_path, p4_prepared_folder
 import argparse
 from datetime import datetime, timezone
 import gc
@@ -72,19 +72,22 @@ def select_rule(members, labels, truth):
         minimumCorrectAccepted=minimum,selection='validation only; <=2pp loss in correct-sign acceptance',search=rows)
 
 def protect_check(protected):
-    changed=[p for p,h in protected.items() if not resolve_artifact_path(p).is_file() or sha(p)!=h]
+    changed=[p for p,h in active_source_hashes(protected).items() if not resolve_artifact_path(p).is_file() or sha(p)!=h]
     if changed: raise ValueError('Protected files changed: '+str(changed))
 
 def prepare(root, baseline, output):
     if output.exists() or root/'experiments' not in output.parents:
         raise ValueError('Use a NEW output folder inside dataset-root/experiments')
-    for rel,h in read(baseline/'artifact_checksums.json').items():
-        if sha(baseline/rel)!=h: raise ValueError('Baseline checksum mismatch: '+rel)
-    repo=Path(__file__).resolve().parents[1]
     watched=[p for p in baseline.rglob('*') if p.is_file()]
+    for rel,h in read(baseline/'artifact_checksums.json').items():
+        original = baseline / rel
+        resolved = resolve_artifact_path(original)
+        if sha(resolved)!=h: raise ValueError('Baseline checksum mismatch: '+rel)
+        if resolved != original: watched.append(resolved)
+    repo=Path(__file__).resolve().parents[1]
     # Historical source hashes include app files intentionally changed since
     # the old experiment. Freeze their CURRENT values, not obsolete versions.
-    watched += [resolve_artifact_path(p) for p in read(baseline/'protocol.json')['protectedFileSha256'] if resolve_artifact_path(p).is_file()]
+    watched += [resolve_artifact_path(p) for p in active_source_hashes(read(baseline/'protocol.json')['protectedFileSha256']) if resolve_artifact_path(p).is_file()]
     watched += [p for base in (repo/'Backend/app', repo/'Frontend/src') for p in base.rglob('*') if p.is_file() and '__pycache__' not in str(p)]
     watched += [Path(__file__), repo/'scripts/train_sign_rest_idle.py']
     protected={str(p):sha(p) for p in watched}
@@ -93,7 +96,7 @@ def prepare(root, baseline, output):
     for name in (Path(__file__).name,'train_sign_rest_idle.py'):
         shutil.copy2(repo/'scripts'/name,output/'source'/name)
     protocol=dict(createdAt=datetime.now(timezone.utc).isoformat(),datasetRoot=str(root),baseline=str(baseline),
-        folds=[p.name for p in sorted((baseline/'folds').iterdir()) if p.is_dir()],seeds=list(SEEDS),
+        folds=[p.name for p in sorted((p4_prepared_folder(baseline)/'folds').iterdir()) if p.is_dir()],seeds=list(SEEDS),
         idleWeight=2.,otherClassWeights=1.,architecture='GRU64 Dropout.30 Dense32relu Dropout.20 Dense22softmax',
         optimizer='Adam .001',epochs=100,batchSize=16,earlyStoppingPatience=15,
         learningRateReduction='factor .5 patience5 min1e-5',checkpointSelection='minimum unweighted validation loss',
@@ -120,7 +123,7 @@ def train(baseline,output,protocol):
             if epoch==0 or (epoch+1)%10==0:
                 print(f'{self.name} epoch {epoch+1}: loss={logs["loss"]:.4f} val_loss={logs["val_loss"]:.4f}',flush=True)
     for fold in protocol['folds']:
-        folder=baseline/'folds'/fold; meta=read(folder/'metadata.json')
+        folder=p4_prepared_folder(baseline)/'folds'/fold; meta=read(folder/'metadata.json')
         labels=sorted(meta['labelToIndex'],key=meta['labelToIndex'].get)
         with np.load(folder/'gru_data.npz',allow_pickle=False) as data: arrays={k:data[k].copy() for k in data.files}
         assert meta['testParticipant'] not in meta['participantIds']['training']+meta['participantIds']['validation']
@@ -173,7 +176,7 @@ def train(baseline,output,protocol):
 def compare(baseline,output,protocol):
     groups={}; collected={k:[] for k in ('current','currentStrict','idleWeighted','idleWeightedStrict')}; all_truth=[];errors=[]
     for fold in protocol['folds']:
-        meta=read(baseline/'folds'/fold/'metadata.json'); labels=np.asarray(sorted(meta['labelToIndex'],key=meta['labelToIndex'].get))
+        meta=read(p4_prepared_folder(baseline)/'folds'/fold/'metadata.json'); labels=np.asarray(sorted(meta['labelToIndex'],key=meta['labelToIndex'].get))
         current_val=[];new_val=[];current_test=[];new_test=[]
         for seed in SEEDS:
             name=fold+f'_seed{seed}'
@@ -247,10 +250,10 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dataset-root',type=Path,required=True);parser.add_argument('--baseline',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True);parser.add_argument('--resume',action='store_true')
-    args=parser.parse_args();root,baseline,output=[p.resolve() for p in (args.dataset_root,args.baseline,args.output)]
+    args=parser.parse_args();root,baseline,output=[resolve_experiment_path(p).resolve() for p in (args.dataset_root,args.baseline,args.output)]
     if args.resume:
         protocol=read(output/'protocol.json')
-        if protocol['baseline']!=str(baseline) or protocol['datasetRoot']!=str(root):raise ValueError('Source path mismatch')
+        if resolve_experiment_path(protocol['baseline']).resolve()!=baseline or protocol['datasetRoot']!=str(root):raise ValueError('Source path mismatch')
         if (output/'comparison.json').exists():raise ValueError('Experiment already completed')
         protect_check(protocol['protectedFileSha256'])
     else:protocol=prepare(root,baseline,output)

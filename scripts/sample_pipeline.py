@@ -21,6 +21,7 @@ import numpy as np
 from preprocess_dataset import resample_sequence
 from prepare_handshape_experiments import handshape, resample_shape
 from gesture_geometry import geometry, resample as resample_geometry, feature_names
+from shape_motion_sequence import GEOMETRY_V3, SHAPE_MOTION_V1, raw_shape_motion_features
 
 ROOT = Path(__file__).resolve().parents[2] / 'SignSync Dataset'
 SPLITS = ('training', 'validation', 'test')
@@ -228,6 +229,8 @@ def group_components(rows):
 
 
 def assign_splits(rows, config):
+    if config.get('splitMethod') == 'stratified-clip-exploratory':
+        return assign_clip_splits(rows, config)
     groups, owners = group_components(rows)
     wanted = config['splitGroups']
     if set(wanted) != set(SPLITS):
@@ -251,6 +254,35 @@ def assign_splits(rows, config):
     return partitions
 
 
+def assign_clip_splits(rows, config):
+    """Explicit exploratory split that permits shared signers, sessions and batches."""
+    wanted = config['splitSequenceIds']
+    if set(wanted) != set(SPLITS):
+        raise ValueError('splitSequenceIds must contain training, validation and test')
+    ids = [sid for split in SPLITS for sid in wanted[split]]
+    if len(ids) != len(set(ids)) or set(ids) != {r['sequence_id'] for r in rows}:
+        raise ValueError('Exploratory splits must assign every approved sample exactly once')
+    assignments = {sid: split for split in SPLITS for sid in wanted[split]}
+    recordings = {}
+    contents = set()
+    for row in rows:
+        content = row['content_sha256']
+        if not content or content in contents:
+            raise ValueError('Exploratory split requires unique verified sample contents')
+        contents.add(content)
+        recording = row['source_recording']
+        split = assignments[row['sequence_id']]
+        if recording and recording in recordings and recordings[recording] != split:
+            raise ValueError('Source recording crosses exploratory splits: ' + recording)
+        if recording:
+            recordings[recording] = split
+    partitions = {split: [r for r in rows if assignments[r['sequence_id']] == split] for split in SPLITS}
+    for split, members in partitions.items():
+        if {r['label'] for r in members} != set(config['labels']):
+            raise ValueError(f'{split}: every configured label needs approved samples in this split')
+    return partitions
+
+
 def raw_groups(sequence, order, length=40):
     vectors = np.asarray([f['features'] for f in sequence['frames']], dtype=float)
     return (resample_sequence(sequence['frames'], length, sequence['id']),
@@ -258,16 +290,19 @@ def raw_groups(sequence, order, length=40):
             resample_geometry(geometry(vectors, order), length))
 
 
-def build_arrays(root, partitions, schema, length=40):
-    """Match the existing 164 + 26 + 48 feature pipeline, including cast order."""
+def build_arrays(root, partitions, schema, length=40, feature_variant=GEOMETRY_V3):
+    """Fit training-only scalers and preserve the geometry-v3 cast order."""
     values = {}
+    shape_motion = feature_variant == SHAPE_MOTION_V1
     for split in SPLITS:
-        channels = [[], [], []]
+        channels = [[]] if shape_motion else [[], [], []]
         for row in partitions[split]:
             _, seq, checksum, _ = load_sample(root / row['sample_path'], row['label'])
             if checksum != row['sha256']:
                 raise ValueError('Sample changed during preparation: ' + row['sample_path'])
-            for channel, value in zip(channels, raw_groups(seq, schema['order'], length)):
+            groups = ((raw_shape_motion_features(seq, schema['order'], length),) if shape_motion
+                      else raw_groups(seq, schema['order'], length))
+            for channel, value in zip(channels, groups):
                 channel.append(value)
         values[split] = [np.stack(channel) for channel in channels]
     means = [x.mean(axis=(0, 1), keepdims=True) for x in values['training']]
@@ -313,6 +348,9 @@ def prepare(root, config_path, check_only=False):
         raise ValueError('labels must be a nonempty list of unique sign names')
     if config.get('frames', 40) != 40:
         raise ValueError('This baseline uses exactly 40 frames')
+    feature_variant = config.get('featureVariant', GEOMETRY_V3)
+    if feature_variant not in (GEOMETRY_V3, SHAPE_MOTION_V1):
+        raise ValueError(f'Unsupported sequence feature variant: {feature_variant}')
     rows, schema, report = selected_manifest(root, labels)
     include_signers = config.get('includeSignerIds')
     if include_signers is not None:
@@ -327,7 +365,7 @@ def prepare(root, config_path, check_only=False):
         raise FileExistsError(f'Preserving existing candidate: {target}; choose a new version name')
     if check_only:
         return summary
-    arrays = build_arrays(root, partitions, schema)
+    arrays = build_arrays(root, partitions, schema, feature_variant=feature_variant)
     label_map = {label: i for i, label in enumerate(sorted(labels))}
     for split, suffix in zip(SPLITS, SUFFIXES):
         arrays['y_' + suffix] = np.asarray([label_map[r['label']] for r in partitions[split]], dtype=np.int64)
@@ -344,7 +382,8 @@ def prepare(root, config_path, check_only=False):
         source_dir.mkdir()
         for filename in ('sample_pipeline.py', 'preprocess_dataset.py', 'prepare_handshape_experiments.py',
                          'gesture_geometry.py', 'train_gru.py', 'sample_training.py',
-                         'processed_paths.py', 'model_paths.py', 'requirements-ml.txt'):
+                         'processed_paths.py', 'model_paths.py', 'requirements-ml.txt',
+                         'shape_motion_sequence.py', 'stage2_features.py'):
             shutil.copy2(Path(__file__).with_name(filename), source_dir / filename)
         metadata = dict(metadataVersion=3, pipeline='sign-folder-manifest-v1', experiment=name,
                         featureCount=238, sequenceLength=40, labelToIndex=label_map,
@@ -355,9 +394,18 @@ def prepare(root, config_path, check_only=False):
                         sequenceIds={s: [r['sequence_id'] for r in partitions[s]] for s in SPLITS},
                         signerIds={s: [r['signer_id'] for r in partitions[s]] for s in SPLITS},
                         split=dict(method='explicit connected signer/recording/session/batch groups',
-                                   groups=config['splitGroups'],
+                                   groups=config.get('splitGroups', {}),
                                    unseenSignerEvaluation=all(bool(r['signer_id']) for r in rows)),
                         sourceSha256={r['sample_path']: r['sha256'] for r in rows})
+        if feature_variant == SHAPE_MOTION_V1:
+            metadata.update(featureVariant=feature_variant, geometryFeatureNames=feature_names()[:28],
+                            resampling='linear interpolation by timestamp, gated by observation validity')
+        if config.get('splitMethod') == 'stratified-clip-exploratory':
+            metadata['split'] = dict(method='stratified-clip-exploratory',
+                                     unseenSignerEvaluation=False,
+                                     groupSeparationRelaxed=True,
+                                     splitSeed=config['splitSeed'],
+                                     limitation='Signers, sessions and collection batches may cross splits')
         metadata['artifactSha256'] = {p.relative_to(target).as_posix(): digest(p.read_bytes())
                                      for p in sorted(target.rglob('*')) if p.is_file()}
         write_json(target / 'metadata.json', metadata)
@@ -375,7 +423,9 @@ def reproduce(root):
     if audit['problems']:
         raise ValueError('Resolve sample audit problems before baseline reproduction')
     results = []
-    for path in sorted((root / 'processed/current/recordings_v5/folds').glob('*/metadata.json')):
+    from processed_paths import processed_artifact_path
+    folds = processed_artifact_path(root / 'processed', 'recordings_v5') / 'folds'
+    for path in sorted(folds.glob('*/metadata.json')):
         metadata = read_json(path)
         partitions = {s: [by_id[sid] for sid in metadata['sequenceIds'][s]] for s in SPLITS}
         # Also compare complete sequence and schema records to baseline sources.

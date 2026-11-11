@@ -1,6 +1,7 @@
 // Local development measurement harness. UI smoke uses isolated browser storage.
 const fs = require('node:fs')
 const path = require('node:path')
+const { experimentFolder } = require('./experimentPaths.cjs')
 const crypto = require('node:crypto')
 const { pathToFileURL } = require('node:url')
 
@@ -44,7 +45,7 @@ async function main() {
     page.setDefaultTimeout(30000)
     page.on('pageerror', error => console.log('Browser error: ' + error.message))
     page.on('console', message => { if (message.text().startsWith('Measurement:')) console.log(message.text()) })
-    const assets = path.join(datasetRoot, 'experiments/fsl_reference_review_2026_10_19/runtime-assets')
+    const assets = path.join(experimentFolder(datasetRoot, 'reports/reviews', 'fsl_reference_review_2026_10_19'), 'runtime-assets')
     await page.route('https://storage.googleapis.com/mediapipe-models/**', route =>
       route.fulfill({ path: path.join(assets, route.request().url().includes('/hand_landmarker/') ? 'hand_landmarker.task' : 'pose_landmarker_lite.task'), headers: { 'Access-Control-Allow-Origin': '*' } }))
     await page.route('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@*/wasm/**', route =>

@@ -4,6 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const vm = require('node:vm')
 const ts = require('typescript')
+const load = require('../scripts/loadTypeScript.cjs')
 
 function recorderHarness(options = {}, storageOptions = {}) {
   const slots = [], pendingEffects = [], timers = new Map(), saved = [], listeners = new Map()
@@ -46,6 +47,7 @@ function recorderHarness(options = {}, storageOptions = {}) {
     require(name) {
       if (name === 'react') return react
       if (name === './useCameraFeed') return { useCameraFeed: settings => { onFrame = settings.onFrame; return feed } }
+      if (name.endsWith('signLabelSearch')) return load(path.resolve(__dirname, '../src/services/dataset/signLabelSearch.ts'))
       if (name.endsWith('datasetStorage')) return {
         storageError: error => 'Could not save: ' + error.message,
         getSequences: async (scope = 'training') => saved.filter(s => !!s.evaluation === (scope === 'evaluation')),
@@ -74,13 +76,13 @@ function recorderHarness(options = {}, storageOptions = {}) {
 
 test('sign collection offers the vocabulary and fingerspelling labels', async () => {
   const recorder = recorderHarness({ signsOnly: true }).render()
-  assert.equal(recorder.knownLabels.length, 65)
-  assert.equal(new Set(recorder.knownLabels).size, 65)
+  assert.equal(recorder.knownLabels.length, 81)
+  assert.equal(new Set(recorder.knownLabels).size, 81)
   for (const label of ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN',
     'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
     'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY',
     'GOOD_MORNING', 'GOOD_AFTERNOON', 'GOOD_EVENING', 'YESTERDAY', 'TOMORROW', 'TODAY',
-    'B', 'E', 'F', 'J', 'L', 'U', 'V', 'W', 'X', 'Z']) {
+    ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ']) {
     assert.equal(recorder.knownLabels.includes(label), true, label)
   }
 })

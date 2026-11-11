@@ -10,15 +10,15 @@ from processed_paths import (organized_processed_name, processed_artifact_path,
 class ProcessedPathTests(unittest.TestCase):
     def test_versions_and_intermediates_stay_separate(self):
         fold = 'gru_p01_p02_train_p03_test_geometry_v3_recordings_v5'
-        self.assertEqual(organized_processed_name(fold), f'current/recordings_v5/folds/{fold}')
+        self.assertEqual(organized_processed_name(fold), f'baseline/recordings_v5/folds/{fold}')
         self.assertEqual(organized_processed_name('participant_01-dataset-v5.json'),
-                         'current/recordings_v5/datasets/participant_01-dataset-v5.json')
+                         'baseline/recordings_v5/datasets/participant_01-dataset-v5.json')
         self.assertEqual(organized_processed_name('participant_04-dataset-v6.json'),
                          'candidates/recordings_v6/datasets/participant_04-dataset-v6.json')
         raw = 'gru_p01_p02_train_p03_test_recordings_v5'
-        self.assertEqual(organized_processed_name(raw), f'current/recordings_v5/intermediates/raw/{raw}')
+        self.assertEqual(organized_processed_name(raw), f'baseline/recordings_v5/intermediates/raw/{raw}')
         shape = raw.replace('_recordings', '_handshape_v2_recordings')
-        self.assertEqual(organized_processed_name(shape), f'current/recordings_v5/intermediates/handshape/{shape}')
+        self.assertEqual(organized_processed_name(shape), f'baseline/recordings_v5/intermediates/handshape/{shape}')
         self.assertTrue(organized_processed_name(fold.replace('_v5', '_v4')).startswith('archive/recordings_v4/folds/'))
 
     def test_legacy_roots_and_moved_sources(self):
@@ -26,7 +26,7 @@ class ProcessedPathTests(unittest.TestCase):
             root = Path(directory)/'processed'
             name = 'participant_01-dataset-v5.json'
             old = root/name
-            new = root/'current'/'recordings_v5'/'datasets'/name
+            new = root/'baseline'/'recordings_v5'/'datasets'/name
             old.parent.mkdir()
             old.write_bytes(b'original')
             self.assertEqual(processed_artifact_path(root, name), old)
@@ -34,6 +34,7 @@ class ProcessedPathTests(unittest.TestCase):
             old.rename(new)
             self.assertEqual(processed_artifact_path(root, name), new)
             self.assertEqual(resolve_artifact_path(old), new)
+            self.assertEqual(resolve_artifact_path(root/'current'/'recordings_v5'/'datasets'/name), new)
             self.assertEqual(new.read_bytes(), b'original')
             old.write_bytes(b'other')
             with self.assertRaisesRegex(ValueError, 'Ambiguous'):

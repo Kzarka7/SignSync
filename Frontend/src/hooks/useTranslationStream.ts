@@ -72,6 +72,20 @@ export function useTranslationStream(externalRecognition = false) {
       confidence,confidenceBreakdown:{handSignRecognition:confidence}}])
   }, [externalRecognition])
 
+  const submitFingerspelling = (draft: string, letterScores: readonly number[]) => {
+    const text = draft.trim()
+    if (!text) return false
+    const confidence = letterScores.length
+      ? Math.round(letterScores.reduce((sum, score) => sum + score, 0) / letterScores.length * 1000) / 10
+      : undefined
+    setMessages(prev => [...prev, {
+      id: crypto.randomUUID(), sessionId: useSessionStore.getState().sessionId ?? 'live',
+      source: 'sign', text, timestamp: new Date().toISOString(),
+      ...(confidence === undefined ? {} : { confidence, confidenceBreakdown: { handSignRecognition: confidence } }),
+    }])
+    return true
+  }
+
   const sendSign = useCallback((request: SignRequest) => {
     if (connection !== 'ready' || pending.current) return false
     setError(null)
@@ -139,6 +153,6 @@ export function useTranslationStream(externalRecognition = false) {
     setError(null)
     setMode(next)
   }
-  return { messages, endSession, exportSession, submitSpeech, submitPhrase, connection, error, mode, selectMode, appendConfirmedSign,
+  return { messages, endSession, exportSession, submitSpeech, submitPhrase, submitFingerspelling, connection, error, mode, selectMode, appendConfirmedSign,
     prediction, busy, sendSign, addPrediction, reconnect: () => setAttempt(a => a + 1) }
 }

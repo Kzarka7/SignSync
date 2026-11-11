@@ -3,7 +3,7 @@
 No live promotion or modification of existing artifacts. HDF5 checkpoints are
 used because native Keras saves stall on this Windows environment.
 """
-from processed_paths import processed_artifact_path, processed_glob
+from processed_paths import processed_artifact_path, processed_glob, reviewed_p4_dataset, active_source_hashes, resolve_experiment_path
 import argparse
 from collections import Counter
 from datetime import datetime, timezone
@@ -17,21 +17,22 @@ os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '2')
 os.environ.setdefault('OMP_NUM_THREADS', '4')
 import numpy as np
 
-from merge_dataset import merge
+from preprocess_dataset import load_export
 from run_recordings_v5_experiments import raw_geometry_features
-from train_sign_rest_idle import SEEDS, NON_SIGN, read, write, sha, score
+from train_sign_rest_idle import SEEDS, NON_SIGN, read, write, sha, score, preparation_protection
 
 
 def verify(protected):
-    changed = [path for path, expected in protected.items() if sha(path) != expected]
+    changed = [path for path, expected in active_source_hashes(protected).items() if sha(path) != expected]
     if changed:
         raise ValueError('Protected files changed: ' + str(changed))
+
 
 
 def prepare(root, prepared, baseline, output):
     if output.exists() or root / 'experiments' not in output.parents:
         raise ValueError('Output must be a NEW folder in dataset-root/experiments')
-    protected = dict(read(baseline / 'protocol.json')['protectedFileSha256'])
+    protected = preparation_protection(read(baseline / 'protocol.json')['protectedFileSha256'], prepared)
     for base, name in [(prepared, 'checksums.json'), (baseline, 'artifact_checksums.json')]:
         for relative, expected in read(base / name).items():
             if sha(base / relative) != expected:
@@ -41,19 +42,12 @@ def prepare(root, prepared, baseline, output):
                 protected[str(path)] = sha(path)
     if not read(baseline / 'integrity.json')['unchanged']:
         raise ValueError('Baseline integrity was not confirmed')
-    review_root = root / 'experiments' / 'p4_which_replacement_v1'
-    p4, warnings, scanned = merge(root / 'clean' / 'participant_04' / 'merge-input-v5')
-    reviewed_path = processed_artifact_path(review_root / 'processed', 'participant_04-dataset-v6.json')
-    reviewed = read(reviewed_path)
-    if warnings or scanned != 400 or len(p4['sequences']) != 400:
-        raise ValueError('Expected exactly 400 reviewed P4 signs without merge warnings')
-    if {s['id']: s for s in p4['sequences']} != {s['id']: s for s in reviewed['sequences']}:
-        raise ValueError('Clean P4 samples differ from the reviewed replacement experiment')
+    review_root = resolve_experiment_path(root / 'experiments' / 'p4_which_replacement_v1')
+    reviewed_path = reviewed_p4_dataset(root)
+    p4 = load_export(reviewed_path)
     if len(p4['labels']) != 20 or set(Counter(s['label'] for s in p4['sequences']).values()) != {20}:
         raise ValueError('P4 signs must have 20 labels and 20 recordings each')
     protected[str(reviewed_path)] = sha(reviewed_path)
-    for path in (root / 'clean' / 'participant_04' / 'merge-input-v5').glob('*.json'):
-        protected[str(path)] = sha(path)
     protected[str(review_root / 'source-provenance.json')] = sha(review_root / 'source-provenance.json')
     sources = {}
     for p in ['participant_01', 'participant_02', 'participant_03']:
@@ -93,7 +87,7 @@ def prepare(root, prepared, baseline, output):
     repo=Path(__file__).resolve().parent
     for name in [Path(__file__).name,'train_sign_rest_idle.py','run_recordings_v5_experiments.py',
                  'preprocess_dataset.py','prepare_handshape_experiments.py','prepare_geometry_experiments.py',
-                 'gesture_geometry.py','model_paths.py','processed_paths.py','merge_dataset.py']:
+                 'gesture_geometry.py','model_paths.py','processed_paths.py']:
         path=repo/name;protected[str(path)]=sha(path);shutil.copy2(path,output/'source'/name)
     fold_reports=[]
     for original in sorted((prepared/'folds').iterdir()):
@@ -150,7 +144,7 @@ def prepare(root, prepared, baseline, output):
         fold_reports.append(result);print('PREPARED',result,flush=True)
     verify(protected)
     protocol=dict(createdAt=datetime.now(timezone.utc).isoformat(),datasetRoot=str(root),preparedBaseline=str(prepared),baselineModels=str(baseline),
-        reviewedP4Source=str(reviewed_path),p4SourceFiles=400,p4Quality=quality,folds=fold_reports,
+        reviewedP4Source=str(reviewed_path),p4SourceFiles=1,p4Quality=quality,folds=fold_reports,
         seeds=list(SEEDS),architecture='GRU64, Dropout0.30, Dense32 relu, Dropout0.20, Dense22 softmax',
         optimizer='Adam 0.001',batchSize=16,epochsLimit=100,earlyStoppingPatience=15,
         learningRateReduction='factor0.5, patience5, min1e-5',checkpointSelection='minimum validation loss',
@@ -289,10 +283,10 @@ if __name__=='__main__':
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--resume',action='store_true',help='Resume complete compatible runs; refuses incomplete run directories')
     args=parser.parse_args()
-    root,prepared,baseline,output=[p.resolve() for p in [args.dataset_root,args.prepared,args.baseline,args.output]]
+    root,prepared,baseline,output=[resolve_experiment_path(p).resolve() for p in (args.dataset_root,args.prepared,args.baseline,args.output)]
     if args.resume:
         protocol=read(output/'protocol.json')
-        if protocol['datasetRoot']!=str(root) or protocol['preparedBaseline']!=str(prepared) or protocol['baselineModels']!=str(baseline):
+        if protocol['datasetRoot']!=str(root) or resolve_experiment_path(protocol['preparedBaseline']).resolve()!=prepared or resolve_experiment_path(protocol['baselineModels']).resolve()!=baseline:
             raise ValueError('Resume source paths differ')
         if (output/'comparison.json').exists():raise ValueError('Comparison already completed')
         verify(protocol['protectedFileSha256'])

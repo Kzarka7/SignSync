@@ -160,14 +160,14 @@ function extractUpperBodyPose(
 
 export function buildFrameSample(
   timestamp: number,
-  handResult: HandLandmarkerResult,
+  handResult: HandLandmarkerResult | null,
   poseResult: PoseLandmarkerResult | null,
 ): LandmarkFrameSample {
-  const { left, right } = splitHandsByHandedness(handResult);
+  const hands = handResult && splitHandsByHandedness(handResult);
   return {
     timestamp,
-    leftHand: left?.landmarks ?? null,
-    rightHand: right?.landmarks ?? null,
+    leftHand: hands?.left?.landmarks ?? null,
+    rightHand: hands?.right?.landmarks ?? null,
     pose: extractUpperBodyPose(poseResult),
   };
 }

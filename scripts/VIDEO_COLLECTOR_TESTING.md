@@ -21,9 +21,12 @@ The collector targets 30 landmark FPS automatically. Lower-rate recordings retai
 
 ## Trimming and fallback
 
-- Disable automatic use before a new upload: processing should still suggest a trim, but boundary confirmation remains manual.
-- Disable auto-trim before a new upload: the full interval requires an explicit boundary choice.
-- Try reference `19.MOV`: unclear activity or movement at the boundary keeps the full recording for manual review.
+- Verify auto-trim and the displayed suggestion use about two processed frames of clearance before/after detected hand activity (about 67 ms at 30 FPS, capped at 100 ms). Check 20/30/60 FPS and irregular cadence; isolated hand observations must remain included, and internal gaps must remain intact. Re-import an original to exercise the new automatic boundaries on an existing recording.
+- Disable auto-trim before a new upload: retain the full interval and allow manual selection of the suggestion.
+- Upload a clip with missing hand detections before signing that continues to the source ending. Verify the suggested leading trim is applied even without positive lowered-arm preparation evidence. The exact source ending is preserved, Reviewed stays unchecked, and full-interval quality checks still apply.
+- Upload a clip with a trailing suggestion. Verify it is applied even without reliable completion-pause evidence, source start stays exactly zero for an end-only suggestion, and Reviewed stays unchecked. Check the source beginning for a cut-off sign.
+- Verify internal tracking gaps remain inside the selected outer trim and retain their quality warnings. Conservative first-performance detection still uses the existing pause, movement and duration checks; otherwise the outer suggestion is applied for review without a gesture/context exemption. A failed or unusable trim still retains the full result.
+- Try reference `19.MOV`: if a suggested interval differs from the full recording, verify it is applied automatically using the original observations, with no second decoding/inference pass. Progress should not restart halfway. Compare playback alignment against the source, confirm Reviewed remains unchecked, and check exported source timestamps, selected-frame count, achieved FPS and `sampling.reusedFrom`. Processing time must include the original full pass.
 - Restore full recording or reprocess manual boundaries: previous approval and automatic context window clear. Review the new result before saving.
 - Review quality checks tracking; it does not certify that the intended sign is correct. Missing hands during preparation/completion are assessed separately only when a reliable automatic gesture window is available.
 
