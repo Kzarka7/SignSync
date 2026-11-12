@@ -15,6 +15,7 @@ export const SIGN_LABEL_GROUPS = [
   { title: 'Feelings and health', labels: ['HAPPY', 'SAD', 'TIRED', 'SICK', 'GOOD', 'BAD'] },
   { title: 'Numbers', labels: ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN'] },
   { title: 'Days and time', labels: [
+    'DAY', 'WEEK',
     'YESTERDAY', 'TODAY', 'TOMORROW', 'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY',
   ] },
   { title: 'Alphabet', labels: [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'] },
