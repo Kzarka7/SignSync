@@ -484,6 +484,9 @@ test('v5 preserves context frames and binds training approval to gesture boundar
   meta.quality = assessVideoQuality(sample.frames, 'either', { endMs: 1000, fps: 20 }, meta.qualityWindow)
   assert.equal(meta.quality.result, 'Pass')
   assert.equal(assessTrainingSample(sample).state, 'Ready for training')
+  meta.preprocessing.handedness = 'temporal-wrist-v1'
+  meta.handAssignment = { correctedFrames: 1, uncertainFrames: 0, swapped: false }
+  assert.equal(assessTrainingSample(sample).state, 'Ready for training')
   const pkg = await buildTrainingPackage([sample])
   if (process.env.CONTEXT_PACKAGE_FIXTURE) fs.writeFileSync(process.env.CONTEXT_PACKAGE_FIXTURE, Buffer.from(await pkg.blob.arrayBuffer()))
   meta.qualityWindow.startMs = 250

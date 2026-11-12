@@ -53,9 +53,11 @@ export function assessTrainingSample(sample: LabeledSequence): TrainingAssessmen
     if (!/^[a-f0-9]{64}$/i.test(metadata.fingerprint)) reasons.push('A SHA256 source fingerprint is required.')
     if (![metadata.trimStartMs, metadata.trimEndMs, metadata.sourceDurationMs].every(Number.isFinite) || metadata.trimStartMs < 0 ||
       metadata.trimEndMs <= metadata.trimStartMs || metadata.trimEndMs > metadata.sourceDurationMs + .01) reasons.push('Source interval is invalid.')
+    const handedness = metadata.preprocessing?.handedness
     if ((!sourceFrames && (metadata.sampleFps !== 20 || !metadata.processingVersion?.startsWith('video-import-v3-'))) ||
       metadata.preprocessing?.orientation !== (sourceFrames ? 'source-display-transform' : 'browser-displayed') || metadata.preprocessing.mirroring !== 'source-unchanged' ||
-      metadata.preprocessing.handedness !== 'mediapipe-assignment' || metadata.preprocessing.missingHands !== 'null-with-presence-flags' || metadata.preprocessing.interpolation !== 'none')
+      (handedness !== 'mediapipe-assignment' && !(sourceFrames && handedness === 'temporal-wrist-v1')) ||
+      metadata.preprocessing.missingHands !== 'null-with-presence-flags' || metadata.preprocessing.interpolation !== 'none')
       reasons.push('Reprocess with the current collector to establish preprocessing provenance.')
     if (![metadata.width, metadata.height, metadata.inputWidth, metadata.inputHeight, metadata.maxDimension].every(value => Number.isInteger(value) && value! > 0) ||
       metadata.inputWidth! > metadata.width || metadata.inputHeight! > metadata.height || Math.max(metadata.inputWidth!, metadata.inputHeight!) > metadata.maxDimension!) reasons.push('Processing dimensions are missing or inconsistent.')
