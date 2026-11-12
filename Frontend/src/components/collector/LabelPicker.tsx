@@ -1,6 +1,6 @@
 import { memo, useId, useRef, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
-import { ALPHABET_LABELS, findSignLabels } from '../../services/dataset/signLabelSearch'
+import { DEFAULT_SIGN_LABELS, findSignLabels, MONTH_LABELS, SIGN_LABEL_GROUPS } from '../../services/dataset/signLabelSearch'
 
 interface LabelPickerProps {
   knownLabels: string[]
@@ -17,10 +17,14 @@ function LabelPicker({ knownLabels, selectedLabel, onSelectLabel, disabled, labe
   const input = useRef<HTMLInputElement>(null)
   const originalSelection = useRef(selectedLabel)
   const id = useId()
-  const results = query?.trim() ? findSignLabels(knownLabels, query) : knownLabels
-  const alphabet = ALPHABET_LABELS.filter(label => results.includes(label))
-  const signs = results.filter(label => !ALPHABET_LABELS.includes(label))
-  const matches = [...alphabet, ...signs]
+  const selectableLabels = knownLabels.filter(label => !MONTH_LABELS.has(label))
+  const results = query?.trim() ? findSignLabels(selectableLabels, query) : selectableLabels
+  const resultSet = new Set(results)
+  const groups = [
+    ...SIGN_LABEL_GROUPS.map(group => ({ ...group, labels: group.labels.filter(label => resultSet.has(label)) })),
+    { title: 'Other signs', labels: results.filter(label => !DEFAULT_SIGN_LABELS.includes(label)) },
+  ]
+  const matches = groups.flatMap(group => group.labels)
   const expanded = open && !disabled
   const activeIndex = active >= 0 && active < matches.length ? active : -1
 
@@ -77,7 +81,7 @@ function LabelPicker({ knownLabels, selectedLabel, onSelectLabel, disabled, labe
             setQuery(value)
             setOpen(true)
             setActive(-1)
-            const results = findSignLabels(knownLabels, value)
+            const results = findSignLabels(selectableLabels, value)
             onSelectLabel(results.length === 1 ? results[0] : '')
           }}
           onKeyDown={event => {
@@ -118,14 +122,11 @@ function LabelPicker({ knownLabels, selectedLabel, onSelectLabel, disabled, labe
           <ChevronDown size={18} className={expanded ? 'rotate-180' : ''} />
         </button>
         {expanded && <div id={`${id}-options`} role="listbox" aria-label="Matching signs"
-          className="absolute left-0 right-0 z-20 mt-2 max-h-[220px] overflow-y-auto rounded-lg border border-border bg-white p-1 shadow-lg custom-scrollbar">
-          {matches.length ? [
-            { title: 'Alphabet', labels: alphabet, offset: 0 },
-            { title: 'Signs', labels: signs, offset: alphabet.length },
-          ].map(group => group.labels.length > 0 && <div key={group.title} role="group" aria-label={group.title}>
+          className="absolute left-0 right-0 z-20 mt-2 max-h-[min(420px,55dvh)] overflow-y-auto rounded-lg border border-border bg-white p-1 shadow-lg custom-scrollbar">
+          {matches.length ? groups.map(group => group.labels.length > 0 && <div key={group.title} role="group" aria-label={group.title}>
             <div aria-hidden="true" className="px-3 py-2 text-sm font-semibold text-text-2">{group.title}</div>
-            {group.labels.map((label, position) => {
-              const index = group.offset + position
+            {group.labels.map(label => {
+              const index = matches.indexOf(label)
               return <button
                   id={`${id}-option-${index}`}
                   key={label}
