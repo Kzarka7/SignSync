@@ -3,6 +3,7 @@ import { WASM_BASE_URL, createHandLandmarker, createPoseLandmarker, buildFrameSa
 import type { DatasetFrame, VideoImportMetadata, VideoQualityWindow } from '../../types/dataset'
 import { assessVideoQuality, assessBoundaryVideoQuality } from './videoQuality'
 import { sourceFrameSelector } from './frameTiming'
+import { assignVideoHands, type VideoHandDetection } from './videoHandAssignment'
 
 export const VIDEO_IMPORT_VERSION = 'video-import-v5-mp0.10.35-gesture-context'
 export const IMPORT_FPS = 30
@@ -39,7 +40,8 @@ export async function processVideo(file: File, signal: AbortSignal, onProgress: 
     // Near-target recordings jitter across bucket boundaries. Preserve that real
     // cadence rather than discarding adjacent frames from a nominal 30 FPS camera.
     const retainSourceCadence = source.metrics.averageFrameRate <= targetFps * 1.02
-    const selector = sourceFrameSelector(targetFps, start, end, retainSourceCadence), frames: DatasetFrame[] = []
+    const selector = sourceFrameSelector(targetFps, start, end, retainSourceCadence)
+    const observations: { frame: DatasetFrame; hands: VideoHandDetection[] }[] = []
     let inputWidth = 0, inputHeight = 0
     for await (const frame of source.canvases(start, end, maxDimension)) {
       signal.throwIfAborted()
@@ -47,12 +49,20 @@ export async function processVideo(file: File, signal: AbortSignal, onProgress: 
       if (!selector.accept(seconds)) continue
       const timestamp = Math.max(0, (seconds - start) * 1000)
       inputWidth = frame.canvas.width; inputHeight = frame.canvas.height
-      const raw = buildFrameSample(timestamp, hands.detectForVideo(frame.canvas, timestamp), pose.detectForVideo(frame.canvas, timestamp))
-      frames.push({ timestamp, raw, sourceTimestampMs: seconds * 1000, sourceDurationMs: frame.duration * 1000 })
+      const detection = hands.detectForVideo(frame.canvas, timestamp)
+      const raw = buildFrameSample(timestamp, null, pose.detectForVideo(frame.canvas, timestamp))
+      const candidates = detection.landmarks.flatMap((landmarks, index): VideoHandDetection[] => {
+        if (landmarks.length !== 21 || !landmarks.every(({ x, y, z }) => [x, y, z].every(Number.isFinite))) return []
+        const category = detection.handedness[index]?.[0]
+        const name = category?.categoryName
+        return [{ landmarks, handedness: name === 'Left' || name === 'Right' ? name : undefined, score: category?.score ?? 0 }]
+      })
+      observations.push({ frame: { timestamp, raw, sourceTimestampMs: seconds * 1000, sourceDurationMs: frame.duration * 1000 }, hands: candidates })
       onProgress(Math.min(99, Math.round((seconds - start) / (end - start) * 100)))
       await new Promise(resolve => setTimeout(resolve, 0))
     }
     signal.throwIfAborted()
+    const frames = assignVideoHands(observations)
     const elapsed = performance.now() - began
     const effectiveTargetFps = Math.min(targetFps, source.metrics.medianFrameRate)
     const sampling: NonNullable<VideoImportMetadata['sampling']> = { method: 'decoded-source-frames-v1', requestedFps: targetFps,

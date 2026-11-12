@@ -53,6 +53,7 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
     if (name === 'react') return react
     if (name === 'react/jsx-runtime') return require(name)
     if (name === 'lucide-react') return { Keyboard: 'svg' }
+    if (name.endsWith('videoHandAssignment')) return loadService(path.resolve(__dirname, '../src/services/dataset/videoHandAssignment.ts'))
     if (name.endsWith('videoIntervalReview')) return loadService(path.resolve(__dirname, '../src/services/dataset/videoIntervalReview.ts'))
     if (name.endsWith('collectorShortcuts')) return loadService(path.resolve(__dirname, '../src/services/dataset/collectorShortcuts.ts'))
     if (name.endsWith('videoDiagnostics')) return {
@@ -153,6 +154,25 @@ test('batch label correction preserves processing, intervals and reviews and sav
   assert.ok(h.saved().every(s=>s.label==='THREE'&&s.videoImport.review.label==='THREE'))
   assert.equal(h.saved()[1].frames,before.result.frames)
   await h.upload('third.mp4');assert.equal(h.preview().props.take.label,'HELLO','import default remains separate')
+})
+
+test('swapping hand sides clears review, survives reprocessing, and saves the swapped frames', async () => {
+  const left = [{ x: .25, y: .5, z: 0 }]
+  const right = [{ x: .75, y: .5, z: 0 }]
+  const sourceFrames = [0, 500].map(timestamp => ({ timestamp, raw: { timestamp, leftHand: left, rightHand: right, pose: null } }))
+  const h = harness({ sourceFrames })
+  await h.upload(); h.key('c')
+  h.preview().props.onSwapHandSides(); h.render()
+  const take = h.preview().props.take
+  assert.equal(take.reviewed, false)
+  assert.equal(take.result.frames[0].raw.leftHand, right)
+  assert.equal(take.fullResult.frames[0].raw.rightHand, left)
+  h.preview().props.onTrim(.1, .9); h.render()
+  await new Promise(resolve => setImmediate(resolve)); h.render()
+  assert.equal(h.preview().props.take.result.frames[0].raw.leftHand, right)
+  h.key('c'); h.key('s'); await new Promise(resolve => setImmediate(resolve)); h.render()
+  assert.equal(h.saved()[0].frames[0].raw.rightHand, left)
+  assert.equal(h.saved()[0].videoImport.handAssignment.swapped, true)
 })
 
 test('current/all relabel scopes protect saved takes and reject invalid labels without clearing review',async()=>{
