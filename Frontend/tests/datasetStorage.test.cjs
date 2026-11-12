@@ -32,6 +32,21 @@ function sample(id = 'one') {
       quality: { result: 'Review', findings: ['gap'] }, intervalReview: { choice: 'trimmed' }, review: { completeSign: true, qualityFindingsAccepted: true } } }
 }
 const plain = value => JSON.parse(JSON.stringify(value))
+test('previously saved DON_T_UNDERSTAND takes export with the new label', async () => {
+  const f = fixture(), db = f.reload()
+  const previous = { ...sample(), label: 'DON_T_UNDERSTAND' }
+  previous.videoImport.review.label = previous.label
+  await db.saveSequence(previous)
+
+  const restored = await f.reload().getSequences()
+  assert.equal(restored[0].label, 'DONT_UNDERSTAND')
+  assert.equal(restored[0].videoImport.review.label, 'DONT_UNDERSTAND')
+  const exported = await db.exporter.buildPerSampleZipExport(restored)
+  const zip = await require('jszip').loadAsync(await exported.blob.arrayBuffer())
+  const entry = zip.file('DONT_UNDERSTAND-one.json')
+  assert.ok(entry)
+  assert.equal(JSON.parse(await entry.async('string')).sequences[0].label, 'DONT_UNDERSTAND')
+})
 test('migration verifies complete records, preserves legacy order and separates evaluation', async () => {
   const f = fixture(), samples = [sample('z'), sample('a')]
   const evaluation = { ...sample('z'), evaluation: { taskId: 'pilot' } }

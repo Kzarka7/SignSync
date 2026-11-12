@@ -97,10 +97,21 @@ async function ready() {
   await migration
   return db
 }
+function normalizeStoredSequence(sequence: LabeledSequence): LabeledSequence {
+  if (sequence.label !== 'DON_T_UNDERSTAND') return normalizeIdleSequence(sequence)
+
+  const label = 'DONT_UNDERSTAND'
+  const video = sequence.videoImport
+  return {
+    ...sequence,
+    label,
+    ...(video?.review && { videoImport: { ...video, review: { ...video.review, label } } }),
+  }
+}
 export async function getSequences(scope: DatasetScope = 'training'): Promise<LabeledSequence[]> {
   return transaction(await ready(), scope, 'readonly', (store, done) => {
     const request = store.getAll()
-    request.onsuccess = () => done((request.result as Row[]).map(row => normalizeIdleSequence(row.sample)))
+    request.onsuccess = () => done((request.result as Row[]).map(row => normalizeStoredSequence(row.sample)))
   })
 }
 // Queue duplicate checks do not need to load every landmark frame.
