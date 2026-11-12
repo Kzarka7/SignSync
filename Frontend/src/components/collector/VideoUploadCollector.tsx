@@ -17,6 +17,7 @@ import CollectorShortcutHelp from './CollectorShortcutHelp'
 import LabelPicker from './LabelPicker'
 import { adjustedIntervalTime, collectorShortcut } from '../../services/dataset/collectorShortcuts'
 import { snapCachedInterval, trimProcessedVideo } from '../../services/dataset/videoTrim'
+import { summarizeHandAssignments, swapVideoHands } from '../../services/dataset/videoHandAssignment'
 
 type Result = Awaited<ReturnType<typeof processVideo>> & { contextCandidate?: VideoQualityWindow }
 type Take = {
@@ -28,6 +29,7 @@ type Take = {
   interval?: { start: number; end: number }
   draft?: { start: number; end: number }
   expectedHands?: ExpectedHands
+  handSidesSwapped?: boolean
   intervalReview?: IntervalReview
   origin?: 'uploaded-file' | 'camera-recording'
   autoTrim?: boolean
@@ -72,10 +74,11 @@ function canReview(take: Take) {
     intervalReviewMatches(take.intervalReview, take.result.start, take.result.end, take.result.duration)
 }
 
-function TakePreview({ locked = false, take, onTrim, onCachedTrim, onDraftChange, onHandsChange, onConfirmInterval }: {
+function TakePreview({ locked = false, take, onTrim, onCachedTrim, onDraftChange, onHandsChange, onSwapHandSides, onConfirmInterval }: {
   locked?: boolean; take: Take; onTrim: (start: number, end: number) => void; onDraftChange: (start: number, end: number) => void
   onCachedTrim: (interval: { start: number; end: number }) => void
   onHandsChange: (expected: ExpectedHands) => void
+  onSwapHandSides: () => void
   onConfirmInterval: () => void
 }) {
   const video = useRef<HTMLVideoElement>(null), canvas = useRef<HTMLCanvasElement>(null)
@@ -177,7 +180,10 @@ function TakePreview({ locked = false, take, onTrim, onCachedTrim, onDraftChange
   const dirty = !!take.result && (start !== take.result.start || end !== take.result.end)
   const trimmed = take.result && !isFullRecording(take.result.start, take.result.end, take.result.duration)
   const intervalConfirmed = !!take.result && !dirty && intervalReviewMatches(take.intervalReview, take.result.start, take.result.end, take.result.duration)
-  const findingSource = take.fullResult ?? take.result
+  // A cached trim shares the full pass's assignments. A fresh pass may differ
+  // near the trim boundaries, so show its own frames in the tracking timeline.
+  const findingSource = take.result && !take.result.sampling?.reusedFrom ? take.result : take.fullResult ?? take.result
+  const handAssignments = useMemo(() => take.result && summarizeHandAssignments(take.result.frames), [take.result])
   return <Card><div className="space-y-3">
     <div><h2 className="font-semibold text-lg mb-1">Preview</h2><h3 className="text-sm font-semibold break-all">{take.file.name} · {take.label}</h3>{take.training && <p className="text-xs text-text-2 mt-1">{take.training.taskTitle}</p>}</div>
     {take.result && <div className="border border-border rounded-lg bg-sky p-3 space-y-2" aria-label="Interval confirmation">
@@ -206,6 +212,8 @@ function TakePreview({ locked = false, take, onTrim, onCachedTrim, onDraftChange
     </div>
     <div className="flex gap-3 items-center flex-wrap text-sm">
       <label className="flex gap-2 items-center"><input type="checkbox" checked={showOverlay} onChange={e => setShowOverlay(e.target.checked)} />Show landmarks</label>
+      {take.result && <label className="flex gap-2 items-center"><input type="checkbox" checked={take.handSidesSwapped ?? false}
+        disabled={!canEdit} onChange={onSwapHandSides} />Swap left/right for this clip</label>}
       <Button size="sm" data-collector-shortcut="play-interval" title="Play/pause selected interval (Space)" disabled={!take.result || !validDraft} onClick={toggleIntervalPlayback}>Play selected interval</Button>
       <Button size="sm" data-collector-shortcut="play-whole" disabled={!take.result} onClick={toggleWholePlayback}>Play/pause whole recording</Button>
       <Button size="sm" variant={autoReplay ? 'primary' : 'default'} aria-pressed={autoReplay} disabled={!take.result || !validDraft}
@@ -216,6 +224,8 @@ function TakePreview({ locked = false, take, onTrim, onCachedTrim, onDraftChange
     {take.result && <div aria-live="polite">
       <p className="font-semibold" aria-label="Tracking quality">{take.result.quality.result} &middot; {(take.result.quality.gesture ?? take.result.quality).usableFrames}/{(take.result.quality.gesture ?? take.result.quality).totalFrames} usable frames</p>
       {take.result.quality.result !== 'Pass' && <ul className="list-disc pl-5 text-sm">{take.result.quality.findings.map(finding => <li key={finding}>{finding}</li>)}</ul>}
+      {!!handAssignments?.correctedFrames && <p className="text-sm">Hand labels reassigned in {handAssignments.correctedFrames} frames of the selected interval.</p>}
+      {!!handAssignments?.uncertainFrames && <p className="text-sm font-semibold">Hand assignment is uncertain in {handAssignments.uncertainFrames} frames. Check the Tracking timeline before saving.</p>}
       <p className="text-xs text-text-2">{purposeOf(take) ? 'Confirm the assigned non-sign task and interval before saving.' : 'Confirm the complete sign and label before saving.'}</p>
     </div>}
     {previewError && <p role="alert">{previewError}</p>}
@@ -365,6 +375,10 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
         let result: Result = await processVideo(take.file, controller.signal, progress => {
           if (alive.current) update({ progress })
         }, take.interval, { targetFps: IMPORT_FPS, qualityWindow: take.qualityWindow, samplePurpose: purposeOf(take) })
+        if (take.handSidesSwapped) {
+          result = { ...result, frames: swapVideoHands(result.frames) }
+          result.quality = qualityFor(take, result, take.expectedHands ?? 'either')
+        }
         result.contextCandidate = take.contextCandidate
         controller.signal.throwIfAborted()
         const fullResult = isFullRecording(result.start, result.end, result.duration) ? result : take.fullResult
@@ -467,11 +481,12 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
           inputWidth: result.inputWidth, inputHeight: result.inputHeight, maxDimension: result.maxDimension,
           fullClipQuality: take.fullResult?.quality, expectedHands: take.expectedHands ?? 'either',
           qualityWindow: result.qualityWindow,
+          handAssignment: { ...summarizeHandAssignments(result.frames), swapped: take.handSidesSwapped ?? false },
           intervalReview: take.intervalReview,
           review: { protocol: 'video-training-review-v1', label: take.label, trimStartMs: result.start * 1000, trimEndMs: result.end * 1000,
             processingVersion, expectedHands: take.expectedHands ?? 'either', qualityWindow: result.qualityWindow,
             ...(samplePurpose ? { samplePurpose, training: { ...take.training! }, completeSample: true as const } : { completeSign: true as const }), qualityFindingsAccepted: true },
-          preprocessing: { orientation: 'source-display-transform', mirroring: 'source-unchanged', handedness: 'mediapipe-assignment', missingHands: 'null-with-presence-flags', interpolation: 'none' } },
+          preprocessing: { orientation: 'source-display-transform', mirroring: 'source-unchanged', handedness: 'temporal-wrist-v1', missingHands: 'null-with-presence-flags', interpolation: 'none' } },
       }
       patch(take.id, { status: 'Saving' })
       try { await saveSequence(sequence) }
@@ -670,6 +685,16 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
       }}
       onHandsChange={expectedHands => patch(current.id, { expectedHands, reviewed: false,
         ...(current.result ? { result: { ...current.result, quality: qualityFor(current, current.result, expectedHands) } } : {}) })}
+      onSwapHandSides={() => {
+        if (isSaving || saving.current || current.status !== 'Ready' || !current.result) return
+        const swap = (source: Result): Result => {
+          const result = { ...source, frames: swapVideoHands(source.frames) }
+          return { ...result, quality: qualityFor(current, result, current.expectedHands ?? 'either') }
+        }
+        const result = swap(current.result)
+        const fullResult = current.fullResult === current.result ? result : current.fullResult && swap(current.fullResult)
+        patch(current.id, { result, fullResult, reviewed: false, handSidesSwapped: !current.handSidesSwapped })
+      }}
       onDraftChange={(start, end) => patch(current.id, { draft: { start, end }, reviewed: false, intervalReview: undefined })}
       onCachedTrim={interval => {
         const source = current.fullResult ?? current.result

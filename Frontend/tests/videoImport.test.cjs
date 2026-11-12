@@ -28,6 +28,55 @@ function sample(timestamp = 0) {
 }
 const { assessVideoQuality } = load('services/dataset/videoQuality')
 
+const { assignVideoHands, summarizeHandAssignments } = load('services/dataset/videoHandAssignment')
+function hand(x, handedness, score = .99) {
+  return { handedness, score, landmarks: Array.from({ length: 21 }, () => ({ x, y: .5, z: 0 })) }
+}
+function handObservation(timestamp, hands, wrists) {
+  const frame = sample(timestamp)
+  frame.raw.leftHand = null
+  frame.raw.pose = wrists ? frame.raw.pose : null
+  if (wrists) {
+    frame.raw.pose.leftWrist.x = wrists[0]
+    frame.raw.pose.rightWrist.x = wrists[1]
+  }
+  return { frame, hands }
+}
+
+test('video hand assignment corrects a brief label flip without filling missing frames', () => {
+  const observations = [
+    handObservation(0, [hand(.4, 'Right')]),
+    handObservation(33, [hand(.42, 'Right')]),
+    handObservation(66, [hand(.44, 'Left')]),
+    handObservation(99, []),
+    handObservation(132, [hand(.46, 'Right')]),
+    handObservation(165, [hand(.48, 'Right')]),
+    handObservation(450, [hand(.48, 'Left')]),
+  ]
+  const frames = assignVideoHands(observations)
+  assert.equal(frames[2].raw.rightHand, observations[2].hands[0].landmarks)
+  assert.equal(frames[2].raw.leftHand, null)
+  assert.equal(frames[3].raw.rightHand, null)
+  assert.equal(frames[6].raw.leftHand, observations[6].hands[0].landmarks)
+  assert.equal(summarizeHandAssignments(frames).correctedFrames, 1)
+})
+
+test('video hand assignment retains both detections when their labels collide and marks overlapping wrists', () => {
+  const observations = [
+    handObservation(0, [hand(.35, 'Left'), hand(.65, 'Right')], [.35, .65]),
+    handObservation(33, [hand(.42, 'Left'), hand(.58, 'Left')], [.42, .58]),
+    handObservation(66, [hand(.49, 'Left'), hand(.51, 'Right')], [.49, .51]),
+    handObservation(99, [hand(.44, 'Right'), hand(.56, 'Left')], [.56, .44]),
+    handObservation(132, [hand(.37, 'Right'), hand(.63, 'Left')], [.63, .37]),
+  ]
+  const frames = assignVideoHands(observations)
+  assert.equal(frames[1].raw.rightHand, observations[1].hands[1].landmarks)
+  assert.equal(frames[1].raw.leftHand, observations[1].hands[0].landmarks)
+  assert.equal(frames[2].handAssignment.uncertain, true)
+  assert.equal(frames[3].raw.leftHand, observations[3].hands[1].landmarks)
+  assert.equal(frames[4].raw.rightHand, observations[4].hands[0].landmarks)
+})
+
 test('stationary trim isolates the hold between observed entry and exit motion', () => {
   const { stationarySignInterval } = load('services/dataset/videoDiagnostics')
   const rest = Array(12).fill(.9)
@@ -245,11 +294,14 @@ test('saved uploads retain metadata through JSON and ZIP exports and reject dupl
 function processorFixture(sourceFps = 60, origin = 0, medianFps = sourceFps) {
   let closed = 0, revoked = 0
   const timestamps = [], seeks = []
-  const model = { detectForVideo: (_, t) => { timestamps.push(t); return {} }, close: () => { closed++ } }
+  const model = { detectForVideo: (_, t) => {
+    timestamps.push(t)
+    return { landmarks: [sample().raw.leftHand], handedness: [[{ categoryName: 'Left', score: .99 }]] }
+  }, close: () => { closed++ } }
   const processor = load('services/dataset/videoImport', {
     '@mediapipe/tasks-vision': { FilesetResolver: { forVisionTasks: async () => ({}) } },
     '../landmarks/visionRuntime': { WASM_BASE_URL: '', createHandLandmarker: async () => model,
-      createPoseLandmarker: async () => model, buildFrameSample: timestamp => sample(timestamp).raw },
+      createPoseLandmarker: async () => model, buildFrameSample: timestamp => ({ ...sample(timestamp).raw, leftHand: null }) },
     './sourceVideo': { openSourceVideo: async () => ({ duration: 2 + origin, width: 1080, height: 1920, origin,
       metrics: { medianFrameRate: medianFps, averageFrameRate: sourceFps, underlyingFrameRate: sourceFps },
       canvases: async function* (start, end) {
