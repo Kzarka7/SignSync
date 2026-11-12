@@ -131,9 +131,11 @@ def validate(path, assignments=None):
                     not all(isinstance(window.get(key), (int, float)) and np.isfinite(window[key]) for key in ('startMs', 'endMs')) or \
                     not (0 <= window['startMs'] <= 350 and window['endMs'] <= span and 0 <= span - window['endMs'] <= 350 and window['endMs'] - window['startMs'] >= 400):
                 raise ValueError('Invalid gesture/context assessment boundaries')
-        expected_preprocessing = {'orientation': 'source-display-transform' if source_frames else 'browser-displayed', 'mirroring': 'source-unchanged', 'handedness': 'mediapipe-assignment',
+        preprocessing = metadata.get('preprocessing')
+        handedness = 'temporal-wrist-v1' if source_frames and isinstance(preprocessing, dict) and preprocessing.get('handedness') == 'temporal-wrist-v1' else 'mediapipe-assignment'
+        expected_preprocessing = {'orientation': 'source-display-transform' if source_frames else 'browser-displayed', 'mirroring': 'source-unchanged', 'handedness': handedness,
                                   'missingHands': 'null-with-presence-flags', 'interpolation': 'none'}
-        if metadata.get('preprocessing') != expected_preprocessing or (not source_frames and (metadata.get('sampleFps') != 20 or not metadata.get('processingVersion', '').startswith('video-import-v3-'))):
+        if preprocessing != expected_preprocessing or (not source_frames and (metadata.get('sampleFps') != 20 or not metadata.get('processingVersion', '').startswith('video-import-v3-'))):
             raise ValueError('Unsupported preprocessing provenance')
         if metadata.get('expectedHands') not in ('either', 'both') or metadata.get('quality', {}).get('result') not in ('Pass', 'Review'):
             raise ValueError('Missing hand expectation or unacceptable stored quality')

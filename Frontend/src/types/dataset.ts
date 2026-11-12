@@ -1,11 +1,13 @@
 import type { LandmarkFrameSample } from './landmarks'
 
 // One recorded video frame within a sequence - the exact synchronized
-// sample useCameraFeed's onFrame callback produces, kept as-is. Storage
+// sample produced by the camera or video importer. Video imports can resolve
+// hand sides across frames while keeping the detected coordinates. Storage
 // stays raw (not normalized) on purpose: normalization is applied at
 // export time (see services/landmarks/normalize.ts), so the pipeline can
 // change later without needing to re-record every existing sample.
 export interface DatasetFrame {
+  handAssignment?: { corrected: boolean; uncertain: boolean }
   sourceTimestampMs?: number
   sourceDurationMs?: number
   timestamp: number
@@ -35,6 +37,7 @@ export interface VideoQuality {
 }
 
 export interface VideoImportMetadata {
+  handAssignment?: { correctedFrames: number; uncertainFrames: number; swapped: boolean }
   samplePurpose?: 'rest' | 'idle_movement'
   qualityWindow?: VideoQualityWindow
   origin?: 'uploaded-file' | 'camera-recording'
@@ -98,7 +101,7 @@ export interface VideoImportMetadata {
   preprocessing?: {
     orientation: 'browser-displayed' | 'source-display-transform'
     mirroring: 'source-unchanged'
-    handedness: 'mediapipe-assignment'
+    handedness: 'mediapipe-assignment' | 'temporal-wrist-v1'
     missingHands: 'null-with-presence-flags'
     interpolation: 'none'
   }
