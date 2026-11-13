@@ -27,6 +27,70 @@ function sample(timestamp = 0) {
   return { timestamp, raw: { timestamp, pose, leftHand: Array.from({ length: 21 }, () => ({ ...point })), rightHand: null } }
 }
 const { assessVideoQuality } = load('services/dataset/videoQuality')
+const { stabilizeLowLightFrames } = load('services/dataset/lowLightTracking')
+
+test('low-light cleanup rejects a transient hand and arm jump even when both follow the same shadow', () => {
+  const frames = [0, 33, 66].map(time => {
+    const frame = sample(time)
+    frame.raw.leftHand = null
+    frame.raw.pose.leftElbow.x = .24; frame.raw.pose.leftWrist.x = .18
+    frame.raw.pose.rightWrist.x = .62
+    return frame
+  })
+  const middle = frames[1].raw
+  middle.pose.leftElbow.x = .51; middle.pose.leftWrist.x = .93
+  middle.leftHand = hand(.93, 'Left').landmarks
+  const cleaned = stabilizeLowLightFrames(frames, 1)
+  assert.equal(cleaned[1].raw.leftHand, null)
+  assert.equal(cleaned[1].raw.pose.leftWrist.x, .18)
+  assert.equal(cleaned[1].raw.pose.leftWrist.visibility, 0)
+  assert.equal(cleaned[1].lowLightFinding.suspectArm, true)
+  assert.equal(cleaned[1].lowLightFinding.rejectedHand, true)
+  assert.equal(middle.pose.leftWrist.x, .93)
+  assert.ok(middle.leftHand)
+  assert.equal(stabilizeLowLightFrames([frames[0], frames[1]], 1)[1].raw.leftHand, middle.leftHand)
+  const shadowRun = stabilizeLowLightFrames([
+    frames[0], frames[1], { ...frames[1], timestamp: 66 }, { ...frames[2], timestamp: 99 },
+  ], 1)
+  assert.ok(shadowRun.slice(1, 3).every(frame => frame.lowLightFinding.rejectedHand && frame.raw.leftHand === null))
+})
+
+test('low-light cleanup damps a steady fingertip wobble and preserves deliberate finger motion and gaps', () => {
+  const frames = [0, 33, 66].map(time => {
+    const frame = sample(time)
+    frame.raw.leftHand[9].y = .4
+    return frame
+  })
+  frames[1].raw.leftHand[8].x = .51
+  frames[0].raw.leftHand[12].x = .48
+  frames[1].raw.leftHand[12].x = .49
+  frames[2].raw.leftHand[12].x = .5
+  const cleaned = stabilizeLowLightFrames(frames, 1)
+  assert.ok(cleaned[1].raw.leftHand[8].x < .51)
+  assert.equal(cleaned[1].raw.leftHand[12].x, .49)
+  frames[2].raw.leftHand = null
+  assert.equal(stabilizeLowLightFrames(frames, 1)[2].raw.leftHand, null)
+  assert.equal(stabilizeLowLightFrames(frames, 1)[1].raw.leftHand[8].x, .51)
+})
+
+test('low-light input lifts dark footage without changing its image dimensions', () => {
+  let level = 175
+  const probe = { drawImage() {}, getImageData: () => ({ data: Uint8ClampedArray.from([level, level, level, 255]) }) }
+  const output = { filter: 'none', drawImage() {} }
+  let canvasCount = 0
+  const { createLowLightInput } = load('services/dataset/lowLightTracking', {}, {
+    document: { createElement: () => ({ getContext: () => canvasCount++ === 0 ? probe : output }) },
+  })
+  const prepare = createLowLightInput()
+  const source = { width: 540, height: 960 }
+  assert.equal(prepare(source), source)
+  level = 60
+  const enhanced = prepare(source)
+  assert.notEqual(enhanced, source)
+  assert.equal(enhanced.width, source.width)
+  assert.equal(enhanced.height, source.height)
+  assert.match(output.filter, /brightness\(1\.100\)/)
+})
 
 const { assignVideoHands, summarizeHandAssignments } = load('services/dataset/videoHandAssignment')
 const { detectVideoHandContact } = load('services/dataset/videoHandOverlap')

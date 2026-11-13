@@ -5,6 +5,7 @@ import { assessVideoQuality, assessBoundaryVideoQuality } from './videoQuality'
 import { sourceFrameSelector } from './frameTiming'
 import { assignVideoHands, swapVideoHands, type VideoHandDetection } from './videoHandAssignment'
 import { detectVideoHandContact } from './videoHandOverlap'
+import { createLowLightInput, LOW_LIGHT_MAX_DIMENSION, stabilizeLowLightFrames } from './lowLightTracking'
 
 export const VIDEO_IMPORT_VERSION = 'video-import-v5-mp0.10.35-gesture-context'
 export const IMPORT_FPS = 30
@@ -16,8 +17,9 @@ export async function fingerprintVideo(file: File) {
 }
 
 export async function processVideo(file: File, signal: AbortSignal, onProgress: (percent: number) => void,
-  interval?: { start: number; end: number }, options: { maxDimension?: number; targetFps?: number; qualityWindow?: VideoQualityWindow; samplePurpose?: 'rest' | 'idle_movement'; swapHandSides?: boolean } = {}) {
-  const maxDimension = options.maxDimension ?? 640, targetFps = options.targetFps ?? IMPORT_FPS
+  interval?: { start: number; end: number }, options: { maxDimension?: number; targetFps?: number; qualityWindow?: VideoQualityWindow; samplePurpose?: 'rest' | 'idle_movement'; swapHandSides?: boolean; lowLight?: boolean } = {}) {
+  const lowLight = !!options.lowLight && !options.samplePurpose
+  const maxDimension = options.maxDimension ?? (lowLight ? LOW_LIGHT_MAX_DIMENSION : 640), targetFps = options.targetFps ?? IMPORT_FPS
   if (![640, 960, 1280].includes(maxDimension)) throw Error('Unsupported tracking resolution.')
   if (![20, 30, 60].includes(targetFps)) throw Error('Choose 20, 30 or 60 target FPS.')
   if (options.samplePurpose && (!['rest', 'idle_movement'].includes(options.samplePurpose) || options.qualityWindow)) throw Error('Non-sign footage requires full-interval quality assessment.')
@@ -38,6 +40,7 @@ export async function processVideo(file: File, signal: AbortSignal, onProgress: 
     signal.throwIfAborted()
     pose = await createPoseLandmarker(fileset, () => {})
     signal.throwIfAborted()
+    const enhance = lowLight ? createLowLightInput() : undefined
     // Near-target recordings jitter across bucket boundaries. Preserve that real
     // cadence rather than discarding adjacent frames from a nominal 30 FPS camera.
     const retainSourceCadence = source.metrics.averageFrameRate <= targetFps * 1.02
@@ -64,6 +67,7 @@ export async function processVideo(file: File, signal: AbortSignal, onProgress: 
     }
     signal.throwIfAborted()
     let frames = assignVideoHands(observations)
+    if (lowLight && frames.length) frames = stabilizeLowLightFrames(frames, inputWidth / inputHeight)
     if (!options.samplePurpose) {
       const contact = detectVideoHandContact(frames, inputWidth / inputHeight)
       if (contact.some(Boolean)) frames = assignVideoHands(observations, contact)
@@ -76,7 +80,7 @@ export async function processVideo(file: File, signal: AbortSignal, onProgress: 
       variableFrameRate: source.metrics.underlyingFrameRate === null, sourceTimeOriginSeconds: source.origin,
       achievedFps: frames.length > 1 ? (frames.length - 1) * 1000 / (frames[frames.length - 1].timestamp - frames[0].timestamp) : 0,
       ...selector.stats(), selectedFrames: frames.length, processingMs: elapsed, processingFps: frames.length * 1000 / elapsed }
-    return { frames, qualityWindow: options.qualityWindow, quality: options.samplePurpose
+    return { frames, lowLight, qualityWindow: options.qualityWindow, quality: options.samplePurpose
       ? assessBoundaryVideoQuality(frames, options.samplePurpose, 'either', { endMs: (end - start) * 1000, fps: effectiveTargetFps })
       : assessVideoQuality(frames, 'either', { endMs: end * 1000 - start * 1000, fps: effectiveTargetFps }, options.qualityWindow),
       start, end, duration, width, height, inputWidth, inputHeight, maxDimension, sampling }

@@ -20,6 +20,10 @@ function VideoTrackingTimeline({ frames, start, end, selectedStart = start, sele
       ? [{ name: 'Hand overlap', key: 'overlap' as const, color: '#9333ea' }] : []),
     ...(frames.some(frame => frame.handAssignment?.contact === 'possible-occlusion')
       ? [{ name: 'Possible occlusion', key: 'possible-occlusion' as const, color: '#e11d48' }] : []),
+    ...(frames.some(frame => frame.lowLightFinding?.suspectArm)
+      ? [{ name: 'Uncertain arm', key: 'suspectArm' as const, color: '#b45309' }] : []),
+    ...(frames.some(frame => frame.lowLightFinding?.rejectedHand)
+      ? [{ name: 'Hand rejected', key: 'rejectedHand' as const, color: '#be123c' }] : []),
   ]
   const duration = Math.max(.05, end - start)
   const x = (time: number) => Math.max(0, Math.min(1000, (time - start) / duration * 1000))
@@ -40,7 +44,8 @@ function VideoTrackingTimeline({ frames, start, end, selectedStart = start, sele
         {ticks.map((tick, index) => {
           const assignment = frames[index].handAssignment
           const active = row.key === 'overlap' || row.key === 'possible-occlusion' ? assignment?.contact === row.key
-            : row.key === 'uncertain' ? assignment?.uncertain : tick[row.key]
+            : row.key === 'uncertain' ? assignment?.uncertain
+              : row.key === 'suspectArm' || row.key === 'rejectedHand' ? frames[index].lowLightFinding?.[row.key] : tick[row.key]
           return active ? <rect key={tick.timestamp} x={tick.timestamp / (duration * 1000) * 1000} y="0" width={Math.min(step * 1.5, frameSpan(frames, index, step, duration * 1000)) / (duration * 1000) * 1000 + .1} height="12" fill={row.color} /> : null
         })}
       </svg>
