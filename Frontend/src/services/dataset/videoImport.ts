@@ -53,8 +53,9 @@ export async function processVideo(file: File, signal: AbortSignal, onProgress: 
       if (!selector.accept(seconds)) continue
       const timestamp = Math.max(0, (seconds - start) * 1000)
       inputWidth = frame.canvas.width; inputHeight = frame.canvas.height
-      const detection = hands.detectForVideo(frame.canvas, timestamp)
-      const raw = buildFrameSample(timestamp, null, pose.detectForVideo(frame.canvas, timestamp))
+      const input = enhance?.(frame.canvas) ?? frame.canvas
+      const detection = hands.detectForVideo(input, timestamp)
+      const raw = buildFrameSample(timestamp, null, pose.detectForVideo(input, timestamp))
       const candidates = detection.landmarks.flatMap((landmarks, index): VideoHandDetection[] => {
         if (landmarks.length !== 21 || !landmarks.every(({ x, y, z }) => [x, y, z].every(Number.isFinite))) return []
         const category = detection.handedness[index]?.[0]
