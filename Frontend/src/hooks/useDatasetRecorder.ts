@@ -12,7 +12,7 @@ import {
   saveSequence,
 } from '../services/dataset/datasetStorage'
 import { downloadDatasetExport, buildPerSampleZipExport, triggerDownload } from '../services/dataset/datasetExport'
-import { DEFAULT_SIGN_LABELS } from '../services/dataset/signLabelSearch'
+import { DEFAULT_SIGN_LABELS, RETIRED_SIGN_LABELS } from '../services/dataset/signLabelSearch'
 
 function createSequenceId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -382,7 +382,10 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
   // every tick during recording just from receiving a new-but-equal
   // array each time.
   const knownLabels = useMemo(
-    () => Array.from(new Set([...DEFAULT_SIGN_LABELS, ...sequences.map((s) => s.label)])),
+    () => Array.from(new Set([
+      ...DEFAULT_SIGN_LABELS,
+      ...sequences.map((s) => s.label).filter(label => !RETIRED_SIGN_LABELS.has(label)),
+    ])),
     [sequences],
   )
 

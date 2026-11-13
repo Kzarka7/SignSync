@@ -10,8 +10,8 @@ export const SIGN_LABEL_GROUPS = [
   { title: 'People and family', labels: [
     'PERSON', 'FRIEND', 'FAMILY', 'MOTHER', 'FATHER', 'PARENTS', 'GRANDMOTHER', 'GRANDFATHER', 'DEAF',
   ] },
-  { title: 'School and places', labels: ['SCHOOL', 'TEACHER', 'STUDENT', 'ROOM', 'BATHROOM'] },
-  { title: 'Daily needs and actions', labels: ['HELP', 'STAY', 'WAIT', 'EAT', 'DRINK', 'WATER', 'SLEEP', 'MONEY'] },
+  { title: 'School and places', labels: ['SCHOOL', 'TEACHER', 'STUDENT', 'ROOM'] },
+  { title: 'Daily needs and actions', labels: ['HELP', 'STAY', 'WAIT', 'EAT', 'DRINK', 'WATER', 'MONEY', 'FAST', 'SLOW'] },
   { title: 'Feelings and health', labels: ['HAPPY', 'SAD', 'TIRED', 'SICK', 'GOOD', 'BAD'] },
   { title: 'Numbers', labels: ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN'] },
   { title: 'Days and time', labels: [
@@ -22,6 +22,8 @@ export const SIGN_LABEL_GROUPS = [
 ]
 
 export const DEFAULT_SIGN_LABELS = SIGN_LABEL_GROUPS.flatMap(group => group.labels)
+
+export const RETIRED_SIGN_LABELS = new Set(['SLEEP', 'BATHROOM'])
 
 export const MONTH_LABELS = new Set([
   'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST',
