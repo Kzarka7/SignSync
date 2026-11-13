@@ -487,6 +487,9 @@ test('v5 preserves context frames and binds training approval to gesture boundar
   meta.preprocessing.handedness = 'temporal-wrist-v1'
   meta.handAssignment = { correctedFrames: 1, uncertainFrames: 0, swapped: false }
   assert.equal(assessTrainingSample(sample).state, 'Ready for training')
+  meta.preprocessing.handedness = 'temporal-wrist-overlap-v1'
+  meta.handContact = { overlapFrames: 1, occludedFrames: 0 }
+  assert.equal(assessTrainingSample(sample).state, 'Ready for training')
   const pkg = await buildTrainingPackage([sample])
   if (process.env.CONTEXT_PACKAGE_FIXTURE) fs.writeFileSync(process.env.CONTEXT_PACKAGE_FIXTURE, Buffer.from(await pkg.blob.arrayBuffer()))
   meta.qualityWindow.startMs = 250

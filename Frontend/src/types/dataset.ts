@@ -7,7 +7,7 @@ import type { LandmarkFrameSample } from './landmarks'
 // export time (see services/landmarks/normalize.ts), so the pipeline can
 // change later without needing to re-record every existing sample.
 export interface DatasetFrame {
-  handAssignment?: { corrected: boolean; uncertain: boolean }
+  handAssignment?: { corrected: boolean; uncertain: boolean; contact?: 'overlap' | 'possible-occlusion' }
   sourceTimestampMs?: number
   sourceDurationMs?: number
   timestamp: number
@@ -38,6 +38,7 @@ export interface VideoQuality {
 
 export interface VideoImportMetadata {
   handAssignment?: { correctedFrames: number; uncertainFrames: number; swapped: boolean }
+  handContact?: { overlapFrames: number; occludedFrames: number }
   samplePurpose?: 'rest' | 'idle_movement'
   qualityWindow?: VideoQualityWindow
   origin?: 'uploaded-file' | 'camera-recording'
@@ -101,7 +102,7 @@ export interface VideoImportMetadata {
   preprocessing?: {
     orientation: 'browser-displayed' | 'source-display-transform'
     mirroring: 'source-unchanged'
-    handedness: 'mediapipe-assignment' | 'temporal-wrist-v1'
+    handedness: 'mediapipe-assignment' | 'temporal-wrist-v1' | 'temporal-wrist-overlap-v1'
     missingHands: 'null-with-presence-flags'
     interpolation: 'none'
   }

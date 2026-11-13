@@ -56,7 +56,8 @@ export function assessTrainingSample(sample: LabeledSequence): TrainingAssessmen
     const handedness = metadata.preprocessing?.handedness
     if ((!sourceFrames && (metadata.sampleFps !== 20 || !metadata.processingVersion?.startsWith('video-import-v3-'))) ||
       metadata.preprocessing?.orientation !== (sourceFrames ? 'source-display-transform' : 'browser-displayed') || metadata.preprocessing.mirroring !== 'source-unchanged' ||
-      (handedness !== 'mediapipe-assignment' && !(sourceFrames && handedness === 'temporal-wrist-v1')) ||
+      (handedness !== 'mediapipe-assignment' && !(sourceFrames && (handedness === 'temporal-wrist-v1' ||
+        (!purpose && handedness === 'temporal-wrist-overlap-v1')))) ||
       metadata.preprocessing.missingHands !== 'null-with-presence-flags' || metadata.preprocessing.interpolation !== 'none')
       reasons.push('Reprocess with the current collector to establish preprocessing provenance.')
     if (![metadata.width, metadata.height, metadata.inputWidth, metadata.inputHeight, metadata.maxDimension].every(value => Number.isInteger(value) && value! > 0) ||

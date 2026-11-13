@@ -132,7 +132,11 @@ def validate(path, assignments=None):
                     not (0 <= window['startMs'] <= 350 and window['endMs'] <= span and 0 <= span - window['endMs'] <= 350 and window['endMs'] - window['startMs'] >= 400):
                 raise ValueError('Invalid gesture/context assessment boundaries')
         preprocessing = metadata.get('preprocessing')
-        handedness = 'temporal-wrist-v1' if source_frames and isinstance(preprocessing, dict) and preprocessing.get('handedness') == 'temporal-wrist-v1' else 'mediapipe-assignment'
+        handedness = 'mediapipe-assignment'
+        if source_frames and isinstance(preprocessing, dict):
+            allowed_handedness = ('temporal-wrist-v1',) if boundary_policy else ('temporal-wrist-v1', 'temporal-wrist-overlap-v1')
+            if preprocessing.get('handedness') in allowed_handedness:
+                handedness = preprocessing['handedness']
         expected_preprocessing = {'orientation': 'source-display-transform' if source_frames else 'browser-displayed', 'mirroring': 'source-unchanged', 'handedness': handedness,
                                   'missingHands': 'null-with-presence-flags', 'interpolation': 'none'}
         if preprocessing != expected_preprocessing or (not source_frames and (metadata.get('sampleFps') != 20 or not metadata.get('processingVersion', '').startswith('video-import-v3-'))):
