@@ -16,6 +16,10 @@ function VideoTrackingTimeline({ frames, start, end, selectedStart = start, sele
     { name: 'Near edge', key: 'clipped' as const, color: '#f59e0b' },
     ...(frames.some(frame => frame.handAssignment?.uncertain)
       ? [{ name: 'Hand side uncertain', key: 'uncertain' as const, color: '#b45309' }] : []),
+    ...(frames.some(frame => frame.handAssignment?.contact === 'overlap')
+      ? [{ name: 'Hand overlap', key: 'overlap' as const, color: '#9333ea' }] : []),
+    ...(frames.some(frame => frame.handAssignment?.contact === 'possible-occlusion')
+      ? [{ name: 'Possible occlusion', key: 'possible-occlusion' as const, color: '#e11d48' }] : []),
   ]
   const duration = Math.max(.05, end - start)
   const x = (time: number) => Math.max(0, Math.min(1000, (time - start) / duration * 1000))
@@ -33,7 +37,12 @@ function VideoTrackingTimeline({ frames, start, end, selectedStart = start, sele
       <span className="text-xs w-20 shrink-0">{row.name}</span>
       <svg role="img" aria-label={`${row.name} detections; blank areas mean no detection`} viewBox="0 0 1000 12" preserveAspectRatio="none" className="h-3 flex-1 rounded bg-border">
         <title>{row.name}: colored periods show detected activity; blank periods do not establish rest.</title>
-        {ticks.map((tick, index) => (row.key === 'uncertain' ? frames[index].handAssignment?.uncertain : tick[row.key]) ? <rect key={tick.timestamp} x={tick.timestamp / (duration * 1000) * 1000} y="0" width={Math.min(step * 1.5, frameSpan(frames, index, step, duration * 1000)) / (duration * 1000) * 1000 + .1} height="12" fill={row.color} /> : null)}
+        {ticks.map((tick, index) => {
+          const assignment = frames[index].handAssignment
+          const active = row.key === 'overlap' || row.key === 'possible-occlusion' ? assignment?.contact === row.key
+            : row.key === 'uncertain' ? assignment?.uncertain : tick[row.key]
+          return active ? <rect key={tick.timestamp} x={tick.timestamp / (duration * 1000) * 1000} y="0" width={Math.min(step * 1.5, frameSpan(frames, index, step, duration * 1000)) / (duration * 1000) * 1000 + .1} height="12" fill={row.color} /> : null
+        })}
       </svg>
     </div>)}</div>
     <label className="block text-xs">Seek within processed interval
