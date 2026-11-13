@@ -6,7 +6,7 @@ const vm = require('node:vm')
 const ts = require('typescript')
 const React = require('react')
 
-function harness({ holdSave = false, failSave = false, holdProcessing = false, suggestion = null, reviewSuggestion = null, stationaryInterval = null, sourceFrames, overlapFrames, trimReason = 'Preparation pause could not be confirmed.', trimFails = false, trimRetake = false, training } = {}) {
+function harness({ holdSave = false, failSave = false, holdProcessing = false, suggestion = null, reviewSuggestion = null, stationaryInterval = null, sourceFrames, overlapFrames, trimReason = 'Preparation pause could not be confirmed.', trimFails = false, trimRetake = false, lowLightFails = false, training } = {}) {
   const serviceCache = new Map()
   function loadService(file) {
     if (serviceCache.has(file)) return serviceCache.get(file)
@@ -84,8 +84,9 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
         processingOptions.push(options)
         processingOptions[processingOptions.length - 1].interval = _interval
         if (holdProcessing) await new Promise(resolve => pending.push({ resolve, signal, onProgress }))
+        if (options.lowLight && lowLightFails) throw Error('Enhancement failed')
         if (_interval && trimFails) throw Error('decoder failed')
-        return { frames: overlapFrames ?? sourceFrames ?? [{ timestamp: 0 }, { timestamp: 500 }],
+        return { frames: overlapFrames ?? sourceFrames ?? [{ timestamp: 0 }, { timestamp: 500 }], lowLight: !!options.lowLight,
           qualityWindow: options.qualityWindow, sampling: { effectiveTargetFps: 20, achievedFps: 20 }, quality: { result: _interval && trimRetake ? 'Retake' : 'Pass', findings: [] }, start: _interval?.start ?? 0, end: _interval?.end ?? 1, duration: 1, width: 640, height: 480 }
       },
     }
@@ -170,6 +171,38 @@ test('review uses the default swap on upload and reprocessing and exports the ov
   assert.equal(h.saved()[0].videoImport.handAssignment.swapped, true)
   assert.equal(h.saved()[0].videoImport.preprocessing.handedness, 'temporal-wrist-overlap-v1')
   assert.equal(h.saved()[0].videoImport.handContact.overlapFrames, 2)
+})
+
+test('low-light comparison preserves the interval, can revert without decoding, and saves the selected pass', async () => {
+  const h = harness()
+  await h.upload(); h.key('c')
+  const original = h.preview().props.take.result
+  const toggle = () => { h.preview().props.onCompareTracking(); h.render() }
+  toggle(); await new Promise(resolve => setImmediate(resolve)); h.render()
+  assert.equal(h.processingOptions.length, 2)
+  assert.equal(h.processingOptions[1].lowLight, true)
+  assert.equal(h.processingOptions[1].interval.start, original.start)
+  assert.equal(h.processingOptions[1].interval.end, original.end)
+  assert.equal(h.preview().props.take.reviewed, false)
+  assert.equal(h.preview().props.take.result.lowLight, true)
+  toggle()
+  assert.equal(h.preview().props.take.result.frames, original.frames)
+  toggle()
+  assert.equal(h.processingOptions.length, 2)
+  h.key('c'); h.key('s'); await new Promise(resolve => setImmediate(resolve)); h.render()
+  assert.equal(h.saved()[0].videoImport.lowLightTracking, 'video-low-light-v1')
+})
+
+test('failed low-light comparison keeps the previous result available for review', async () => {
+  const h = harness({ lowLightFails: true })
+  await h.upload()
+  const before = h.preview().props.take.result
+  h.preview().props.onCompareTracking(); h.render()
+  await new Promise(resolve => setImmediate(resolve)); h.render()
+  const take = h.preview().props.take
+  assert.equal(take.status, 'Ready')
+  assert.equal(take.result, before)
+  assert.match(take.message, /Previous tracking is available/)
 })
 
 test('current/all relabel scopes protect saved takes and reject invalid labels without clearing review',async()=>{

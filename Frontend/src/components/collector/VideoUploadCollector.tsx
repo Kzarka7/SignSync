@@ -26,6 +26,9 @@ type Take = {
   status: 'Queued' | 'Processing' | 'Ready' | 'Retake' | 'Cancelled' | 'Duplicate' | 'Saved' | 'Saving'
   progress: number; message?: string; result?: Result; reviewed: boolean
   fullResult?: Result
+  lowLight?: boolean
+  trackingTrial?: 'low-light' | 'standard'
+  alternateTracking?: { result: Result; fullResult?: Result }
   interval?: { start: number; end: number }
   draft?: { start: number; end: number }
   expectedHands?: ExpectedHands
@@ -73,11 +76,12 @@ function canReview(take: Take) {
     intervalReviewMatches(take.intervalReview, take.result.start, take.result.end, take.result.duration)
 }
 
-function TakePreview({ locked = false, take, onTrim, onCachedTrim, onDraftChange, onHandsChange, onConfirmInterval }: {
+function TakePreview({ locked = false, take, onTrim, onCachedTrim, onDraftChange, onHandsChange, onConfirmInterval, onCompareTracking }: {
   locked?: boolean; take: Take; onTrim: (start: number, end: number) => void; onDraftChange: (start: number, end: number) => void
   onCachedTrim: (interval: { start: number; end: number }) => void
   onHandsChange: (expected: ExpectedHands) => void
   onConfirmInterval: () => void
+  onCompareTracking: () => void
 }) {
   const video = useRef<HTMLVideoElement>(null), canvas = useRef<HTMLCanvasElement>(null)
   const [autoReplay, setAutoReplay] = useState(false)
@@ -185,6 +189,14 @@ function TakePreview({ locked = false, take, onTrim, onCachedTrim, onDraftChange
     return contact && contact !== frames[index - 1]?.handAssignment?.contact
       ? [result.start + frame.timestamp / 1000] : []
   }) ?? [], [result])
+  const trackingFindingStarts = useMemo(() => result?.frames.flatMap((frame, index, frames) =>
+    frame.lowLightFinding && !frames[index - 1]?.lowLightFinding ? [result.start + frame.timestamp / 1000] : []) ?? [], [result])
+  const jumpToFinding = (starts: number[]) => {
+    if (!video.current) return
+    stopIntervalPlayback()
+    const seconds = video.current.currentTime
+    video.current.currentTime = starts.find(start => start > seconds + .001) ?? starts[0]
+  }
   return <Card><div className="space-y-3">
     <div><h2 className="font-semibold text-lg mb-1">Preview</h2><h3 className="text-sm font-semibold break-all">{take.file.name} · {take.label}</h3>{take.training && <p className="text-xs text-text-2 mt-1">{take.training.taskTitle}</p>}</div>
     {take.result && <div className="border border-border rounded-lg bg-sky p-3 space-y-2" aria-label="Interval confirmation">
@@ -217,22 +229,23 @@ function TakePreview({ locked = false, take, onTrim, onCachedTrim, onDraftChange
       <Button size="sm" variant={autoReplay ? 'primary' : 'default'} aria-pressed={autoReplay} disabled={!take.result || !validDraft}
         data-collector-shortcut="loop" title="Repeat the selected interval. Whole-recording playback is unaffected."
         onClick={() => { setPreviewError(''); setAutoReplay(value => !value) }}>Auto replay {autoReplay ? 'on' : 'off'}</Button>
+      {result && !purposeOf(take) && <Button size="sm" disabled={!canEdit || dirty} onClick={() => { stopIntervalPlayback(); onCompareTracking() }}>
+        {take.trackingTrial ? 'Processing comparison…' : result.lowLight ? 'Use standard tracking'
+          : take.alternateTracking ? 'Use low-light tracking' : 'Try low-light tracking'}
+      </Button>}
     </div>
     {take.result && <div aria-live="polite">
       <p className="font-semibold" aria-label="Tracking quality">{take.result.quality.result} &middot; {(take.result.quality.gesture ?? take.result.quality).usableFrames}/{(take.result.quality.gesture ?? take.result.quality).totalFrames} usable frames</p>
       {take.result.quality.result !== 'Pass' && <ul className="list-disc pl-5 text-sm">{take.result.quality.findings.map(finding => <li key={finding}>{finding}</li>)}</ul>}
+      {trackingFindingStarts.length > 0 && <p className="text-sm">Check the low-light findings in the Tracking timeline before saving.</p>}
       <p className="text-xs text-text-2">{purposeOf(take) ? 'Confirm the assigned non-sign task and interval before saving.' : 'Confirm the complete sign and label before saving.'}</p>
     </div>}
     {previewError && <p role="alert">{previewError}</p>}
     <details open={take.stationaryTrim || undefined} className="rounded-lg border border-border p-3 text-sm"><summary
       className={take.stationaryTrim ? 'font-semibold' : 'cursor-pointer font-semibold'}
       onClick={take.stationaryTrim ? event => event.preventDefault() : undefined}>Tracking timeline</summary><div className="mt-3 space-y-3">
-    {contactStarts.length > 0 && <Button size="sm" onClick={() => {
-      if (!video.current) return
-      stopIntervalPlayback()
-      const seconds = video.current.currentTime
-      video.current.currentTime = contactStarts.find(start => start > seconds + .001) ?? contactStarts[0]
-    }}>Jump to next hand overlap or occlusion</Button>}
+    {contactStarts.length > 0 && <Button size="sm" onClick={() => jumpToFinding(contactStarts)}>Jump to next hand overlap or occlusion</Button>}
+    {trackingFindingStarts.length > 0 && <Button size="sm" onClick={() => jumpToFinding(trackingFindingStarts)}>Jump to next low-light finding</Button>}
     {findingSource && <VideoTrackingTimeline frames={findingSource.frames} start={findingSource.start} end={findingSource.end} selectedStart={replayStart} selectedEnd={replayEnd}
       onSeek={seconds => { stopIntervalPlayback(); if (video.current) video.current.currentTime = seconds }} />}
     </div></details>
@@ -375,10 +388,12 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
         update({ fingerprint })
         let result: Result = await processVideo(take.file, controller.signal, progress => {
           if (alive.current) update({ progress })
-        }, take.interval, { targetFps: IMPORT_FPS, qualityWindow: take.qualityWindow, samplePurpose: purposeOf(take), swapHandSides: true })
+        }, take.interval, { targetFps: IMPORT_FPS, qualityWindow: take.qualityWindow, samplePurpose: purposeOf(take), swapHandSides: true,
+          lowLight: take.trackingTrial ? take.trackingTrial === 'low-light' : take.lowLight })
         result.contextCandidate = take.contextCandidate
         controller.signal.throwIfAborted()
-        const fullResult = isFullRecording(result.start, result.end, result.duration) ? result : take.fullResult
+        const fullResult = isFullRecording(result.start, result.end, result.duration) ? result
+          : take.fullResult?.lowLight === result.lowLight ? take.fullResult : undefined
         let message: string | undefined, intervalReview: IntervalReview | undefined
         let autoTrimmed = take.autoTrimmed ?? false
         if (!take.interval && take.autoTrim && take.stationaryTrim) {
@@ -442,9 +457,14 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
           readyAt: take.readyAt ?? Date.now(),
           fullResult, interval: isFullRecording(result.start, result.end, result.duration) ? take.interval : { start: result.start, end: result.end },
           qualityWindow: result.qualityWindow, contextCandidate: result.contextCandidate, autoTrimmed,
-          message, draft: undefined, reviewed: false, intervalReview })
+          message, draft: undefined, reviewed: false, intervalReview, trackingTrial: undefined, lowLight: result.lowLight,
+          ...(take.trackingTrial && take.result ? { alternateTracking: { result: take.result, fullResult: take.fullResult } } : {}) })
       } catch (error) {
-        if (alive.current) update({ status: controller.signal.aborted ? 'Cancelled' : 'Retake',
+        if (alive.current && take.trackingTrial && take.result) {
+          update({ status: 'Ready', trackingTrial: undefined, progress: 100,
+            message: controller.signal.aborted ? 'Comparison cancelled. Previous tracking is available.'
+              : `Comparison failed. Previous tracking is available. ${error instanceof Error ? error.message : String(error)}` })
+        } else if (alive.current) update({ status: controller.signal.aborted ? 'Cancelled' : 'Retake',
           message: controller.signal.aborted ? 'Processing cancelled. Retry when ready.' : String(error instanceof Error ? error.message : error), reviewed: false })
       } finally {
         active.current = null
@@ -481,6 +501,7 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
           qualityWindow: result.qualityWindow,
           handAssignment: { ...summarizeHandAssignments(result.frames), swapped: true },
           ...(overlapEnabled ? { handContact: summarizeHandContact(result.frames) } : {}),
+          ...(result.lowLight ? { lowLightTracking: 'video-low-light-v1' as const } : {}),
           intervalReview: take.intervalReview,
           review: { protocol: 'video-training-review-v1', label: take.label, trimStartMs: result.start * 1000, trimEndMs: result.end * 1000,
             processingVersion, expectedHands: take.expectedHands ?? 'either', qualityWindow: result.qualityWindow,
@@ -685,6 +706,20 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
       }}
       onHandsChange={expectedHands => patch(current.id, { expectedHands, reviewed: false,
         ...(current.result ? { result: { ...current.result, quality: qualityFor(current, current.result, expectedHands) } } : {}) })}
+      onCompareTracking={() => {
+        if (isSaving || saving.current || current.status !== 'Ready' || !current.result || purposeOf(current) || hasPendingTrim(current)) return
+        const { result, alternateTracking } = current
+        if (alternateTracking) {
+          const replacement = alternateTracking.result
+          patch(current.id, { result: { ...replacement, quality: qualityFor(current, replacement, current.expectedHands ?? 'either') },
+            fullResult: alternateTracking.fullResult, lowLight: replacement.lowLight,
+            alternateTracking: { result, fullResult: current.fullResult }, reviewed: false, message: undefined })
+        } else {
+          patch(current.id, { interval: { start: result.start, end: result.end }, status: 'Queued', progress: 0, reviewed: false,
+            // Retain the current frames during the pass so a failed or cancelled comparison can return to them.
+            trackingTrial: result.lowLight ? 'standard' : 'low-light' })
+        }
+      }}
       onDraftChange={(start, end) => patch(current.id, { draft: { start, end }, reviewed: false, intervalReview: undefined })}
       onCachedTrim={interval => {
         const source = current.fullResult ?? current.result
@@ -692,13 +727,13 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
         const began = Date.now()
         const result = trimProcessedVideo(source, interval, new AbortController().signal)
         result.quality = qualityFor(current, result, current.expectedHands ?? 'either')
-        patch(current.id, { result, interval, qualityWindow: undefined, contextCandidate: undefined,
+        patch(current.id, { result, interval, qualityWindow: undefined, contextCandidate: undefined, alternateTracking: undefined,
           autoTrimmed: false, draft: undefined, reviewed: false,
           intervalReview: confirmInterval(result.start, result.end, result.duration),
           manualEdits: (current.manualEdits ?? 0) + 1, processingMs: (current.processingMs ?? 0) + Date.now() - began,
           message: 'Applied to cached frames. Review the new boundaries before saving.' })
       }}
-      onTrim={(start, end) => patch(current.id, { interval: { start, end }, qualityWindow: undefined, contextCandidate: undefined, autoTrimmed: false, draft: undefined, status: 'Queued', result: undefined, reviewed: false, intervalReview: undefined, manualEdits: (current.manualEdits ?? 0) + 1 })} />}
+      onTrim={(start, end) => patch(current.id, { interval: { start, end }, qualityWindow: undefined, contextCandidate: undefined, alternateTracking: undefined, autoTrimmed: false, draft: undefined, status: 'Queued', result: undefined, reviewed: false, intervalReview: undefined, manualEdits: (current.manualEdits ?? 0) + 1 })} />}
     </div>
     </div>
     <div className={controls ? 'contents xl:block xl:col-start-2 xl:row-start-1 xl:space-y-4' : ''}>
@@ -748,7 +783,9 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
         <Button size="sm" variant="primary" className="disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-signal" disabled={isSaving || !takes.some(t => t.reviewed && canReview(t))} onClick={() => save(takes)}>Save checked takes</Button>
         <Button size="sm" disabled={!busy} onClick={() => {
           active.current?.controller.abort()
-          setTakes(previous => previous.map(t => t.status === 'Queued' ? { ...t, status: 'Cancelled' } : t))
+          setTakes(previous => previous.map(t => t.status !== 'Queued' ? t : t.trackingTrial && t.result
+            ? { ...t, status: 'Ready', progress: 100, trackingTrial: undefined }
+            : { ...t, status: 'Cancelled' }))
         }}>Cancel remaining</Button>
         <Button size="sm" variant="danger" disabled={isSaving || !takes.some(take => take.status !== 'Saved')}
           title="Remove all unsaved videos, including reviewed takes; cancel processing. Saved takes stay until you undo their save."
@@ -803,6 +840,7 @@ export default function VideoUploadCollector({ label, knownLabels = [], sequence
           {['Retake', 'Cancelled'].includes(take.status) && <Button size="sm" onClick={() => patch(take.id, { status: 'Queued', result: undefined, reviewed: false })}>Retry</Button>}
           {['Queued', 'Processing'].includes(take.status) && <Button size="sm" onClick={() => {
             if (active.current?.id === take.id) active.current.controller.abort()
+            else if (take.trackingTrial && take.result) patch(take.id, { status: 'Ready', progress: 100, trackingTrial: undefined })
             else patch(take.id, { status: 'Cancelled' })
           }}>Cancel</Button>}
           {!['Queued', 'Processing'].includes(take.status) && <Button size="sm" variant="danger" aria-label="Remove from queue" className="disabled:opacity-40 disabled:cursor-not-allowed" disabled={isSaving || take.status === 'Saved'} title={take.status === 'Saved' ? 'Undo save before removing this video from the queue' : 'Remove this video from the queue'} onClick={() => removeTakes(false, take.id)}>Remove</Button>}
