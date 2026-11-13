@@ -29,6 +29,7 @@ function sample(timestamp = 0) {
 const { assessVideoQuality } = load('services/dataset/videoQuality')
 
 const { assignVideoHands, summarizeHandAssignments } = load('services/dataset/videoHandAssignment')
+const { detectVideoHandContact } = load('services/dataset/videoHandOverlap')
 function hand(x, handedness, score = .99) {
   return { handedness, score, landmarks: Array.from({ length: 21 }, () => ({ x, y: .5, z: 0 })) }
 }
@@ -75,6 +76,32 @@ test('video hand assignment retains both detections when their labels collide an
   assert.equal(frames[2].handAssignment.uncertain, true)
   assert.equal(frames[3].raw.leftHand, observations[3].hands[1].landmarks)
   assert.equal(frames[4].raw.rightHand, observations[4].hands[0].landmarks)
+})
+
+test('video hand contact detects crossing fingers with separated wrists and a brief occlusion', () => {
+  const left = hand(.3, 'Left'), right = hand(.7, 'Right')
+  left.landmarks[7] = { x: .42, y: .35, z: 0 }
+  left.landmarks[8] = { x: .58, y: .35, z: 0 }
+  right.landmarks[7] = { x: .5, y: .45, z: 0 }
+  right.landmarks[8] = { x: .5, y: .25, z: 0 }
+  const observations = [
+    handObservation(0, [left, right]), handObservation(33, [left]), handObservation(66, [left, right]),
+    handObservation(400, [left]), handObservation(433, [left, right]),
+  ]
+  const original = assignVideoHands(observations)
+  const contact = detectVideoHandContact(original, 16 / 9)
+  assert.deepEqual(Array.from(contact), ['overlap', 'possible-occlusion', 'overlap', undefined, 'overlap'])
+  const corrected = assignVideoHands(observations, contact)
+  assert.equal(corrected[1].raw.leftHand, left.landmarks)
+  assert.equal(corrected[1].raw.rightHand, null)
+  assert.equal(corrected[1].handAssignment.uncertain, true)
+  assert.equal(original[1].handAssignment, undefined)
+})
+
+test('separated hands and a brief ordinary tracking dropout do not count as contact', () => {
+  const left = hand(.25, 'Left'), right = hand(.75, 'Right')
+  const frames = assignVideoHands([handObservation(0, [left, right]), handObservation(33, [left]), handObservation(66, [left, right])])
+  assert.ok(detectVideoHandContact(frames, 9 / 16).every(value => value === undefined))
 })
 
 test('stationary trim isolates the hold between observed entry and exit motion', () => {
@@ -161,6 +188,15 @@ function processedFixture() {
       sourceAverageFps: 30, sourceMedianFps: 30, variableFrameRate: false, sourceTimeOriginSeconds: .123,
       achievedFps: 30, decodedFrames: 100, selectedFrames: 90, skippedForTarget: 8, duplicateTimestamps: 2, processingMs: 3000, processingFps: 30 } }
 }
+
+test('cached trim keeps overlap annotations aligned to the same source frames', () => {
+  const source = processedFixture()
+  source.frames = source.frames.map(frame => ({ ...frame, handAssignment: { contact: 'overlap' } }))
+  const result = trimProcessedVideo(source, { start: 1, end: 2 }, new AbortController().signal)
+  assert.ok(result.frames.length > 0)
+  assert.ok(result.frames.every(frame => Math.abs(frame.sourceTimestampMs - 1000 - frame.timestamp) < .001))
+  assert.ok(result.frames.every(frame => frame.handAssignment.contact === 'overlap'))
+})
 
 test('manual cached trim snaps to source observations and preserves the recording endpoint', () => {
   const source = processedFixture()
@@ -314,6 +350,17 @@ function processorFixture(sourceFps = 60, origin = 0, medianFps = sourceFps) {
   }, { performance })
   return { ...processor, timestamps, seeks, closed: () => closed, revoked: () => revoked }
 }
+test('review import swaps hand slots before quality checks and preserves them through cached trims', async () => {
+  const fixture = processorFixture()
+  const signal = new AbortController().signal
+  const result = await fixture.processVideo({}, signal, () => {}, { start: .5, end: 1.5 }, { swapHandSides: true })
+  assert.ok(result.frames.every(frame => frame.raw.leftHand === null && frame.raw.rightHand?.length === 21))
+  assert.equal(result.quality.coverage.rightHandFrames, result.frames.length)
+  const trimmed = trimProcessedVideo(result, { start: .6, end: 1.4 }, signal)
+  assert.equal(trimmed.quality.coverage.rightHandFrames, trimmed.frames.length)
+  assert.equal(trimmed.quality.coverage.leftHandFrames, 0)
+})
+
 test('trimmed processing uses source times, relative sample timestamps, and displayed portrait dimensions', async () => {
   const fixture = processorFixture()
   const result = await fixture.processVideo({}, new AbortController().signal, () => {}, { start: .5, end: 1.5 }, { targetFps: 20 })

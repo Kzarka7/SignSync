@@ -3,7 +3,8 @@ import { WASM_BASE_URL, createHandLandmarker, createPoseLandmarker, buildFrameSa
 import type { DatasetFrame, VideoImportMetadata, VideoQualityWindow } from '../../types/dataset'
 import { assessVideoQuality, assessBoundaryVideoQuality } from './videoQuality'
 import { sourceFrameSelector } from './frameTiming'
-import { assignVideoHands, type VideoHandDetection } from './videoHandAssignment'
+import { assignVideoHands, swapVideoHands, type VideoHandDetection } from './videoHandAssignment'
+import { detectVideoHandContact } from './videoHandOverlap'
 
 export const VIDEO_IMPORT_VERSION = 'video-import-v5-mp0.10.35-gesture-context'
 export const IMPORT_FPS = 30
@@ -15,7 +16,7 @@ export async function fingerprintVideo(file: File) {
 }
 
 export async function processVideo(file: File, signal: AbortSignal, onProgress: (percent: number) => void,
-  interval?: { start: number; end: number }, options: { maxDimension?: number; targetFps?: number; qualityWindow?: VideoQualityWindow; samplePurpose?: 'rest' | 'idle_movement' } = {}) {
+  interval?: { start: number; end: number }, options: { maxDimension?: number; targetFps?: number; qualityWindow?: VideoQualityWindow; samplePurpose?: 'rest' | 'idle_movement'; swapHandSides?: boolean } = {}) {
   const maxDimension = options.maxDimension ?? 640, targetFps = options.targetFps ?? IMPORT_FPS
   if (![640, 960, 1280].includes(maxDimension)) throw Error('Unsupported tracking resolution.')
   if (![20, 30, 60].includes(targetFps)) throw Error('Choose 20, 30 or 60 target FPS.')
@@ -62,7 +63,12 @@ export async function processVideo(file: File, signal: AbortSignal, onProgress: 
       await new Promise(resolve => setTimeout(resolve, 0))
     }
     signal.throwIfAborted()
-    const frames = assignVideoHands(observations)
+    let frames = assignVideoHands(observations)
+    if (!options.samplePurpose) {
+      const contact = detectVideoHandContact(frames, inputWidth / inputHeight)
+      if (contact.some(Boolean)) frames = assignVideoHands(observations, contact)
+    }
+    if (options.swapHandSides) frames = swapVideoHands(frames)
     const elapsed = performance.now() - began
     const effectiveTargetFps = Math.min(targetFps, source.metrics.medianFrameRate)
     const sampling: NonNullable<VideoImportMetadata['sampling']> = { method: 'decoded-source-frames-v1', requestedFps: targetFps,

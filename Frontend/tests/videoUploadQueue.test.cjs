@@ -6,7 +6,7 @@ const vm = require('node:vm')
 const ts = require('typescript')
 const React = require('react')
 
-function harness({ holdSave = false, failSave = false, holdProcessing = false, suggestion = null, reviewSuggestion = null, stationaryInterval = null, sourceFrames, trimReason = 'Preparation pause could not be confirmed.', trimFails = false, trimRetake = false, training } = {}) {
+function harness({ holdSave = false, failSave = false, holdProcessing = false, suggestion = null, reviewSuggestion = null, stationaryInterval = null, sourceFrames, overlapFrames, trimReason = 'Preparation pause could not be confirmed.', trimFails = false, trimRetake = false, training } = {}) {
   const serviceCache = new Map()
   function loadService(file) {
     if (serviceCache.has(file)) return serviceCache.get(file)
@@ -85,7 +85,8 @@ function harness({ holdSave = false, failSave = false, holdProcessing = false, s
         processingOptions[processingOptions.length - 1].interval = _interval
         if (holdProcessing) await new Promise(resolve => pending.push({ resolve, signal, onProgress }))
         if (_interval && trimFails) throw Error('decoder failed')
-        return { frames: sourceFrames ?? [{ timestamp: 0 }, { timestamp: 500 }], qualityWindow: options.qualityWindow, sampling: { effectiveTargetFps: 20, achievedFps: 20 }, quality: { result: _interval && trimRetake ? 'Retake' : 'Pass', findings: [] }, start: _interval?.start ?? 0, end: _interval?.end ?? 1, duration: 1, width: 640, height: 480 }
+        return { frames: overlapFrames ?? sourceFrames ?? [{ timestamp: 0 }, { timestamp: 500 }],
+          qualityWindow: options.qualityWindow, sampling: { effectiveTargetFps: 20, achievedFps: 20 }, quality: { result: _interval && trimRetake ? 'Retake' : 'Pass', findings: [] }, start: _interval?.start ?? 0, end: _interval?.end ?? 1, duration: 1, width: 640, height: 480 }
       },
     }
     return { default: name.endsWith('Button') ? 'button' : 'section', __esModule: true }
@@ -156,23 +157,19 @@ test('batch label correction preserves processing, intervals and reviews and sav
   await h.upload('third.mp4');assert.equal(h.preview().props.take.label,'HELLO','import default remains separate')
 })
 
-test('swapping hand sides clears review, survives reprocessing, and saves the swapped frames', async () => {
-  const left = [{ x: .25, y: .5, z: 0 }]
-  const right = [{ x: .75, y: .5, z: 0 }]
-  const sourceFrames = [0, 500].map(timestamp => ({ timestamp, raw: { timestamp, leftHand: left, rightHand: right, pose: null } }))
-  const h = harness({ sourceFrames })
-  await h.upload(); h.key('c')
-  h.preview().props.onSwapHandSides(); h.render()
-  const take = h.preview().props.take
-  assert.equal(take.reviewed, false)
-  assert.equal(take.result.frames[0].raw.leftHand, right)
-  assert.equal(take.fullResult.frames[0].raw.rightHand, left)
+test('review uses the default swap on upload and reprocessing and exports the overlap-aware frames', async () => {
+  const overlapFrames = [0, 500].map(timestamp => ({ timestamp, handAssignment: { contact: 'overlap' } }))
+  const h = harness({ overlapFrames })
+  await h.upload()
+  assert.equal(h.processingOptions[0].swapHandSides, true)
   h.preview().props.onTrim(.1, .9); h.render()
   await new Promise(resolve => setImmediate(resolve)); h.render()
-  assert.equal(h.preview().props.take.result.frames[0].raw.leftHand, right)
+  assert.equal(h.processingOptions.at(-1).swapHandSides, true)
   h.key('c'); h.key('s'); await new Promise(resolve => setImmediate(resolve)); h.render()
-  assert.equal(h.saved()[0].frames[0].raw.rightHand, left)
+  assert.equal(h.saved()[0].frames, overlapFrames)
   assert.equal(h.saved()[0].videoImport.handAssignment.swapped, true)
+  assert.equal(h.saved()[0].videoImport.preprocessing.handedness, 'temporal-wrist-overlap-v1')
+  assert.equal(h.saved()[0].videoImport.handContact.overlapFrames, 2)
 })
 
 test('current/all relabel scopes protect saved takes and reject invalid labels without clearing review',async()=>{

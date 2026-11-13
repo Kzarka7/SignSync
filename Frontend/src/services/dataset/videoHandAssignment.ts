@@ -1,5 +1,6 @@
 import type { DatasetFrame } from '../../types/dataset'
 import type { Handedness, LandmarkPoint } from '../../types/landmarks'
+import type { HandContact } from './videoHandOverlap'
 
 export interface VideoHandDetection {
   landmarks: LandmarkPoint[]
@@ -21,7 +22,7 @@ function wristDistance(a: LandmarkPoint, b: LandmarkPoint) {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
-function observationCost(frame: DatasetFrame, assignment: Assignment) {
+function observationCost(frame: DatasetFrame, assignment: Assignment, contact?: HandContact) {
   const pose = frame.raw.pose
   const wrists = [pose?.leftWrist, pose?.rightWrist]
   return sides.reduce((cost, side, index) => {
@@ -33,7 +34,9 @@ function observationCost(frame: DatasetFrame, assignment: Assignment) {
     const poseMatch = wrist && visibility >= .65 && Number.isFinite(wrist.x) && Number.isFinite(wrist.y)
       ? 2.1 * visibility * Math.max(0, 1 - wristDistance(wrist, hand.landmarks[0]) / .14)
       : 0
-    return cost + labelPenalty - poseMatch
+    // Handedness can flicker when fingers are covered. Let visible pose
+    // wrists and observations outside the contact carry more weight here.
+    return cost + labelPenalty * (contact ? .35 : 1) - poseMatch
   }, 0)
 }
 
@@ -51,13 +54,14 @@ function transitionCost(previous: Assignment, current: Assignment, elapsedMs: nu
 
 // Compare the two possible assignments across the decoded clip. Use evidence
 // on either side of a short flip, but break continuity after a longer dropout.
-export function assignVideoHands(observations: Observation[]): DatasetFrame[] {
+export function assignVideoHands(observations: Observation[], contacts?: (HandContact | undefined)[]): DatasetFrame[] {
   const frames = observations.map(item => item.frame)
   const tracked = observations.flatMap(({ frame, hands }, index) => {
     const [first, second] = hands
     if (!first) return []
     const options: [Assignment, Assignment] = [[first, second], [second, first]]
-    const costs: Costs = [observationCost(frame, options[0]), observationCost(frame, options[1])]
+    const contact = contacts?.[index]
+    const costs: Costs = [observationCost(frame, options[0], contact), observationCost(frame, options[1], contact)]
     return [{ index, frame, options, costs }]
   })
   if (!tracked.length) return frames
@@ -92,11 +96,12 @@ export function assignVideoHands(observations: Observation[]): DatasetFrame[] {
     const [left, right] = options[state]
     const corrected = !!(left?.handedness === 'Right' || right?.handedness === 'Left')
     const overlap = !!left && !!right && wristDistance(left.landmarks[0], right.landmarks[0]) < .045
-    const uncertain = overlap || Math.abs(prefix[index][0] + suffix[0] - prefix[index][1] - suffix[1]) < .55
+    const contact = contacts?.[frameIndex]
+    const uncertain = overlap || contact === 'possible-occlusion' || Math.abs(prefix[index][0] + suffix[0] - prefix[index][1] - suffix[1]) < .55
     frames[frameIndex] = {
       ...frame,
       raw: { ...frame.raw, leftHand: left?.landmarks ?? null, rightHand: right?.landmarks ?? null },
-      ...(corrected || uncertain ? { handAssignment: { corrected, uncertain } } : {}),
+      ...(corrected || uncertain || contact ? { handAssignment: { corrected, uncertain, ...(contact ? { contact } : {}) } } : {}),
     }
     state = predecessor[index][state]
     if (index > 0) {
@@ -123,5 +128,12 @@ export function summarizeHandAssignments(frames: DatasetFrame[]) {
   return {
     correctedFrames: frames.filter(frame => frame.handAssignment?.corrected).length,
     uncertainFrames: frames.filter(frame => frame.handAssignment?.uncertain).length,
+  }
+}
+
+export function summarizeHandContact(frames: DatasetFrame[]) {
+  return {
+    overlapFrames: frames.filter(frame => frame.handAssignment?.contact === 'overlap').length,
+    occludedFrames: frames.filter(frame => frame.handAssignment?.contact === 'possible-occlusion').length,
   }
 }
