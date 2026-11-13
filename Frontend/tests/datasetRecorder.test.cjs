@@ -76,10 +76,12 @@ function recorderHarness(options = {}, storageOptions = {}) {
 
 test('sign collection offers the vocabulary and fingerspelling labels', async () => {
   const recorder = recorderHarness({ signsOnly: true }).render()
-  assert.equal(recorder.knownLabels.length, 81)
-  assert.equal(new Set(recorder.knownLabels).size, 81)
+  assert.equal(recorder.knownLabels.length, 101)
+  assert.equal(new Set(recorder.knownLabels).size, recorder.knownLabels.length)
+  assert.equal(recorder.knownLabels.includes('SLEEP'), false)
+  assert.equal(recorder.knownLabels.includes('BATHROOM'), false)
   for (const label of ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN',
-    'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
+    'FAST', 'SLOW',
     'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY',
     'GOOD_MORNING', 'GOOD_AFTERNOON', 'GOOD_EVENING', 'YESTERDAY', 'TOMORROW', 'TODAY',
     ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ']) {
