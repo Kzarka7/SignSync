@@ -74,9 +74,9 @@ function recorderHarness(options = {}, storageOptions = {}) {
   }
 }
 
-test('sign collection offers the vocabulary and fingerspelling labels', async () => {
+test('sign collection offers vocabulary, indexing, possessive, and fingerspelling labels', () => {
   const recorder = recorderHarness({ signsOnly: true }).render()
-  assert.equal(recorder.knownLabels.length, 101)
+  assert.equal(recorder.knownLabels.length, 113)
   assert.equal(new Set(recorder.knownLabels).size, recorder.knownLabels.length)
   assert.equal(recorder.knownLabels.includes('SLEEP'), false)
   assert.equal(recorder.knownLabels.includes('BATHROOM'), false)
@@ -84,6 +84,8 @@ test('sign collection offers the vocabulary and fingerspelling labels', async ()
     'FAST', 'SLOW',
     'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY',
     'GOOD_MORNING', 'GOOD_AFTERNOON', 'GOOD_EVENING', 'YESTERDAY', 'TOMORROW', 'TODAY',
+    'IX-1', 'IX-2', 'IX-3', 'IX-1pl', 'IX-2pl', 'IX-3pl',
+    'POSS-1', 'POSS-2', 'POSS-3', 'POSS-1pl', 'POSS-2pl', 'POSS-3pl',
     ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ']) {
     assert.equal(recorder.knownLabels.includes(label), true, label)
   }
