@@ -93,6 +93,42 @@ test('sign search auto-selects names, unique fragments, and numeric aliases', ()
   }
 })
 
+test('possessives have their own group and keep exact IDs when selected by prompt or gloss', () => {
+  const labels = ['POSS-1', 'POSS-2', 'POSS-3', 'POSS-1pl', 'POSS-2pl', 'POSS-3pl']
+  const prompts = ['My/Mine', 'Your/Yours (singular)', 'His/Her/Hers/Its',
+    'Our/Ours', 'Your/Yours (you all)', 'Their/Theirs']
+  const h = pickerHarness([...labels].reverse())
+  h.open()
+  const group = h.render().find(node => node.props?.role === 'group' && node.props['aria-label'] === 'Possessives')
+  assert.ok(group)
+  const options = h.options().filter(node => labels.includes(node.props.children[0]))
+  assert.deepEqual(options.map(node => node.props.children[0]), labels)
+  assert.deepEqual(options.map(node => node.props.children[1].props.children), prompts)
+  h.search('Your/Yours')
+  assert.deepEqual(h.options().map(node => node.props.children[0]), ['POSS-2', 'POSS-2pl'])
+  assert.equal(h.selected(), '')
+  h.search('you all')
+  h.key('Enter')
+  assert.equal(h.selected(), 'POSS-2pl')
+  assert.equal(h.input().props.value, 'POSS-2pl')
+  h.search('poss-3PL')
+  assert.equal(h.selected(), 'POSS-3pl')
+})
+
+test('indexing has its own group and supports search by prompt and gloss', () => {
+  const labels = ['IX-1', 'IX-2', 'IX-3', 'IX-1pl', 'IX-2pl', 'IX-3pl']
+  const h = pickerHarness([...labels].reverse().concat('POSS-2pl'))
+  h.open()
+  const group = h.render().find(node => node.props?.role === 'group' && node.props['aria-label'] === 'Indexing')
+  assert.ok(group)
+  const options = group.props.children[1]
+  assert.deepEqual(Array.from(options, node => node.props.children[0]), labels)
+  h.search('They/Them')
+  assert.equal(h.selected(), 'IX-3pl')
+  h.search('ix-2PL')
+  assert.equal(h.selected(), 'IX-2pl')
+})
+
 test('saved month labels are unavailable for selection or search', () => {
   const h = pickerHarness(['JANUARY', 'MAY', 'MAYBE'])
   h.open()
