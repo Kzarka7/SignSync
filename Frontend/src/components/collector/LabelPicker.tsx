@@ -1,6 +1,6 @@
 import { memo, useId, useRef, useState } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
-import { DEFAULT_SIGN_LABELS, findSignLabels, MONTH_LABELS, SIGN_LABEL_GROUPS } from '../../services/dataset/signLabelSearch'
+import { DEFAULT_SIGN_LABELS, findSignLabels, MONTH_LABELS, SIGN_LABEL_GROUPS, SIGN_LABEL_PROMPTS } from '../../services/dataset/signLabelSearch'
 
 interface LabelPickerProps {
   knownLabels: string[]
@@ -27,6 +27,7 @@ function LabelPicker({ knownLabels, selectedLabel, onSelectLabel, disabled, labe
   const matches = groups.flatMap(group => group.labels)
   const expanded = open && !disabled
   const activeIndex = active >= 0 && active < matches.length ? active : -1
+  const selectedPrompt = SIGN_LABEL_PROMPTS.get(selectedLabel)
 
   const showOptions = () => {
     if (disabled || open) return
@@ -127,6 +128,7 @@ function LabelPicker({ knownLabels, selectedLabel, onSelectLabel, disabled, labe
             <div aria-hidden="true" className="px-3 py-2 text-sm font-semibold text-text-2">{group.title}</div>
             {group.labels.map(label => {
               const index = matches.indexOf(label)
+              const prompt = SIGN_LABEL_PROMPTS.get(label)
               return <button
                   id={`${id}-option-${index}`}
                   key={label}
@@ -139,12 +141,18 @@ function LabelPicker({ knownLabels, selectedLabel, onSelectLabel, disabled, labe
                   onClick={() => choose(label)}
                 >
                   {label}
+                  {prompt && <span className="ml-2 mr-auto text-sm font-normal text-text-2">
+                    {prompt}
+                  </span>}
                   {label === selectedLabel && <Check size={14} className="text-signal" aria-hidden="true" />}
                 </button>
             })}
           </div>) : <p role="status" className="px-3 py-3 text-sm text-text-2">No matching signs.</p>}
         </div>}
       </div>
+      {!expanded && selectedPrompt && <p className="text-sm text-text-2">
+        {selectedPrompt}
+      </p>}
     </div>
   )
 }

@@ -1,3 +1,23 @@
+const indexingPrompts: [string, string][] = [
+  ['IX-1', 'I/Me'],
+  ['IX-2', 'You (singular)'],
+  ['IX-3', 'That person'],
+  ['IX-1pl', 'We/Us'],
+  ['IX-2pl', 'You all'],
+  ['IX-3pl', 'They/Them'],
+]
+
+const possessivePrompts: [string, string][] = [
+  ['POSS-1', 'My/Mine'],
+  ['POSS-2', 'Your/Yours (singular)'],
+  ['POSS-3', 'His/Her/Hers/Its'],
+  ['POSS-1pl', 'Our/Ours'],
+  ['POSS-2pl', 'Your/Yours (you all)'],
+  ['POSS-3pl', 'Their/Theirs'],
+]
+
+export const SIGN_LABEL_PROMPTS: ReadonlyMap<string, string> = new Map([...indexingPrompts, ...possessivePrompts])
+
 export const SIGN_LABEL_GROUPS = [
   { title: 'Greetings and courtesy', labels: [
     'HELLO', 'WAVE_GREETING', 'THANK_YOU', 'PLEASE', 'SORRY', 'WELCOME',
@@ -10,6 +30,8 @@ export const SIGN_LABEL_GROUPS = [
   { title: 'People and family', labels: [
     'PERSON', 'FRIEND', 'FAMILY', 'MOTHER', 'FATHER', 'PARENTS', 'GRANDMOTHER', 'GRANDFATHER', 'DEAF',
   ] },
+  { title: 'Indexing', labels: indexingPrompts.map(([label]) => label) },
+  { title: 'Possessives', labels: possessivePrompts.map(([label]) => label) },
   { title: 'School and places', labels: ['SCHOOL', 'TEACHER', 'STUDENT', 'ROOM'] },
   { title: 'Daily needs and actions', labels: ['HELP', 'STAY', 'WAIT', 'EAT', 'DRINK', 'WATER', 'MONEY', 'FAST', 'SLOW'] },
   { title: 'Feelings and health', labels: ['HAPPY', 'SAD', 'TIRED', 'SICK', 'GOOD', 'BAD'] },
@@ -36,12 +58,14 @@ const NUMBER_LABELS: Record<string, string> = {
 }
 
 function normalize(value: string): string {
-  return value.trim().toUpperCase().replace(/[\s_'’-]+/g, '')
+  return value.trim().toUpperCase().replace(/[\s_'’/()-]+/g, '')
 }
 
 export function findSignLabels(labels: string[], query: string): string[] {
   const term = normalize(query)
   if (!term) return []
   const exact = labels.filter(label => normalize(label) === term || label === NUMBER_LABELS[term])
-  return exact.length ? exact : labels.filter(label => normalize(label).includes(term))
+  return exact.length ? exact : labels.filter(label =>
+    normalize(label).includes(term) || normalize(SIGN_LABEL_PROMPTS.get(label) ?? '').includes(term),
+  )
 }
