@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { buildEvaluationZip, downloadEvaluation } from '../services/dataset/boundaryEvaluation'
-import { useCameraFeed } from './useCameraFeed'
+import { OPTIMIZED_LIVE_CAMERA_OPTIONS, useCameraFeed } from './useCameraFeed'
 import type { DetectionInputWidth } from '../services/detectionInput'
 import type { LandmarkFrameSample } from '../types/landmarks'
-import type { DatasetFrame, IdleCollectionMetadata, LabeledSequence, TrainingCategory } from '../types/dataset'
+import type { IdleCollectionMetadata, LabeledSequence, TrainingCategory } from '../types/dataset'
 import {
   clearSequences,
   storageError,
@@ -57,7 +57,6 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
     && (!signsOnly || (s.training ? s.training.category === 'sign' : !s.collection && !['REST', 'IDLE', 'IDLE_MOVEMENT', 'NO_SIGN', 'INTERRUPTION'].includes(s.label) && !s.label.startsWith('IDLE_')))), [allSequences, scope, evaluationGroup, trainingBatchId, trainingCategory, legacyOnly, signsOnly])
   const [selectedLabel, setSelectedLabel] = useState<string>(DEFAULT_SIGN_LABELS[0])
   const [isRecording, setIsRecording] = useState(false)
-  const [frameCount, setFrameCount] = useState(0)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isExportingZip, setIsExportingZip] = useState(false)
   const [zipExport, setZipExport] = useState<{ blob: Blob; filename: string } | null>(null)
@@ -82,29 +81,9 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
   const [countdownSeconds, setCountdownSeconds] = useState(0)
   const [countdown, setCountdown] = useState<number | null>(null)
 
-  // Frames accumulate here during a recording rather than in state -
-  // pushing to a plain array avoids a state update (and re-render) on
-  // every single MediaPipe tick; only the *count* is mirrored into state
-  // for the live "N frames" readout.
-  const bufferRef = useRef<DatasetFrame[]>([])
-  // Count completed detection callbacks without rendering for every frame.
-  const processedFramesRef = useRef(0)
-  // Mirrors isRecording for the onFrame callback, which is created once
-  // and reads this on every tick - reading React state directly there
-  // would close over a stale value.
-  const isRecordingRef = useRef(false)
-  // Mirrors the buffered frame count into `frameCount` state on a fixed
-  // interval instead of every single onFrame tick (see handleFrame and
-  // startRecording) - calling setState on every detection tick guarantees
-  // a re-render of the whole page every tick (unlike e.g. handsDetected,
-  // which only re-renders when the value actually flips), and that
-  // extra, always-on render work was visibly competing with the
-  // detection loop for main-thread time - the skeleton overlay noticeably
-  // choppier while recording than while just previewing.
-  const frameCountIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  // Ticks the countdown down once per second before actual recording
-  // begins - separate from frameCountIntervalRef since the two never run
-  // at the same time (countdown finishes, *then* recording starts).
+  const bufferRef = useRef<LandmarkFrameSample[]>([])
+  const getRecordedFrameCount = useCallback(() => bufferRef.current.length, [])
+  const recordingStartedAtRef = useRef<number | null>(null)
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const finishRecordingRef = useRef<(discard: boolean) => void>(() => {})
@@ -132,47 +111,44 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
   // mid-countdown or mid-recording.
   useEffect(() => {
     return () => {
-      if (frameCountIntervalRef.current !== null) {
-        clearInterval(frameCountIntervalRef.current)
-      }
       if (countdownIntervalRef.current !== null) {
         clearInterval(countdownIntervalRef.current)
       }
       if (recordingTimeoutRef.current !== null) clearTimeout(recordingTimeoutRef.current)
-      isRecordingRef.current = false
+      recordingStartedAtRef.current = null
     }
   }, [])
 
   const handleFrame = useCallback((sample: LandmarkFrameSample) => {
-    processedFramesRef.current += 1
-    if (!isRecordingRef.current) return
-    bufferRef.current.push({ timestamp: sample.timestamp, raw: sample })
+    const startedAt = recordingStartedAtRef.current
+    // Latest-frame inference can deliver a preview image captured before Start.
+    if (startedAt === null || sample.timestamp < startedAt) return
+    bufferRef.current.push(sample)
   }, [])
 
-  const feed = useCameraFeed({ onFrame: handleFrame, detectionInputWidth, trackLiveTiming: true })
+  const feed = useCameraFeed({
+    ...OPTIMIZED_LIVE_CAMERA_OPTIONS,
+    onFrame: handleFrame, detectionInputWidth, trackLiveTiming: true,
+  })
 
   // The actual recording - buffering frames, tracking frame count - starts
   // here, only once the countdown (if any) has finished. Camera detection
   // itself never stops or pauses during the countdown; only whether
-  // handleFrame keeps what it sees is gated by isRecordingRef.
+  // handleFrame keeps what it sees is gated by recordingStartedAtRef.
   const beginActualRecording = useCallback(() => {
     feed.startPerformanceProfile()
     bufferRef.current = []
-    setFrameCount(0)
     setSaveError(null)
-    isRecordingRef.current = true
+    recordingStartedAtRef.current = performance.now()
     setIsRecording(true)
 
-    frameCountIntervalRef.current = setInterval(() => {
-      setFrameCount(bufferRef.current.length)
-    }, 200)
     if (durationLimitMs && durationLimitMs > 0) {
       recordingTimeoutRef.current = setTimeout(() => finishRecordingRef.current(false), durationLimitMs)
     }
   }, [feed.startPerformanceProfile, durationLimitMs])
 
   const startRecording = useCallback(() => {
-    if (savingRef.current || isLoading || !recordingAllowed || isRecordingRef.current) return
+    if (savingRef.current || isLoading || !recordingAllowed || recordingStartedAtRef.current !== null) return
     if (!feed.enabled || !feed.cameraReady) return
     if (!selectedLabel.trim()) return
     if (countdownIntervalRef.current !== null) return // already counting down
@@ -216,36 +192,30 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
   // up empty (e.g. stopped a frame after starting).
   const finishRecording = useCallback(
     async (discard: boolean) => {
-      if (!isRecordingRef.current) return
+      if (recordingStartedAtRef.current === null) return
       if (recordingTimeoutRef.current !== null) {
         clearTimeout(recordingTimeoutRef.current)
         recordingTimeoutRef.current = null
       }
-      if (frameCountIntervalRef.current !== null) {
-        clearInterval(frameCountIntervalRef.current)
-        frameCountIntervalRef.current = null
-      }
       feed.stopPerformanceProfile()
-      isRecordingRef.current = false
+      recordingStartedAtRef.current = null
       setIsRecording(false)
-      const frames = bufferRef.current
+      const samples = bufferRef.current
       bufferRef.current = []
-      setFrameCount(frames.length) // final, exact count, including every captured frame
 
       if (discard) return
-      if (frames.length === 0) {
+      if (samples.length === 0) {
         setSaveError('No frames were captured. Check the camera and record again.')
         return
       }
 
-      const durationMs =
-        frames.length > 1 ? frames[frames.length - 1].timestamp - frames[0].timestamp : 0
+      const durationMs = samples[samples.length - 1].timestamp - samples[0].timestamp
       if (recordingContextRef.current.collection?.kind === 'idle' && durationMs < 2000) {
         setSaveError('Idle clips need at least 2 seconds of captured frames. This clip was not saved; please record again.')
         return
       }
       const trainingContext = recordingContextRef.current.training
-      if (trainingContext && (frames.length < 8 || durationMs < 400)) {
+      if (trainingContext && (samples.length < 8 || durationMs < 400)) {
         setSaveError('Not enough captured frames or recording time. Please record this task again.')
         return
       }
@@ -257,7 +227,7 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
         ...(recordingContextRef.current.evaluation ? { evaluation: recordingContextRef.current.evaluation } : {}),
         createdAt: new Date().toISOString(),
         durationMs,
-        frames,
+        frames: samples.map(raw => ({ timestamp: raw.timestamp, raw })),
       }
 
       savingRef.current = true
@@ -398,13 +368,12 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
     detectionInputWidth,
     setDetectionInputWidth,
     feed,
-    processedFramesRef,
+    getRecordedFrameCount,
     sequences,
     knownLabels,
     selectedLabel,
     setSelectedLabel,
     isRecording,
-    frameCount,
     saveError,
     countdown,
     countdownSeconds,

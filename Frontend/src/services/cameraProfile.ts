@@ -11,8 +11,10 @@ export type DetectionTiming = {
   mediaTime?: number
   handsDetected?: boolean
   handCount?: number
+  handCapacity?: 1 | 2
   singleHandSide?: 'Left' | 'Right'
   frameCopyMs?: number
+  callbackToLandmarksMs?: number
   overlayPaintOpportunityMs?: number
 }
 
@@ -127,7 +129,7 @@ function summarizeBenchmark(samples: DetectionTiming[], round: (value: number) =
     freshHandUpdateGapMs: percentiles(gaps),
     handMs: percentiles(samples.filter(sample => sample.handMs > 0).map(sample => sample.handMs)),
     poseMs: percentiles(samples.filter(sample => sample.poseMs > 0).map(sample => sample.poseMs)),
-    callbackToLandmarksMs: percentiles(samples.map(sample => sample.totalMs)),
+    callbackToLandmarksMs: percentiles(samples.map(sample => sample.callbackToLandmarksMs ?? sample.totalMs)),
     frameCopyMs: percentiles(samples.map(sample => sample.frameCopyMs ?? 0)),
     callbackToOverlayPaintOpportunityMs: percentiles(samples.flatMap(sample =>
       sample.overlayPaintOpportunityMs === undefined ? [] : [sample.overlayPaintOpportunityMs])),

@@ -45,7 +45,7 @@ test('saved FPS uses frame intervals, including short and invalid samples', () =
 test('preserved video uses shared controls with elapsed time and a save-video action instead of inferred-frame counts', () => {
   const RecordingControls = loadComponent('RecordingControls')
   const html = renderToStaticMarkup(React.createElement(RecordingControls, {
-    isRecording: true, countdown: null, frameCount: 0, processedFramesRef: { current: 0 },
+    isRecording: true, countdown: null,
     stopLabel: 'Stop & save video', recordingStatus: 'Recording · 2.0s',
   }))
   assert.match(html, /Stop &amp; save video/)
@@ -80,46 +80,58 @@ test('pending camera videos share Recorded samples without appearing as approved
   assert.equal((html.match(/bg-white border border-border rounded-xl2 p-5/g) ?? []).length, 1)
 })
 
-test('live FPS counts completed callbacks over elapsed wall time, ticks once a second and cleans up', () => {
-  let now = 100, tick, interval, cleared, cleanup, state = null
+test('landmark progress polls captured frames every 125 ms and measures FPS over real elapsed time', () => {
+  let now = 100, captured = 0, cleanup, cursor = 0
+  const state = [], timers = new Map()
   const fakeReact = {
     ...React,
-    useState: () => [state, next => { state = next }],
-    useEffect: effect => { cleanup = effect() },
+    useState: initial => {
+      const index = cursor++
+      if (!(index in state)) state[index] = initial
+      return [state[index], next => { state[index] = next }]
+    },
+    useEffect: effect => { cleanup ??= effect() },
   }
   const RecordingControls = loadComponent('RecordingControls', {
     performance: { now: () => now },
     window: {
-      setInterval: (callback, ms) => { tick = callback; interval = ms; return 42 },
-      clearInterval: id => { cleared = id },
+      setInterval: (callback, ms) => { timers.set(ms, callback); return ms },
+      clearInterval: id => { timers.delete(id) },
     },
   }, fakeReact)
-  const processedFramesRef = { current: 50 }
-  const tree = RecordingControls({ isRecording: true, countdown: null, frameCount: 120, processedFramesRef })
-  function findLiveFps(node) {
+  const tree = RecordingControls({ isRecording: true, countdown: null, getRecordedFrameCount: () => captured })
+  function findProgress(node) {
     if (!node || typeof node !== 'object') return null
-    if (typeof node.type === 'function' && node.type.name === 'LiveFps') return node
+    if (typeof node.type === 'function' && node.type.name === 'LiveRecordingProgress') return node
     for (const child of React.Children.toArray(node.props?.children)) {
-      const found = findLiveFps(child)
+      const found = findProgress(child)
       if (found) return found
     }
     return null
   }
-  const live = findLiveFps(tree)
-  assert.ok(live, 'FPS must appear inside the recording controls')
-  assert.match(renderToStaticMarkup(live.type(live.props)), /— FPS/)
-  assert.equal(interval, 1000)
-  processedFramesRef.current += 30
+  const live = findProgress(tree)
+  assert.ok(live, 'Progress must appear inside the recording controls')
+  const renderProgress = () => {
+    cursor = 0
+    return renderToStaticMarkup(live.type(live.props))
+  }
+  assert.match(renderProgress(), /— FPS/)
+  assert.deepEqual([...timers.keys()], [125, 1000])
+  captured = 3
+  assert.match(renderProgress(), /0 frames/)
+  timers.get(125)()
+  assert.match(renderProgress(), /3 frames/)
+  captured = 30
   now += 1000
-  tick()
-  assert.equal(state, 30)
-  processedFramesRef.current += 30
+  timers.get(1000)()
+  assert.match(renderProgress(), /30\.0 FPS/)
+  captured += 30
   now += 2000 // A busy main thread delays the timer; do not assume exactly one second.
-  tick()
-  assert.equal(state, 15)
+  timers.get(1000)()
+  assert.match(renderProgress(), /15\.0 FPS/)
   now += 1000
-  tick()
-  assert.equal(state, 0, 'stalled detection must not retain an old FPS value')
+  timers.get(1000)()
+  assert.match(renderProgress(), />0\.0 FPS/, 'stalled detection must not retain an old FPS value')
   cleanup()
-  assert.equal(cleared, 42)
+  assert.equal(timers.size, 0)
 })

@@ -23,6 +23,8 @@ test('Lab keeps the pinned v1 run and caption rules alongside the v2 experiment'
   const sessions = []
   const transports = []
   const downloads = []
+  let now = 1000, timerId = 0
+  const snapshotTimers = new Map()
   const noop = () => {}
   const jsx = (type, props) => ({ type, props })
   const harness = hookHarness('src/pages/RecognitionLabPage.tsx', 'default', name => {
@@ -43,6 +45,7 @@ test('Lab keeps the pinned v1 run and caption rules alongside the v2 experiment'
     } }
     if (name.endsWith('/recognitionDiagnostics')) return { createDiagnosticSession: options => {
       const session = { active: true, state: { rows: [], frames: 20, latestMs: 1000, transcript: [], status: 'Stopped' },
+        notify: options.onChange,
         stop() { this.active = false; options.onChange() },
         report() { return { modelMode: options.modelMode, transcript: this.state.transcript, settings, minimumConfidence: .75 } },
       }
@@ -52,6 +55,9 @@ test('Lab keeps the pinned v1 run and caption rules alongside the v2 experiment'
     return { default: name }
   }, undefined, {
     AbortController, Blob,
+    performance: { now: () => now },
+    setTimeout(fn, delay) { snapshotTimers.set(++timerId, { fn, delay }); return timerId },
+    clearTimeout(id) { snapshotTimers.delete(id) },
     URL: { createObjectURL: blob => { downloads.push(blob); return 'blob:report' }, revokeObjectURL: noop },
     document: { createElement: () => ({ click: noop }) },
   })
@@ -73,8 +79,28 @@ test('Lab keeps the pinned v1 run and caption rules alongside the v2 experiment'
   assert.equal(modelSelect().value, baseline)
   await click('Start recognition')
   assert.equal(modelSelect().disabled, true)
+  const activity = () => get(node => node.type?.name === 'RecognitionActivity')
+  sessions[0].notify()
+  assert.equal(activity().snapshot.latestMs, 1000)
+  now += 50
+  sessions[0].state.latestMs = 1050
+  sessions[0].notify()
+  now += 25
+  sessions[0].state.latestMs = 1075
+  sessions[0].notify()
+  assert.equal(activity().snapshot.latestMs, 1000)
+  assert.deepEqual([...snapshotTimers.values()].map(timer => timer.delay), [75])
+  now += 50
+  const [pendingSnapshot] = snapshotTimers.values()
+  pendingSnapshot.fn()
+  assert.equal(activity().snapshot.latestMs, 1075)
+  now += 25
+  sessions[0].state.latestMs = 1100
+  sessions[0].notify()
   sessions[0].state.transcript.push({ requestId: 'baseline-hello', label: 'HELLO', score: .94, decisionMs: 900 })
   click('Stop recognition')
+  assert.equal(activity().snapshot.latestMs, 1100)
+  assert.equal(snapshotTimers.size, 0)
   const glossTrack = () => get(node => node.type === '../components/live/LabGlossTrack')
   const annotation = { id: 'baseline-gloss', type: 'UNRESOLVED', reviewStatus: 'unresolved', startMs: 600, endMs: 700 }
   glossTrack().onChange([annotation])

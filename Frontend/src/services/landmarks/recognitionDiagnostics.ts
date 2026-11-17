@@ -4,6 +4,7 @@ import { FEATURE_ORDER, toFeatureVector } from './normalize'
 import { assessNumberHold, holdMotion, NUMBER_HOLD_SETTINGS, type NumberHoldEvidence } from './numberHold'
 import { assessSignMotion, SIGN_MOTION_SETTINGS } from './signMotionEvidence'
 import { createContinuousSignCapture } from './continuousSignCapture'
+import { LIVE_WINDOW_GRID, resampleLiveWindow } from './windowResampling'
 import { createGestureSegmentation, findVisibleSignTransition, FAST_PREVIEW_BOUNDARIES, GESTURE_SETTINGS,
   PREVIEW_GESTURE_SETTINGS, SIGN_TRANSITION_SETTINGS, type GestureEvent, type GestureWindow } from './gestureSegmentation'
 import {
@@ -14,6 +15,7 @@ import {
 export type DiagnosticRow = Omit<RecognitionWindow, 'frames'> & ActivityDecision & {
   requestId: string | null; prediction: SignPrediction | null; roundTripMs: number | null
   resultAgeMs: number; frameCount: number
+  modelInputFrameCount?: number | null
   tracking: ObservationTracking
   numberHold?: NumberHoldEvidence | null
   signMotion?: ReturnType<typeof assessSignMotion>
@@ -53,10 +55,13 @@ export function createDiagnosticSession(options: {
   waitForConfirmation?: boolean
   settleConfirmedHold?: boolean
   staticMotionCheck?: boolean
+  wallClockWindows?: boolean
 }) {
   const now = options.now ?? (() => performance.now())
   const id = options.id ?? (() => crypto.randomUUID())
-  const settings = { ...CONTINUOUS_SETTINGS, ...options.settings }
+  const wallClockWindows = options.source === 'camera' && options.wallClockWindows === true
+  const settings = { ...CONTINUOUS_SETTINGS, ...options.settings,
+    ...(wallClockWindows && { windowMs: LIVE_WINDOW_GRID.windowMs }) }
   const { minimumConfidence } = options
   if (minimumConfidence !== undefined && !(minimumConfidence >= 0 && minimumConfidence <= 1))
     throw Error('Minimum confidence must be between zero and one.')
@@ -125,11 +130,17 @@ export function createDiagnosticSession(options: {
           handFraction:fresh.filter(f=>f.valid && (f.features[36] === 1 || f.features[100] === 1)).length/fresh.length}
       }
     }
+    const resampled = wallClockWindows && !window.quality && windowTracking.state !== 'pose-lost'
+      ? resampleLiveWindow(window.frames) : null
+    if (resampled && resampled.filter(frame => frame.valid).length / resampled.length < settings.minValidFraction) {
+      window = { ...window, quality: 'pose_tracking_unusable' }
+    }
+    const modelFrames = resampled ?? window.frames
     const token = generation, started = now(), requestId = window.quality || windowTracking.state === 'pose-lost' ? null : id()
     const expectedBodyRevision = bodyRevision
     let prediction: SignPrediction | null = null, completionValidation: SignPrediction | null = null, blocked = window.quality
     try {
-      if (requestId) prediction = await options.predict({ requestId, featureOrder: FEATURE_ORDER, frames: window.frames,
+      if (requestId) prediction = await options.predict({ requestId, featureOrder: FEATURE_ORDER, frames: modelFrames,
         ...(window.earlyPreview ? { preview: true } : {}) })
       if (stopped || token !== generation) return
       if (requestId && window.complete && segmentAcceptance === 'completion') {
@@ -286,6 +297,7 @@ export function createDiagnosticSession(options: {
     const { frames: windowFrames, ...details } = window
     const row = { ...details, ...decision, requestId, prediction,
       roundTripMs: requestId ? now() - started : null, resultAgeMs, frameCount: windowFrames.length,
+      ...(wallClockWindows && { modelInputFrameCount: requestId ? modelFrames.length : null }),
       tracking: { ...tracking! }, completionValidation, numberHold, signMotion }
     rows.push(row)
     if (decision.emit && prediction && requestId) transcript.push({ label: prediction.label, score: prediction.score,
@@ -437,6 +449,7 @@ export function createDiagnosticSession(options: {
         gestureSettings:recognitionMode === 'segmented' ? {...GESTURE_SETTINGS,updateMs:settings.strideMs,
           ...(waitForConfirmation ? {confirmationQuietMs} : {})} : null, segmentationEvents,
         featureOrder: FEATURE_ORDER, annotations: [],
+        ...(wallClockWindows && { windowSampling: LIVE_WINDOW_GRID }),
         summary: { frameCount: frames.length, durationMs: latestMs, windowCount: rows.length,
           replacedWindows, staleResults, frameGaps, boundaryPhase: boundaries.phase,
           transcriptEntries: transcript.length, status, failure,

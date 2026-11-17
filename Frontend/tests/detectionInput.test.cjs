@@ -22,7 +22,10 @@ test('reduces only the detection image, preserves aspect ratio, and reuses the b
   assert.equal(allocations, 0)
   assert.equal(prepare(video, 640), canvas)
   assert.deepEqual(draws[0], [video, 0, 0, 640, 360])
-  assert.equal(prepare(video, 640), canvas)
+  const bitmap = { width: 1280, height: 720 }
+  assert.equal(prepare(bitmap, null), bitmap)
+  assert.equal(prepare(bitmap, 640), canvas)
+  assert.deepEqual(draws[1], [bitmap, 0, 0, 640, 360])
   assert.equal(allocations, 1)
   assert.equal(widthWrites, 1)
   assert.equal(heightWrites, 1)

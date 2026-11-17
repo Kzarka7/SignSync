@@ -15,7 +15,7 @@ export default function CameraVideoRecorder({ label, onRecorded, onBusy, control
   const recording = useRef<MediaRecorder | null>(null), alive = useRef(true), discard = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout>>()
   const countdownTimer = useRef<ReturnType<typeof setInterval>>()
-  const canvas = useRef<HTMLCanvasElement>(null), processedFrames = useRef(0)
+  const canvas = useRef<HTMLCanvasElement>(null)
   const [countdown, setCountdown] = useState<number | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [opening, setOpening] = useState(false)
@@ -118,7 +118,7 @@ export default function CameraVideoRecorder({ label, onRecorded, onBusy, control
     } catch (error) { setError(error instanceof Error ? error.message : 'Could not record video.'); setBusy(false); onBusy(false) }
   }
   const controls = <div className="space-y-3">
-    <RecordingControls isRecording={busy} frameCount={0} processedFramesRef={processedFrames}
+    <RecordingControls isRecording={busy}
       recordingStatus={<>Recording · {elapsed.toFixed(1)}s</>} stopLabel="Stop & save video"
       canRecord={ready && !opening && !!label.trim()} countdown={countdown} countdownSeconds={countdownSeconds}
       onChangeCountdownSeconds={onChangeCountdownSeconds} durationLimitMs={durationLimitMs} onChangeDurationLimitMs={onChangeDurationLimitMs}

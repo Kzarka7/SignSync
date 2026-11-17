@@ -131,7 +131,7 @@ export default function BoundarySampleCollector({ onLocked }: { onLocked: (locke
           </label>
           {cameraMethod === 'video' && <div ref={setVideoControls} />}
           {cameraMethod === 'live' && <>
-            <RecordingControls isRecording={recorder.isRecording} frameCount={recorder.frameCount} processedFramesRef={recorder.processedFramesRef}
+            <RecordingControls isRecording={recorder.isRecording} getRecordedFrameCount={recorder.getRecordedFrameCount}
               durationLimitMs={durations[category]} onChangeDurationLimitMs={duration => setDurations(previous => ({ ...previous, [category]: duration }))}
               canRecord={!!task && recorder.feed.enabled && recorder.feed.cameraReady}
               countdown={recorder.countdown} countdownSeconds={recorder.countdownSeconds} onChangeCountdownSeconds={recorder.setCountdownSeconds}

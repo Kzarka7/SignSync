@@ -22,6 +22,8 @@ Update the SignSync README when setup or runtime configuration changes. Use this
 
 ## Work notes
 
+- [[2026-11-18 Collector Live Landmark FPS]] — shared live camera settings, recording progress, and sample parity.
+
 - [[2026-11-17 Landmark Viewer Playback]] — rendering performance and playback timing in the landmark comparison script.
 
 - [[2026-11-17 Recognition Lab FPS Plan]] — MediaPipe pipeline, camera benchmark, optimization order, and later rollout checks.
