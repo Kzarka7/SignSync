@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCameraFeed } from './useCameraFeed'
 import { createDiagnosticSession, type LabTranscriptEntry } from '../services/landmarks/recognitionDiagnostics'
 import { createDiagnosticPredictor } from '../services/ws/diagnosticPredictor'
-import { getRecognitionConfirmation, LIVE_RECOGNITION_POLICY } from '../services/landmarks/liveRecognitionPolicy'
+import { getRecognitionConfirmation, LIVE_RECOGNITION_POLICY, LIVE_SIGNS_MODEL } from '../services/landmarks/liveRecognitionPolicy'
 import type { LandmarkFrameSample } from '../types/landmarks'
 
 export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEntry) => void, {
@@ -36,7 +36,7 @@ export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEn
   const onFrame = useCallback((sample:LandmarkFrameSample) => {
     void session.current?.observe(sample).catch(() => { stop(); setError('Recognition interrupted. Start again.') })
   }, [stop])
-  const feed = useCameraFeed({ onFrame, trackLiveTiming: true, landmarkMode: 'both' })
+  const feed = useCameraFeed({ onFrame, trackLiveTiming: true, landmarkMode: 'both', reviewHandTracking: true })
   useEffect(() => {
     if (!feed.enabled || feed.error || feed.modelError) stop()
   }, [feed.enabled,feed.error,feed.modelError,stop])
@@ -49,7 +49,7 @@ export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEn
   const start = async () => {
     if (predictor.current || !feed.cameraReady || !feed.poseDetected) return
     const alphabet = mode === 'fingerspelling'
-    const modelMode = alphabet ? 'lab-alphabet' : 'lab-signs43-similarity'
+    const modelMode = alphabet ? 'lab-alphabet' : LIVE_SIGNS_MODEL
     const confirmation = getRecognitionConfirmation()
     const token=++generation.current, transport=createDiagnosticPredictor(modelMode)
     predictor.current=transport; setLoading(true); setError(null); setStatus('Loading model…')
@@ -62,7 +62,7 @@ export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEn
       let delivered=0
       const current=createDiagnosticSession({source:'camera',name:'Live conversation',...LIVE_RECOGNITION_POLICY,
         modelMode, ...confirmation,
-        staticMotionCheck: modelMode === 'lab-signs43-similarity',
+        staticMotionCheck: modelMode === LIVE_SIGNS_MODEL,
         settleConfirmedHold: alphabet,
         onWordBoundary: alphabet ? () => {
           if (token === generation.current && session.current === current) wordBoundary.current?.()

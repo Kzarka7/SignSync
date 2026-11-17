@@ -9,6 +9,7 @@ import HistoryPage from './pages/HistoryPage'
 import FAQPage from './pages/FAQPage'
 import SettingsPage from './pages/SettingsPage'
 import DatasetCollectorPage from './pages/DatasetCollectorPage'
+import RecognitionLabPage from './pages/RecognitionLabPage'
 
 function LegacySummaryRedirect() {
   const { sessionId } = useParams()
@@ -16,7 +17,9 @@ function LegacySummaryRedirect() {
 }
 
 export default function App() {
-  const collectorPage = useLocation().pathname === '/dataset-collector'
+  const pathname = useLocation().pathname
+  const collectorPage = pathname === '/dataset-collector'
+  const captureWorkspace = collectorPage || pathname === '/recognition-lab'
   const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 639px)').matches)
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
   const mobileNavigation = useRef<HTMLDivElement>(null)
@@ -26,9 +29,9 @@ export default function App() {
     media.addEventListener('change', update)
     return () => media.removeEventListener('change', update)
   }, [])
-  useEffect(() => setMobileNavigationOpen(false), [collectorPage])
+  useEffect(() => setMobileNavigationOpen(false), [pathname])
   useEffect(() => {
-    if (!collectorPage || !narrow || !mobileNavigationOpen) return
+    if (!captureWorkspace || !narrow || !mobileNavigationOpen) return
     const previous = document.activeElement as HTMLElement | null
     const controls = mobileNavigation.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])')
     controls?.[0]?.focus()
@@ -41,13 +44,13 @@ export default function App() {
     }
     document.addEventListener('keydown', keyboard)
     return () => { document.removeEventListener('keydown', keyboard); previous?.focus() }
-  }, [collectorPage, narrow, mobileNavigationOpen])
+  }, [captureWorkspace, narrow, mobileNavigationOpen])
   const [isCollapsed, setIsCollapsed] = useState(
     () => localStorage.getItem('daloy:sidebar-collapsed') === 'true'
   )
 
   function toggleSidebar() {
-    if (collectorPage && narrow) { setMobileNavigationOpen(previous => !previous); return }
+    if (captureWorkspace && narrow) { setMobileNavigationOpen(previous => !previous); return }
     setIsCollapsed((prev) => {
       const next = !prev
       localStorage.setItem('daloy:sidebar-collapsed', String(next))
@@ -56,14 +59,14 @@ export default function App() {
   }
 
   return (
-    <div className={`grid ${collectorPage && narrow || isCollapsed ? 'grid-cols-[60px_minmax(0,1fr)]' : 'grid-cols-[256px_minmax(0,1fr)]'} min-h-screen ${collectorPage ? 'min-h-[100dvh]' : 'h-screen transition-all duration-300'}`}>
-      {collectorPage && narrow && mobileNavigationOpen && <button aria-label="Close navigation" className="fixed inset-0 z-40 bg-ink/30" onClick={() => setMobileNavigationOpen(false)} />}
-      <div ref={mobileNavigation} role={collectorPage && narrow && mobileNavigationOpen ? 'dialog' : undefined}
-        aria-modal={collectorPage && narrow && mobileNavigationOpen || undefined} aria-label={collectorPage && narrow && mobileNavigationOpen ? 'Navigation' : undefined}
-        className={collectorPage && narrow && mobileNavigationOpen ? 'fixed inset-y-0 left-0 z-50 w-64 overflow-y-auto bg-trust [&>aside]:min-h-full' : collectorPage ? 'contents [&>aside]:sticky [&>aside]:top-0 [&>aside]:h-[100dvh] [&>aside]:overflow-y-auto' : 'contents'}>
-        <Sidebar isCollapsed={collectorPage && narrow ? !mobileNavigationOpen : isCollapsed} onToggle={toggleSidebar} />
+    <div className={`grid ${captureWorkspace && narrow || isCollapsed ? 'grid-cols-[60px_minmax(0,1fr)]' : 'grid-cols-[256px_minmax(0,1fr)]'} min-h-screen ${captureWorkspace ? 'min-h-[100dvh]' : 'h-screen transition-all duration-300'}`}>
+      {captureWorkspace && narrow && mobileNavigationOpen && <button aria-label="Close navigation" className="fixed inset-0 z-40 bg-ink/30" onClick={() => setMobileNavigationOpen(false)} />}
+      <div ref={mobileNavigation} role={captureWorkspace && narrow && mobileNavigationOpen ? 'dialog' : undefined}
+        aria-modal={captureWorkspace && narrow && mobileNavigationOpen || undefined} aria-label={captureWorkspace && narrow && mobileNavigationOpen ? 'Navigation' : undefined}
+        className={captureWorkspace && narrow && mobileNavigationOpen ? 'fixed inset-y-0 left-0 z-50 w-64 overflow-y-auto bg-trust [&>aside]:min-h-full' : captureWorkspace ? 'contents [&>aside]:sticky [&>aside]:top-0 [&>aside]:h-[100dvh] [&>aside]:overflow-y-auto' : 'contents'}>
+        <Sidebar isCollapsed={captureWorkspace && narrow ? !mobileNavigationOpen : isCollapsed} onToggle={toggleSidebar} />
       </div>
-      <main data-collector-page={collectorPage || undefined} className={collectorPage ? 'col-start-2 min-w-0 px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8 overflow-x-hidden' : 'px-8 py-8 overflow-x-hidden'}>
+      <main data-collector-page={collectorPage || undefined} className={captureWorkspace ? 'col-start-2 min-w-0 px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8 overflow-x-hidden' : 'px-8 py-8 overflow-x-hidden'}>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
@@ -73,6 +76,7 @@ export default function App() {
           <Route path="/live" element={<LiveConversationPage />} />
           <Route path="/summary/:sessionId" element={<SessionSummaryPage />} />
           <Route path="/dataset-collector" element={<DatasetCollectorPage />} />
+          <Route path="/recognition-lab" element={<RecognitionLabPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/faq" element={<FAQPage />} />
           <Route path="/settings" element={<SettingsPage />} />

@@ -92,7 +92,7 @@ test('low-light input lifts dark footage without changing its image dimensions',
   assert.match(output.filter, /brightness\(1\.100\)/)
 })
 
-const { assignVideoHands, summarizeHandAssignments } = load('services/dataset/videoHandAssignment')
+const { assignVideoHands, createStreamingHandAssignment, summarizeHandAssignments } = load('services/dataset/videoHandAssignment')
 const { detectVideoHandContact } = load('services/dataset/videoHandOverlap')
 function hand(x, handedness, score = .99) {
   return { handedness, score, landmarks: Array.from({ length: 21 }, () => ({ x, y: .5, z: 0 })) }
@@ -107,6 +107,29 @@ function handObservation(timestamp, hands, wrists) {
   }
   return { frame, hands }
 }
+
+test('streaming assignment keeps both hands through duplicate labels, leaves occlusions missing, and resets after a gap', () => {
+  const assign = createStreamingHandAssignment()
+  function next(timestamp, hands) {
+    const result = { landmarks: hands.map(hand => hand.landmarks),
+      handedness: hands.map(hand => [{ categoryName: hand.handedness, score: hand.score }]) }
+    return assign(handObservation(timestamp, hands).frame.raw, result, 16 / 9)
+  }
+  const left = hand(.4, 'Left'), right = hand(.6, 'Right')
+  left.landmarks[8] = { x: .5, y: .5, z: 0 }
+  right.landmarks[8] = { x: .5, y: .5, z: 0 }
+  assert.equal(next(0, [right, left]).rightHand, right.landmarks)
+  const contact = next(33, [left, { ...right, handedness: 'Left' }])
+  assert.equal(contact.leftHand, left.landmarks)
+  assert.equal(contact.rightHand, right.landmarks)
+  const occluded = next(66, [{ ...right, handedness: 'Left' }])
+  assert.equal(occluded.leftHand, null)
+  assert.equal(occluded.rightHand, right.landmarks)
+  const lost = next(99, [])
+  assert.equal(lost.leftHand, null)
+  assert.equal(lost.rightHand, null)
+  assert.equal(next(300, [{ ...right, handedness: 'Left' }]).leftHand, right.landmarks)
+})
 
 test('video hand assignment corrects a brief label flip without filling missing frames', () => {
   const observations = [

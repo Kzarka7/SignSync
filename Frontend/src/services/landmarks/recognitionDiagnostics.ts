@@ -69,7 +69,10 @@ export function createDiagnosticSession(options: {
   const timedPreview = preview && minimumConfidence !== undefined
   const continuousSignTransitions = recognitionMode === 'segmented' && segmentAcceptance === 'confirmation'
     && (options.modelMode === 'lab-signs43-numbers' || options.modelMode === 'lab-signs43-shape-motion'
-      || options.modelMode === 'lab-signs43-similarity' || options.modelMode === 'lab-alphabet')
+      || options.modelMode === 'lab-signs43-similarity' || options.modelMode === 'lab-signs43-similarity-v2'
+      || options.modelMode === 'lab-signs75-candidate' || options.modelMode === 'lab-signs75-multi-batch'
+      || options.modelMode === 'lab-signs32-standalone' || options.modelMode === 'lab-signs32-similarity'
+      || options.modelMode === 'lab-alphabet')
   const waitForConfirmation = recognitionMode === 'segmented' && segmentAcceptance === 'confirmation'
     && options.waitForConfirmation === true
   const confirmationQuietMs = minimumConfidence === undefined && !waitForConfirmation ? SIGN_TRANSITION_SETTINGS.confirmationQuietMs

@@ -30,9 +30,21 @@ function segmentsNear(a: LandmarkPoint, b: LandmarkPoint, c: LandmarkPoint, d: L
     pointToSegment(c, a, b, aspect) <= gap || pointToSegment(d, a, b, aspect) <= gap
 }
 
-function handProximity(left: LandmarkPoint[], right: LandmarkPoint[], aspect: number) {
+export function handProximity(left: LandmarkPoint[], right: LandmarkPoint[], aspect: number) {
   const palm = (hand: LandmarkPoint[]) => Math.max(distance(hand[0], hand[9], aspect), distance(hand[5], hand[17], aspect))
   const gap = Math.max(.004, Math.min(.022, Math.min(palm(left), palm(right)) * .2))
+  const margin = gap * 2.5
+  const bounds = (hand: LandmarkPoint[]) => {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+    for (const { x, y } of hand) {
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x)
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y)
+    }
+    return { minX, maxX, minY, maxY }
+  }
+  const a = bounds(left), b = bounds(right)
+  if (a.maxX + margin / aspect < b.minX || b.maxX + margin / aspect < a.minX ||
+      a.maxY + margin < b.minY || b.maxY + margin < a.minY) return undefined
   const near = (margin: number) => edges.some(([a, b]) => edges.some(([c, d]) =>
     segmentsNear(left[a], left[b], right[c], right[d], margin, aspect)))
   if (near(gap)) return 'overlap'

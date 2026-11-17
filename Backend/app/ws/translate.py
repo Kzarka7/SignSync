@@ -3,7 +3,7 @@ import json
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
-from app.recognition import SignRequest, get_recognizer, get_diagnostic_recognizer, LIVE_DIAGNOSTIC_MODELS
+from app.recognition import SignRequest, get_recognizer, get_diagnostic_recognizer, LAB_EXPERIMENTS
 from app.ws.manager import manager
 
 router = APIRouter()
@@ -15,21 +15,31 @@ async def translate_socket(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         mode = websocket.query_params.get('model', 'v5')
-        if mode not in ('v5', 'p4-candidate', *LIVE_DIAGNOSTIC_MODELS):
+        if mode not in ('v5', 'p4-candidate', *LAB_EXPERIMENTS):
             await websocket.send_json({'type': 'error', 'payload': {'message': 'Unknown recognition model.'}})
             await websocket.close(code=1008)
             return
         name = {'v5': 'V5', 'p4-candidate': 'P4 candidate',
-                'lab-alphabet': 'Fingerspelling', 'lab-signs43-similarity': '43 Similar Signs'}[mode]
+                'lab-grouped': 'Previous pilot', 'lab-clip': 'Current pilot', 'lab-alphabet': 'Alphabet pilot',
+                'lab-stage2': 'Alphabet and numbers joint pilot', 'lab-signs38': '38-sign grouped pilot',
+                'lab-signs38-clip': '38-sign 70/15/15 pilot', 'lab-signs33': '33-sign days-of-the-week pilot',
+                'lab-signs43-numbers': '43-sign days-and-numbers pilot',
+                'lab-signs43-shape-motion': '43-sign handshape-and-motion pilot',
+                'lab-signs43-similarity': '43-sign similar-signs pilot',
+                'lab-signs43-similarity-v2': '43 Similar Signs v2',
+                'lab-signs75-candidate': '75-sign held-out batch experiment',
+                'lab-signs75-multi-batch': '75-sign multi-batch candidate',
+                'lab-signs32-standalone': '32-sign standalone candidate',
+                'lab-signs32-similarity': '32-sign similarity recipe'}[mode]
         diagnostics = websocket.query_params.get('diagnostics', '0')
         if (diagnostics not in ('0', '1') or (diagnostics == '1' and mode == 'v5') or
-                (mode in LIVE_DIAGNOSTIC_MODELS and diagnostics != '1')):
+                (mode in LAB_EXPERIMENTS and diagnostics != '1')):
             await websocket.send_json({'type': 'error', 'payload': {'message': 'Select a supported diagnostic model.'}})
             await websocket.close(code=1008)
             return
         await websocket.send_json({'type': 'status', 'payload': {'state': 'loading', 'message': f'Loading {name} recognition...'}})
         try:
-            if mode in LIVE_DIAGNOSTIC_MODELS:
+            if mode in LAB_EXPERIMENTS:
                 recognizer = await asyncio.to_thread(get_diagnostic_recognizer, mode)
             else:
                 recognizer = (await asyncio.to_thread(get_diagnostic_recognizer) if diagnostics == '1'

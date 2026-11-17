@@ -1,6 +1,8 @@
 import { getRecognitionSettings } from '../recognitionSettings'
 
-// Live Conversation confirmation policy. Repeated labels are allowed
+export const LIVE_SIGNS_MODEL = 'lab-signs43-similarity'
+
+// Shared by Live Conversation and Recognition Lab. Repeated labels are allowed
 // after fresh confirmation in a new segment, without a cross-segment label latch.
 export const LIVE_RECOGNITION_POLICY = {
   recognitionMode: 'segmented',
@@ -22,3 +24,4 @@ export function getRecognitionConfirmation() {
     },
   }
 }
+

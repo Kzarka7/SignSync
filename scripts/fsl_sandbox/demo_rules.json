@@ -1,0 +1,9 @@
+{
+  "compounds": [
+    {"id": "demo-family-friend", "labels": ["FAMILY", "FRIEND"], "token": "FAMILY_FRIEND", "text": "family friend"}
+  ],
+  "syntax": [
+    {"id": "demo-please-wait", "tokens": ["WAIT", "PLEASE"], "order": [1, 0]},
+    {"id": "demo-please-wait-today", "tokens": ["TODAY", "WAIT", "PLEASE"], "order": [2, 1, 0]}
+  ]
+}
