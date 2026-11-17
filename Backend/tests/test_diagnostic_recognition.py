@@ -10,12 +10,24 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.main import app
-from app.recognition import GraphP4DiagnosticRecognizer
+from app.recognition import FEATURE_ORDER, GraphP4DiagnosticRecognizer
 from app.alphabet_recognition import AlphabetDiagnosticRecognizer
 from app.stage2_recognition import Stage2DiagnosticRecognizer
+from shape_motion_sequence import raw_shape_motion_features
 
 
 class DiagnosticRecognitionTests(unittest.TestCase):
+    def test_uniform_live_grid_keeps_real_pose_samples_beside_invalid_steps(self):
+        valid = np.arange(40) % 3 != 0
+        frames = [
+            {"timestamp": 2501 - (39 - i) * 1000 / 30,
+             "features": [0.1 + i / 40] + [0.] * 163, "valid": bool(valid[i])}
+            for i in range(40)
+        ]
+        raw = raw_shape_motion_features({"frames": frames}, FEATURE_ORDER, 40)
+        self.assertEqual(raw.shape, (40, 238))
+        np.testing.assert_allclose(raw[:, 0], np.where(valid, .1 + np.arange(40) / 40, 0))
+
     def test_lab_models_route_to_the_selected_diagnostic_checkpoint(self):
         for mode in ('lab-grouped', 'lab-clip', 'lab-alphabet', 'lab-stage2', 'lab-signs38',
                      'lab-signs38-clip', 'lab-signs33', 'lab-signs43-numbers', 'lab-signs43-shape-motion',

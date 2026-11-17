@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { ChevronDown, Download, Film, Play, Square, Upload, Video } from 'lucide-react'
 import PageHeader from '../components/layout/PageHeader'
 import CameraPanel from '../components/live/CameraPanel'
 import LabCaptionPreview from '../components/live/LabCaptionPreview'
 import LabGlossTrack, { LabGlossSuggestions } from '../components/live/LabGlossTrack'
-import { useCameraFeed, type LandmarkMode, type LiveCameraTiming } from '../hooks/useCameraFeed'
+import { OPTIMIZED_LIVE_CAMERA_OPTIONS, useCameraFeed, type LandmarkMode, type LiveCameraTiming } from '../hooks/useCameraFeed'
 import { createDiagnosticSession, FINGERSPELLING_PAUSE_MS } from '../services/landmarks/recognitionDiagnostics'
 import { CONTINUOUS_SETTINGS, displayActivity } from '../services/landmarks/continuousRecognition'
 import { getRecognitionConfirmation, LIVE_RECOGNITION_POLICY, LIVE_SIGNS_MODEL } from '../services/landmarks/liveRecognitionPolicy'
@@ -97,7 +97,7 @@ function LabDisclosure({ title, hint, children, defaultOpen }: {
   </details>
 }
 
-function CameraInferenceTiming({ readTiming }: { readTiming: () => LiveCameraTiming | null }) {
+const CameraInferenceTiming = memo(function CameraInferenceTiming({ readTiming }: { readTiming: () => LiveCameraTiming | null }) {
   const [timing, setTiming] = useState<LiveCameraTiming | null>(null)
   useEffect(() => {
     const refresh = () => setTiming(readTiming())
@@ -120,7 +120,9 @@ function CameraInferenceTiming({ readTiming }: { readTiming: () => LiveCameraTim
         </div>
       </dl>
       <dl className="flex flex-wrap gap-x-4 gap-y-2 tabular-nums">
-        {timing.handDelegate && <div><dt className="text-xs text-trust">Hands · {timing.handDelegate}</dt>
+        {timing.handDelegate && <div><dt className="text-xs text-trust">
+          Hands · {timing.handDelegate}{timing.latest.handCapacity && ` · ${timing.latest.handCapacity} max`}
+        </dt>
           <dd>{formatMs(timing.latest.handMs)}</dd></div>}
         {timing.poseDelegate && <div><dt className="text-xs text-text-2">Pose · {timing.poseDelegate}</dt>
           <dd>{formatMs(timing.latest.poseMs)}</dd></div>}
@@ -143,7 +145,50 @@ function CameraInferenceTiming({ readTiming }: { readTiming: () => LiveCameraTim
         {' · '}Preparation {formatMs(timing.latest.resizeMs)} · Overlay {formatMs(timing.latest.overlayMs)} · Total {formatMs(timing.latest.totalMs)}
       </p>
   </div>
-}
+})
+
+const RecognitionActivity = memo(function RecognitionActivity({ snapshot, latest, running, live, status, lastResultAt, lastFrameAt }: {
+  snapshot: Session['state'] | null
+  latest: Session['state']['rows'][number] | undefined
+  running: boolean
+  live: boolean
+  status: string
+  lastResultAt: RefObject<number>
+  lastFrameAt: RefObject<number>
+}) {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    if (!live || !running) return
+    const tick = () => setNow(Date.now())
+    tick()
+    const timer = setInterval(tick, 250)
+    return () => clearInterval(timer)
+  }, [live, running])
+
+  const stale = running && live && now - (lastResultAt.current || -Infinity) > CONTINUOUS_SETTINGS.maxResultAgeMs
+  const framesPaused = running && live && now - (lastFrameAt.current || -Infinity) > CONTINUOUS_SETTINGS.frameFreshnessMs
+  const tracking = snapshot?.tracking
+  const awaitingRecoveredWindow = tracking?.state === 'visible' && latest
+    && (latest.tracking?.revision !== tracking.revision || latest.reason === 'tracking_changed_during_inference')
+  const activity = framesPaused ? 'TRACKING PAUSED — no fresh camera observations'
+    : tracking?.state === 'pose-lost' ? 'TRACKING LOST — keep both shoulders visible'
+    : tracking?.state === 'frame-gap' ? 'TRACKING INTERRUPTED — rebuilding observations'
+    : tracking?.state === 'no-hands' ? 'IDLE — no hands detected'
+    : tracking?.state === 'hands-missing' ? 'TRACKING INTERRUPTED — hands briefly missing'
+    : awaitingRecoveredWindow ? 'TRACKING RECOVERED — waiting for fresh recognition'
+    : stale ? 'UNCERTAIN — awaiting fresh prediction'
+    : snapshot?.segmentationPhase === 'observing' ? 'OBSERVING — no active gesture'
+    : latest?.activity ?? 'Warming up'
+
+  return <div className="rounded-lg bg-sky p-3">
+    <h3 className="text-xs font-medium text-text-2">Latest activity</h3>
+    <p className="mt-1 break-words text-base font-semibold text-ink" aria-live="polite" data-testid="recognition-activity">
+      {snapshot ? activity : running ? status : 'Waiting for a run'}
+    </p>
+  </div>
+})
+
+const CAMERA_SNAPSHOT_INTERVAL_MS = 125
 
 export default function RecognitionLabPage() {
   const [source, setSource] = useState<'video' | 'camera'>('video')
@@ -168,8 +213,6 @@ export default function RecognitionLabPage() {
   const [glossAnnotations, setGlossAnnotations] = useState<GlossAnnotation[]>([])
   const [glossEditorKey, setGlossEditorKey] = useState(0)
   const [fingerspelling, setFingerspelling] = useState(EMPTY_FINGERSPELLING)
-  const [age, setAge] = useState(0)
-  const [frameAge, setFrameAge] = useState(0)
   const [backend, setBackend] = useState<DiagnosticBackendInfo | null>(null)
   const video = useRef<HTMLVideoElement>(null)
   const videoOverlay = useRef<HTMLCanvasElement>(null)
@@ -178,6 +221,7 @@ export default function RecognitionLabPage() {
   const predictor = useRef<Predictor | null>(null)
   const abort = useRef<AbortController | null>(null)
   const generation = useRef(0), lastResultAt = useRef(0)
+  const snapshotTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const resultCount = useRef(0)
   const lastFrameAt = useRef(0)
   const replayInfo = useRef<unknown>(null)
@@ -186,18 +230,23 @@ export default function RecognitionLabPage() {
     if (session.current?.active) { lastFrameAt.current = Date.now(); void session.current.observe(sample) }
   }, [])
   const feed = useCameraFeed({
+    ...OPTIMIZED_LIVE_CAMERA_OPTIONS,
     onFrame: onCameraFrame, trackLiveTiming: true, landmarkMode, showPoseLandmarks, detectionInputWidth,
-    trackOverlayPaint: true,
-    reviewHandTracking: true,
+    trackOverlayPaint: true, gatePreviewHands: source === 'camera' && !running,
   })
   const canRecognizeFromCamera = landmarkMode === 'both' && feed.cameraReady && feed.poseDetected && !feed.modelError
 
+  const clearSnapshotTimer = useCallback(() => {
+    if (snapshotTimer.current !== null) clearTimeout(snapshotTimer.current)
+    snapshotTimer.current = null
+  }, [])
   const stop = useCallback(() => {
     abort.current?.abort(); session.current?.stop(); generation.current++
+    clearSnapshotTimer()
     feed.stopPerformanceProfile()
     predictor.current?.close(); predictor.current = null
     if (mounted.current) { setRunning(false); setStatus('Stopped') }
-  }, [feed.stopPerformanceProfile])
+  }, [clearSnapshotTimer, feed.stopPerformanceProfile])
   useEffect(() => {
     mounted.current = true
     return () => { mounted.current = false; stop() }
@@ -237,19 +286,11 @@ export default function RecognitionLabPage() {
   useEffect(() => {
     if (source === 'camera' && running && (!feed.enabled || feed.error || feed.modelError)) stop()
   }, [source, running, feed.enabled, feed.error, feed.modelError, stop])
-  useEffect(() => {
-    if (!running || source !== 'camera') return
-    const timer = setInterval(() => {
-      setAge(lastResultAt.current ? Date.now() - lastResultAt.current : Infinity)
-      setFrameAge(lastFrameAt.current ? Date.now() - lastFrameAt.current : Infinity)
-    }, 250)
-    return () => clearInterval(timer)
-  }, [source, running])
-
   async function start() {
     if (running || benchmarking || (source === 'video' ? !file || !loaded || !video.current : !canRecognizeFromCamera)) return
     const confirmation = getRecognitionConfirmation()
     const token = ++generation.current
+    clearSnapshotTimer()
     const controller = new AbortController(); abort.current = controller
     videoFrames.current = []
     paintVideoOverlay()
@@ -257,14 +298,22 @@ export default function RecognitionLabPage() {
     setFingerspelling(EMPTY_FINGERSPELLING)
     if (source === 'camera') setGlossAnnotations([])
     setGlossEditorKey(key => key + 1)
-    setSnapshot(null); setBackend(null); setAge(0); setFrameAge(0); setError(null); setRunning(true); setStatus('Loading model…')
+    setSnapshot(null); setBackend(null); setError(null); setRunning(true); setStatus('Loading model…')
     const client = createDiagnosticPredictor(modelMode); predictor.current = client
     let transcriptCount = 0
+    let lastSnapshotAt = -Infinity
+    const publishSnapshot = () => {
+      if (!mounted.current || token !== generation.current || !session.current) return
+      clearSnapshotTimer()
+      lastSnapshotAt = performance.now()
+      setSnapshot({ ...session.current.state })
+    }
     try {
       const verifiedBackend = await client.connect()
       if (token !== generation.current) return
       setBackend(verifiedBackend)
       const current = createDiagnosticSession({ source, ...LIVE_RECOGNITION_POLICY, ...confirmation, modelMode, name: source === 'video' ? file!.name : 'Continuous camera',
+        wallClockWindows: source === 'camera',
         staticMotionCheck: supportsMotionEvidence,
         predict: request => client.predict(request),
         onWordBoundary: modelMode === 'lab-alphabet' ? () => {
@@ -283,7 +332,10 @@ export default function RecognitionLabPage() {
           if (!mounted.current || token !== generation.current) return
           const state = session.current?.state
           if (!state) return
-          setSnapshot({ ...state })
+          const ended = Boolean(state.failure) || !session.current?.active
+          const wait = CAMERA_SNAPSHOT_INTERVAL_MS - (performance.now() - lastSnapshotAt)
+          if (source === 'video' || ended || wait <= 0) publishSnapshot()
+          else snapshotTimer.current ??= setTimeout(publishSnapshot, wait)
           if (modelMode === 'lab-alphabet' && state.transcript.length > transcriptCount) {
             const letters = state.transcript.slice(transcriptCount)
               .map(entry => entry.label).filter(label => /^[A-Z]$/.test(label)).join('')
@@ -292,9 +344,9 @@ export default function RecognitionLabPage() {
               draft: current.draft + letters, recognized: current.recognized + letters }))
           }
           if (state.rows.length > resultCount.current) {
-            resultCount.current = state.rows.length; lastResultAt.current = Date.now(); setAge(0)
+            resultCount.current = state.rows.length; lastResultAt.current = Date.now()
           }
-          if (state.failure || !session.current?.active) {
+          if (ended) {
             feed.stopPerformanceProfile()
             setRunning(false); setStatus(state.status); client.close()
             if (state.failure) setError(state.failure)
@@ -343,21 +395,6 @@ export default function RecognitionLabPage() {
   const supportsGloss = modelMode === LIVE_SIGNS_MODEL || modelMode === V2_MODEL || modelMode === 'lab-alphabet'
   const glossSuggestions = modelMode === LIVE_SIGNS_MODEL || modelMode === V2_MODEL ? suggestLabGlosses(transcript, rows) : []
   const glossDurationMs = Math.floor(source === 'video' ? videoDurationMs : snapshot?.latestMs ?? 0)
-  const stale = running && source === 'camera' && age > CONTINUOUS_SETTINGS.maxResultAgeMs
-  const tracking = snapshot?.tracking
-  const framesPaused = running && source === 'camera' && frameAge > CONTINUOUS_SETTINGS.frameFreshnessMs
-  const noHandsIdle = !framesPaused && tracking?.state === 'no-hands'
-  const awaitingRecoveredWindow = tracking?.state === 'visible' && latest
-    && (latest.tracking?.revision !== tracking.revision || latest.reason === 'tracking_changed_during_inference')
-  const activity = framesPaused ? 'TRACKING PAUSED — no fresh camera observations'
-    : tracking?.state === 'pose-lost' ? 'TRACKING LOST — keep both shoulders visible'
-    : tracking?.state === 'frame-gap' ? 'TRACKING INTERRUPTED — rebuilding observations'
-    : noHandsIdle ? 'IDLE — no hands detected'
-    : tracking?.state === 'hands-missing' ? 'TRACKING INTERRUPTED — hands briefly missing'
-    : awaitingRecoveredWindow ? 'TRACKING RECOVERED — waiting for fresh recognition'
-    : stale ? 'UNCERTAIN — awaiting fresh prediction'
-    : snapshot?.segmentationPhase === 'observing' ? 'OBSERVING — no active gesture'
-    : latest?.activity ?? 'Warming up'
   const blocked = running || feed.enabled
   function stopBenchmark() {
     setBenchmarkReport(feed.stopLandmarkBenchmark())
@@ -605,12 +642,8 @@ export default function RecognitionLabPage() {
               {runStatus}
             </span>
           </div>
-          <div className="rounded-lg bg-sky p-3">
-            <h3 className="text-xs font-medium text-text-2">Latest activity</h3>
-            <p className="mt-1 break-words text-base font-semibold text-ink" aria-live="polite" data-testid="recognition-activity">
-              {snapshot ? activity : running ? status : 'Waiting for a run'}
-            </p>
-          </div>
+          <RecognitionActivity snapshot={snapshot} latest={latest} running={running} live={source === 'camera'}
+            status={status} lastResultAt={lastResultAt} lastFrameAt={lastFrameAt} />
           {modelMode === 'lab-alphabet' && <div className="space-y-3 rounded-lg border border-border p-3">
             <label className="block space-y-1 text-sm font-semibold text-ink">
               <span>Fingerspelling draft</span>

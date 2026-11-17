@@ -190,8 +190,7 @@ export default function SignSampleCollector({
                   <>
                     <RecordingControls
                       isRecording={recorder.isRecording}
-                      frameCount={recorder.frameCount}
-                      processedFramesRef={recorder.processedFramesRef}
+                      getRecordedFrameCount={recorder.getRecordedFrameCount}
                       durationLimitMs={durationLimitMs}
                       onChangeDurationLimitMs={setDurationLimitMs}
                       canRecord={
