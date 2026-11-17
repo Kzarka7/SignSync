@@ -6,9 +6,21 @@ const vm = require('node:vm')
 const ts = require('typescript')
 const load = require('../scripts/loadTypeScript.cjs')
 
+function loadWithImports(relativePath, imports) {
+  const file = path.resolve(__dirname, '../src', relativePath)
+  const exports = {}
+  const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
+  }).outputText
+  vm.runInNewContext(code, { exports, require: name => imports(name, path.dirname(file)) }, { filename: file })
+  return exports
+}
+
+const { OPTIMIZED_LIVE_CAMERA_OPTIONS } = loadWithImports('hooks/useCameraFeed.ts', () => ({}))
+
 function recorderHarness(options = {}, storageOptions = {}) {
   const slots = [], pendingEffects = [], timers = new Map(), saved = [], listeners = new Map()
-  let cursor = 0, nextTimer = 0, onFrame
+  let cursor = 0, nextTimer = 0, cameraOptions, now = 0
   const react = {
     useState(initial) {
       const index = cursor++
@@ -41,12 +53,16 @@ function recorderHarness(options = {}, storageOptions = {}) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText, {
     exports, console, Date, crypto: { randomUUID: () => `sample-${saved.length}` },
+    performance: { now: () => now },
     setInterval: setTimer, clearInterval: id => timers.delete(id),
     setTimeout: setTimer, clearTimeout: id => timers.delete(id),
     window: { addEventListener: (name, cb) => listeners.set(name, cb), removeEventListener: name => listeners.delete(name) },
     require(name) {
       if (name === 'react') return react
-      if (name === './useCameraFeed') return { useCameraFeed: settings => { onFrame = settings.onFrame; return feed } }
+      if (name === './useCameraFeed') return {
+        OPTIMIZED_LIVE_CAMERA_OPTIONS,
+        useCameraFeed: settings => { cameraOptions = settings; return feed },
+      }
       if (name.endsWith('signLabelSearch')) return load(path.resolve(__dirname, '../src/services/dataset/signLabelSearch.ts'))
       if (name.endsWith('datasetStorage')) return {
         storageError: error => 'Could not save: ' + error.message,
@@ -62,17 +78,69 @@ function recorderHarness(options = {}, storageOptions = {}) {
   })
   return {
     saved, timers,
+    get cameraOptions() { return cameraOptions },
     render(nextOptions = options) {
       cursor = 0
       const result = exports.useDatasetRecorder(nextOptions)
       pendingEffects.splice(0).forEach(effect => effect())
       return result
     },
-    frame(timestamp) { onFrame({ timestamp, pose: null, leftHand: null, rightHand: null }) },
+    setNow(timestamp) { now = timestamp },
+    sample(sample) { cameraOptions.onFrame(sample) },
+    frame(timestamp) { this.sample({ timestamp, pose: null, leftHand: null, rightHand: null }) },
     fire(ms) { const timer = [...timers.values()].find(timer => timer.ms === ms); assert.ok(timer); timer.callback() },
     key(code, tagName = 'BODY', extra = {}) { const event = { code, target: { tagName }, defaultPrevented:false, preventDefault() { this.defaultPrevented=true }, ...extra }; listeners.get('keydown')(event); return event },
   }
 }
+
+test('live collector exports exact samples that produce the same wall-clock grid as Lab Camera', async () => {
+  const { buildDatasetExport } = loadWithImports('services/dataset/datasetExport.ts', (name, directory) =>
+    name.startsWith('.') ? load(path.resolve(directory, name + '.ts')) : require(name))
+  const { toFeatureVector } = load(path.resolve(__dirname, '../src/services/landmarks/normalize.ts'))
+  const { resampleLiveWindow } = load(path.resolve(__dirname, '../src/services/landmarks/windowResampling.ts'))
+  const h = recorderHarness()
+  h.render(); await new Promise(resolve => setImmediate(resolve))
+  const recorder = h.render()
+  for (const key of ['decoupleVideoFrames', 'stridePairedPose', 'dynamicHandCapacity', 'relaxedHandTracking', 'reviewHandTracking']) {
+    assert.equal(h.cameraOptions[key], true, key)
+  }
+  assert.equal(h.cameraOptions.gatePreviewHands ?? false, false)
+
+  const point = (x, y) => ({ x, y, z: 0, visibility: 1 })
+  const pose = { nose: point(.5, .1), leftShoulder: point(.3, .3), rightShoulder: point(.7, .3),
+    leftElbow: point(.3, .5), rightElbow: point(.7, .5), leftWrist: point(.4, .6), rightWrist: point(.7, .7),
+    leftHip: point(.4, .9), rightHip: point(.6, .9) }
+  const origin = 1000.25
+  const raw = Array.from({ length: 29 }, (_, i) => ({
+    timestamp: origin + 52 * i + (i % 3) * 1.25,
+    pose, leftHand: i === 10 ? null : Array.from({ length: 21 }, (_, j) => point(.4 + i * .005 + j * .001, .6)),
+    rightHand: i < 18 ? null : Array.from({ length: 21 }, (_, j) => point(.68 + j * .001, .7)),
+  }))
+  h.setNow(origin)
+  recorder.startRecording()
+  h.sample({ ...raw[0], timestamp: origin - .5 }) // A queued preview bitmap can arrive after Start.
+  raw.forEach(sample => h.sample(sample))
+  assert.equal(recorder.getRecordedFrameCount(), raw.length)
+  assert.equal(h.timers.size, 0, 'the recorder must not run a progress timer')
+  await recorder.stopRecording()
+  h.sample({ ...raw.at(-1), timestamp: raw.at(-1).timestamp + 50 })
+
+  const [sequence] = JSON.parse(JSON.stringify(buildDatasetExport(h.saved))).sequences
+  assert.deepEqual(sequence.frames.map(frame => frame.raw), raw)
+  assert.deepEqual(sequence.frames.map(frame => frame.timestamp), raw.map(frame => frame.timestamp))
+  assert.equal(sequence.frameCount, raw.length)
+  assert.equal(sequence.durationMs, raw.at(-1).timestamp - origin)
+
+  const exportedGrid = resampleLiveWindow(sequence.frames.map(frame => ({
+    timestamp: frame.timestamp - origin, features: frame.features, valid: frame.valid,
+  })))
+  const labGrid = resampleLiveWindow(raw.map(sample => {
+    const relative = { ...sample, timestamp: sample.timestamp - origin }
+    return { timestamp: relative.timestamp, ...toFeatureVector(relative) }
+  }))
+  assert.equal(exportedGrid.length, 40)
+  assert.deepEqual(structuredClone(exportedGrid), structuredClone(labGrid))
+})
 
 test('sign collection offers vocabulary, indexing, possessive, and fingerspelling labels', () => {
   const recorder = recorderHarness({ signsOnly: true }).render()

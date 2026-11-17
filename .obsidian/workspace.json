@@ -1,0 +1,208 @@
+{
+  "main": {
+    "id": "78e454cfe15fc6c6",
+    "type": "split",
+    "children": [
+      {
+        "id": "bf5a5595f3b2a261",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "ad46fbfb33c2fbf4",
+            "type": "leaf",
+            "state": {
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "d28f80e161da4a84",
+    "type": "split",
+    "children": [
+      {
+        "id": "3a7853cc9a0def96",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "8fb10200adde45f2",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "cb9c5990f8137af1",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "4aa47f42c7ce2a21",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "e981560781dc8372",
+    "type": "split",
+    "children": [
+      {
+        "id": "e843ba5689f9f4e8",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "55a0500fe8cce99f",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "Project Home.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks"
+            }
+          },
+          {
+            "id": "d02fc2e8f4ef490a",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "Project Home.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links"
+            }
+          },
+          {
+            "id": "4764b7ed662aedbe",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "703288fa475972b4",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "8a0f40c125ff196a",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "Project Home.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "ad46fbfb33c2fbf4",
+  "lastOpenFiles": [
+    "Frontend/dist/collector-offline-assets.json",
+    "Frontend/dist/assets/pairedLandmarks.worker-BbrJhT3-.js",
+    "Frontend/dist/assets/pairedLandmarksWorker-Do9_o2Gw.js",
+    "Frontend/dist/assets/sourceVideo-CI_ktbJD.js",
+    "Frontend/dist/index.html",
+    "Frontend/dist/assets/index-E8qP3RBv.js",
+    "Frontend/dist/vision/0.10.35/wasm/vision_wasm_nosimd_internal.wasm",
+    "Frontend/dist/vision/0.10.35/wasm/vision_wasm_nosimd_internal.js",
+    "Frontend/dist/vision/0.10.35/wasm/vision_wasm_module_internal.wasm",
+    "Frontend/dist/vision/0.10.35/wasm/vision_wasm_module_internal.js",
+    "Frontend/dist/vision/0.10.35/wasm/vision_wasm_internal.wasm",
+    "2026-11-14 FSL Lexicalization and Syntax Plan.md",
+    "Frontend/node_modules/zustand/readme.md",
+    "Frontend/node_modules/@types/babel__generator/README.md",
+    "Project Home.md",
+    "AGENTS.md",
+    "README.md",
+    "Conversation Log.md"
+  ]
+}

@@ -1,31 +1,36 @@
 import { Circle, Square, Timer, Trash2, X } from 'lucide-react'
-import { useEffect, useState, type MutableRefObject, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import Button from '../shared/Button'
 import SecondsInput from '../shared/SecondsInput'
 
-function LiveFps({ processedFramesRef }: { processedFramesRef: MutableRefObject<number> }) {
+function LiveRecordingProgress({ getFrameCount }: { getFrameCount: () => number }) {
+  const [frameCount, setFrameCount] = useState(0)
   const [fps, setFps] = useState<number | null>(null)
   useEffect(() => {
-    let previousCount = processedFramesRef.current
+    let previousCount = getFrameCount()
     let previousTime = performance.now()
-    const timer = window.setInterval(() => {
+    setFrameCount(previousCount)
+    const countTimer = window.setInterval(() => setFrameCount(getFrameCount()), 125)
+    const fpsTimer = window.setInterval(() => {
       const now = performance.now()
-      const count = processedFramesRef.current
+      const count = getFrameCount()
       setFps((count - previousCount) * 1000 / (now - previousTime))
       previousCount = count
       previousTime = now
     }, 1000)
-    return () => window.clearInterval(timer)
-  }, [processedFramesRef])
-  return <span className="tabular-nums" title="Completed detection frames per second, updated every second">{fps === null ? '—' : fps.toFixed(1)} FPS</span>
+    return () => {
+      window.clearInterval(countTimer)
+      window.clearInterval(fpsTimer)
+    }
+  }, [getFrameCount])
+  return <>Recording · {frameCount} frames · <span className="tabular-nums" title="Captured landmark frames per second, updated every second">{fps === null ? '—' : fps.toFixed(1)} FPS</span></>
 }
 
 interface RecordingControlsProps {
   stopLabel?: string
   recordingStatus?: ReactNode
   isRecording: boolean
-  frameCount: number
-  processedFramesRef: MutableRefObject<number>
+  getRecordedFrameCount?: () => number
   canRecord: boolean
   countdown: number | null
   countdownSeconds: number
@@ -43,8 +48,7 @@ export default function RecordingControls({
   stopLabel = 'Stop & save',
   recordingStatus,
   isRecording,
-  frameCount,
-  processedFramesRef,
+  getRecordedFrameCount,
   canRecord,
   countdown,
   countdownSeconds,
@@ -106,7 +110,7 @@ export default function RecordingControls({
           </Button>
           <span className="flex items-center gap-1.5 text-sm font-medium text-danger">
             <span className="w-2 h-2 rounded-full bg-danger animate-pulse" />
-            {recordingStatus ?? <>Recording · {frameCount} frames · <LiveFps processedFramesRef={processedFramesRef} /></>}
+            {recordingStatus ?? (getRecordedFrameCount ? <LiveRecordingProgress getFrameCount={getRecordedFrameCount} /> : 'Recording')}
           </span>
         </>
       )}
