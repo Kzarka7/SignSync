@@ -1,6 +1,7 @@
+import type { HandLandmarkerResult } from '@mediapipe/tasks-vision'
 import type { DatasetFrame } from '../../types/dataset'
-import type { Handedness, LandmarkPoint } from '../../types/landmarks'
-import type { HandContact } from './videoHandOverlap'
+import type { Handedness, LandmarkFrameSample, LandmarkPoint } from '../../types/landmarks'
+import { handProximity, type HandContact } from './videoHandOverlap'
 
 export interface VideoHandDetection {
   landmarks: LandmarkPoint[]
@@ -22,14 +23,12 @@ function wristDistance(a: LandmarkPoint, b: LandmarkPoint) {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
-function observationCost(frame: DatasetFrame, assignment: Assignment, contact?: HandContact) {
-  const pose = frame.raw.pose
-  const wrists = [pose?.leftWrist, pose?.rightWrist]
+function observationCost({ pose }: LandmarkFrameSample, assignment: Assignment, contact?: HandContact) {
   return sides.reduce((cost, side, index) => {
     const hand = assignment[index]
     if (!hand) return cost
     const labelPenalty = hand.handedness && hand.handedness !== side ? Math.max(0, 2 * hand.score - 1) : 0
-    const wrist = wrists[index]
+    const wrist = side === 'Left' ? pose?.leftWrist : pose?.rightWrist
     const visibility = wrist?.visibility ?? 0
     const poseMatch = wrist && visibility >= .65 && Number.isFinite(wrist.x) && Number.isFinite(wrist.y)
       ? 2.1 * visibility * Math.max(0, 1 - wristDistance(wrist, hand.landmarks[0]) / .14)
@@ -38,6 +37,45 @@ function observationCost(frame: DatasetFrame, assignment: Assignment, contact?: 
     // wrists and observations outside the contact carry more weight here.
     return cost + labelPenalty * (contact ? .35 : 1) - poseMatch
   }, 0)
+}
+
+export function readHandDetections(result: HandLandmarkerResult | null): VideoHandDetection[] {
+  return result?.landmarks.flatMap((landmarks, index): VideoHandDetection[] => {
+    if (landmarks.length !== 21 || !landmarks.every(({ x, y, z }) => [x, y, z].every(Number.isFinite))) return []
+    const category = result.handedness?.[index]?.[0]
+    const name = category?.categoryName
+    return [{ landmarks, handedness: name === 'Left' || name === 'Right' ? name : undefined, score: category?.score ?? 0 }]
+  }) ?? []
+}
+
+// Live observations have no lookahead. Match wrist motion to the previous
+// observed frame and let the existing pose and handedness scores break ties.
+export function createStreamingHandAssignment() {
+  let previous: Assignment = [undefined, undefined]
+  let lastObserved = -Infinity
+  let lastClose = -Infinity
+  return (sample: LandmarkFrameSample, result: HandLandmarkerResult | null, aspect: number): LandmarkFrameSample => {
+    const [first, second] = readHandDetections(result)
+    if (!first) {
+      lastClose = -Infinity
+      return { ...sample, leftHand: null, rightHand: null }
+    }
+    const elapsed = sample.timestamp - lastObserved
+    if (elapsed <= 0 || elapsed > 120) {
+      previous = [undefined, undefined]
+      lastClose = -Infinity
+    }
+    const proximity = second && handProximity(first.landmarks, second.landmarks, aspect)
+    const contact = proximity === 'overlap' ? 'overlap'
+      : !second && sample.timestamp - lastClose <= 200 ? 'possible-occlusion' : undefined
+    if (second) lastClose = proximity ? sample.timestamp : -Infinity
+
+    const direct: Assignment = [first, second], swapped: Assignment = [second, first]
+    const cost = (option: Assignment) => observationCost(sample, option, contact) + transitionCost(previous, option, elapsed)
+    previous = cost(direct) <= cost(swapped) ? direct : swapped
+    lastObserved = sample.timestamp
+    return { ...sample, leftHand: previous[0]?.landmarks ?? null, rightHand: previous[1]?.landmarks ?? null }
+  }
 }
 
 function transitionCost(previous: Assignment, current: Assignment, elapsedMs: number) {
@@ -61,7 +99,7 @@ export function assignVideoHands(observations: Observation[], contacts?: (HandCo
     if (!first) return []
     const options: [Assignment, Assignment] = [[first, second], [second, first]]
     const contact = contacts?.[index]
-    const costs: Costs = [observationCost(frame, options[0], contact), observationCost(frame, options[1], contact)]
+    const costs: Costs = [observationCost(frame.raw, options[0], contact), observationCost(frame.raw, options[1], contact)]
     return [{ index, frame, options, costs }]
   })
   if (!tracked.length) return frames

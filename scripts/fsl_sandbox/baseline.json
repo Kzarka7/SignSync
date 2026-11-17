@@ -1,0 +1,19 @@
+{
+  "mode": "lab-signs43-similarity",
+  "experiment": "samples_43_signs_similarity_v1",
+  "modelId": "lab-signs43-similarity-seed42-graph-diagnostics",
+  "seed": 42,
+  "labels": [
+    "EIGHT", "FAMILY", "FIVE", "FOUR", "FRIDAY", "FRIEND", "GOOD_AFTERNOON", "GOOD_EVENING",
+    "GOOD_MORNING", "HELLO", "HELP", "HOW", "MONDAY", "NINE", "NO", "ONE", "PLEASE", "SATURDAY",
+    "SEVEN", "SIX", "SORRY", "STAY", "SUNDAY", "TEN", "THANK_YOU", "THREE", "THURSDAY", "TODAY",
+    "TOMORROW", "TUESDAY", "TWO", "WAIT", "WAVE_GREETING", "WEDNESDAY", "WELCOME", "WHAT", "WHEN",
+    "WHERE", "WHICH", "WHO", "WHY", "YES", "YESTERDAY"
+  ],
+  "preparedMetadataSha256": "17ab6d0aeaae2118cc4cb2501e0a14db79d79943366d5754da454076ec445d40",
+  "modelFileSha256": {
+    "best_model.h5": "cbcda8834c5b787717055bcbffdc1da675b804e9460f49f4cfce719b6fc9c477",
+    "evaluation.json": "606537f7186de4dacc2319c641efe977cceda5942d4ba345e5780cf6c14ed569",
+    "threshold_selection.json": "2e842fb2d858e445b0e6adf1c08c81b297b5d9aa76a01386908c0fd4e9a2ff41"
+  }
+}

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Maximize, Download } from 'lucide-react'
+import { Download } from 'lucide-react'
 import Button from '../shared/Button'
 import StatusPill from '../shared/StatusPill'
 import { useSessionStore } from '../../store/sessionStore'
@@ -35,9 +35,6 @@ export default function LiveTopbar({ onEnd, onExport }: { onEnd: () => void; onE
         <span className="font-mono font-medium text-sm text-text-3">{formatElapsedTime(elapsedSeconds)}</span>
       </div>
       <div className="flex gap-2">
-        <Button size="sm" title="Fullscreen">
-          <Maximize size={16} />
-        </Button>
         <Button size="sm" onClick={onExport}>
           <Download size={16} />
           Export

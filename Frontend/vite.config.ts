@@ -1,7 +1,8 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, searchForWorkspaceRoot, type Plugin } from 'vite'
+import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 
 function collectorOfflineAssets(): Plugin {
@@ -36,7 +37,11 @@ function collectorOfflineAssets(): Plugin {
 
 export default defineConfig({
   plugins: [react(), collectorOfflineAssets()],
-  server: { port: 5173 },
+  server: {
+    port: 5173,
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), ...['baseline.json', 'display_rules.json', 'demo_rules.json']
+      .map(name => fileURLToPath(new URL(`../scripts/fsl_sandbox/${name}`, import.meta.url)))] },
+  },
   preview: {
     allowedHosts: process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
       ? [process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS]

@@ -1,5 +1,5 @@
 import { createTranslationSocket } from './translationSocket'
-import type { SignPrediction, SignRequest, LiveDiagnosticMode } from '../../types/message'
+import type { SignPrediction, SignRequest, LabRecognitionMode } from '../../types/message'
 
 export const DIAGNOSTIC_RECOGNIZER_ID = 'p4-sign-rest-idle-nine-run-ensemble-graph-diagnostics'
 export type DiagnosticBackendInfo = {
@@ -9,10 +9,10 @@ export type DiagnosticBackendInfo = {
 
 // A dedicated candidate-only connection prevents raw overlapping predictions
 // from entering useTranslationStream's automatic conversation transcript.
-export function createDiagnosticPredictor(mode: LiveDiagnosticMode | 'p4-candidate' = 'p4-candidate') {
+export function createDiagnosticPredictor(mode: LabRecognitionMode | 'p4-candidate' = 'p4-candidate') {
   const recognizerId = mode === 'p4-candidate' ? DIAGNOSTIC_RECOGNIZER_ID
     : mode === 'lab-alphabet' ? 'lab-alphabet-j460-v2-seed43-graph-diagnostics'
-    : `${mode}-seed42-graph-diagnostics`
+    : mode === 'lab-stage2' ? 'lab-stage2-rerun-20261109-seeds42-43-44-no-hold-graph-diagnostics' : `${mode}-seed42-graph-diagnostics`
   const socket = createTranslationSocket(mode, true)
   let pending: { id: string; resolve: (value: SignPrediction) => void; reject: (error: Error) => void } | null = null
   let ready = false, closed = false
@@ -38,7 +38,7 @@ export function createDiagnosticPredictor(mode: LiveDiagnosticMode | 'p4-candida
             if (event.payload.state === 'ready') {
               const info = event.payload
               if (info.diagnosticsProtocol !== 1 || info.execution !== 'graph' || info.recognizerId !== recognizerId) {
-                fail('Backend mismatch: recognition requires graph-diagnostics v1. Restart the SignSync backend at the configured address and reload this page.'); return
+                fail('Backend mismatch: the recognition lab requires graph-diagnostics v1. Restart the SignSync backend at the configured address and reload this page.'); return
               }
               let endpoint = 'Configured recognition backend'
               if (socket.endpoint) {

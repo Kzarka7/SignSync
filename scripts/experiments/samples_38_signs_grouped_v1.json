@@ -1,0 +1,28 @@
+{
+  "name": "samples_38_signs_grouped_v1",
+  "frames": 40,
+  "labels": [
+    "HELLO", "WAVE_GREETING", "THANK_YOU", "PLEASE", "SORRY", "YES", "NO", "HELP",
+    "WELCOME", "FRIEND", "FAMILY", "STAY", "WAIT", "WHAT", "WHY", "WHERE", "WHEN", "WHO",
+    "WHICH", "HOW",
+    "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST",
+    "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER",
+    "GOOD_MORNING", "GOOD_AFTERNOON", "GOOD_EVENING", "TODAY", "TOMORROW", "YESTERDAY"
+  ],
+  "vocabularySource": "Frontend/src/hooks/useDatasetRecorder.ts#DEFAULT_SIGN_LABELS",
+  "splitGroups": {
+    "training": [
+      "signer:participant_01", "signer:participant_04", "batch:capture-date-20261031", "batch:capture-date-20261101"
+    ],
+    "validation": ["signer:participant_02", "batch:capture-date-20261027", "batch:capture-date-20261028"],
+    "test": [
+      "signer:participant_03", "batch:capture-date-20261029", "batch:source-105-fsl-signs"
+    ]
+  },
+  "groupingLimitation": "Unknown signer IDs are grouped conservatively by collection batch and source fingerprint. Signer overlap across these batches or with known signers cannot be ruled out.",
+  "backgroundChecks": {
+    "labels": ["REST", "IDLE_MOVEMENT"],
+    "signerId": "participant_03",
+    "use": "Test only. Apply the validation-selected sign threshold and the Lab capture and visibility gates separately."
+  }
+}

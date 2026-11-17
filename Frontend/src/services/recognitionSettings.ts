@@ -1,6 +1,6 @@
 export const RECOGNITION_SETTING_LIMITS = {
   minimumConfidence: { min: 50, max: 100, step: 1 },
-  acceptanceMs: { min: 100, max: 1000, step: 50 },
+  acceptanceMs: { min: 1, max: 1000, step: 1 },
 } as const
 
 type RecognitionSettings = { minimumConfidence: number; acceptanceMs: number }

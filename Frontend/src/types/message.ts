@@ -3,7 +3,11 @@
 // selected quick phrase.
 export type MessageSource = 'sign' | 'speech' | 'phrase'
 export type RecognitionMode = 'v5' | 'p4-candidate'
-export type LiveDiagnosticMode = 'lab-alphabet' | 'lab-signs43-similarity'
+export type LabRecognitionMode =
+  'lab-grouped' | 'lab-clip' | 'lab-alphabet' | 'lab-stage2' | 'lab-signs38' | 'lab-signs38-clip' | 'lab-signs33'
+  | 'lab-signs43-numbers' | 'lab-signs43-shape-motion' | 'lab-signs43-similarity' | 'lab-signs43-similarity-v2'
+  | 'lab-signs75-multi-batch'
+  | 'lab-signs32-standalone' | 'lab-signs32-similarity'
 
 // One score per recognition/translation pipeline stage. Which keys show
 // up depends on the message's source - a 'sign' message never carries

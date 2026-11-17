@@ -247,15 +247,24 @@ for split, x, y in (
 train_weights = None
 if similarity:
     from prepare_similarity_pilot import BASELINE, CANDIDATE
-    from sample_pipeline import digest, read_json
-    if (EXPERIMENT_NAME, similarity['baseline'], RANDOM_SEED) != (CANDIDATE, BASELINE, 42):
-        raise ValueError('The similarity pilot is frozen to the approved baseline and seed 42')
-    baseline_folder = DATASET_FOLDER / 'models' / 'candidates' / BASELINE / BASELINE
+    from sample_pipeline import digest, read_json, safe_name
+    baseline_name = safe_name(similarity['baseline'])
+    if RANDOM_SEED != 42 or (EXPERIMENT_NAME == CANDIDATE and baseline_name != BASELINE):
+        raise ValueError('The similarity pilot requires the configured baseline and seed 42')
+    baseline_folder = DATASET_FOLDER / 'models' / 'candidates' / baseline_name / baseline_name
     baseline_checkpoint = baseline_folder / 'best_model.h5'
-    baseline_meta = read_json(baseline_folder / 'evaluation.json')['preprocessingMetadata']
+    baseline_evaluation = read_json(baseline_folder / 'evaluation.json')
+    baseline_meta = baseline_evaluation['preprocessingMetadata']
     if (digest(baseline_checkpoint.read_bytes()) != similarity['checkpointSha256']
+            or baseline_evaluation['randomSeed'] != RANDOM_SEED
             or any(metadata[k] != baseline_meta[k] for k in ('sequenceIds', 'sourceSha256', 'labelToIndex', 'featureVariant'))):
         raise ValueError('The warm-start checkpoint differs from the frozen data or vocabulary')
+    with np.load(DATA_PATH, allow_pickle=False) as candidate_arrays, np.load(
+        baseline_folder / 'preparation' / 'gru_data.npz', allow_pickle=False
+    ) as baseline_arrays:
+        for split_artifact in ('feature_mean', 'feature_std', 'X_train', 'X_validation', 'X_test'):
+            np.testing.assert_array_equal(candidate_arrays[split_artifact], baseline_arrays[split_artifact],
+                                          err_msg=f'Warm-start preparation differs for {split_artifact}')
     original_labels = dict(zip(metadata['sequenceIds']['training'], y_train))
     with np.load(PREPROCESSED_FOLDER / 'similarity_training.npz', allow_pickle=False) as augmented:
         extra_x, extra_y = augmented['X'], augmented['y']

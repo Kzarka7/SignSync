@@ -16,6 +16,7 @@ module.exports = function loadTypeScript(entry, globals = {}) {
     vm.runInNewContext(code, { ...globals, exports,
       require: name => {
         if (!name.startsWith('.')) throw new Error('Unexpected runtime dependency: ' + name)
+        if (name.endsWith('.json')) return { default: JSON.parse(fs.readFileSync(path.resolve(path.dirname(file), name), 'utf8')) }
         return load(path.resolve(path.dirname(file), name + '.ts'))
       },
     }, { filename: file })
