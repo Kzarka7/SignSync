@@ -75,7 +75,7 @@ test('alphabet confidence rejections count as one failed vote while tracking rej
 })
 
 test('43-sign Lab sessions suppress predictions from one unbroken motion and permit a fresh segment', async () => {
-  for (const modelMode of ['lab-signs43-numbers', 'lab-signs43-shape-motion', 'lab-signs43-similarity']) {
+  for (const modelMode of ['lab-signs43-numbers', 'lab-signs43-shape-motion', 'lab-signs43-similarity', 'lab-signs43-similarity-v2']) {
     const session = createDiagnosticSession({ source: 'video', name: 'changing prediction', modelMode,
       recognitionMode: 'segmented', segmentAcceptance: 'confirmation',
       settings: { strideMs: 150, confirmationWindows: 2, confirmationHistory: 3, confirmationMs: 150 },
@@ -100,6 +100,7 @@ test('43-sign Lab sessions suppress predictions from one unbroken motion and per
 
 for (const [modelMode, initialLabel, movingLabel, holdLabel] of [
   ['lab-signs43-similarity', 'ONE', 'WHAT', 'SIX'],
+  ['lab-signs43-similarity-v2', 'ONE', 'WHAT', 'SIX'],
   ['lab-alphabet', 'I', 'J', 'X'],
 ]) test(`${modelMode} can confirm the next sign while the hand stays visible`, async () => {
   for (const source of ['video','camera']) for (const transition of ['motion after a hold','handshape during motion','handshape to hold']) {

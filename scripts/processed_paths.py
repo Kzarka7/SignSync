@@ -6,6 +6,7 @@ from model_paths import resolve_model_artifact_path
 
 P4_RELEASE = 'sign_rest_idle_p4_signs_v1_2026_10_18'
 SIMILAR_SIGNS = 'samples_43_signs_similarity_v1'
+ALPHABET_FROZEN = 'alphabet_26_j460_v2_seed42'
 
 EXPERIMENT_GROUPS = {
     'candidates': (
@@ -72,7 +73,7 @@ def resolve_experiment_path(path):
 
 def organized_processed_name(name):
     """Return a relative location for known source exports and tensor variants."""
-    if name == SIMILAR_SIGNS:
+    if name in (SIMILAR_SIGNS, ALPHABET_FROZEN):
         return f'current/{name}'
     if name == 'recordings_v5':
         return 'baseline/recordings_v5'
@@ -116,7 +117,7 @@ def processed_artifact_path(root, name):
     legacy = root / name
     organized = root / organized_processed_name(name)
     locations = {legacy, organized}
-    if name == SIMILAR_SIGNS:
+    if name in (SIMILAR_SIGNS, ALPHABET_FROZEN):
         locations.add(root / 'candidates' / name)
     elif organized.is_relative_to(root / 'baseline/recordings_v5'):
         locations.add(root / 'current/recordings_v5' / organized.relative_to(root / 'baseline/recordings_v5'))
@@ -161,8 +162,8 @@ def resolve_artifact_path(path):
                 return p4_prepared_folder(parent) / relative
         if parent.name == 'processed':
             relative = path.relative_to(parent)
-            if relative.parts[:2] == ('candidates', SIMILAR_SIGNS):
-                return processed_artifact_path(parent, SIMILAR_SIGNS).joinpath(*relative.parts[2:])
+            if len(relative.parts) >= 2 and relative.parts[0] == 'candidates' and relative.parts[1] in (SIMILAR_SIGNS, ALPHABET_FROZEN):
+                return processed_artifact_path(parent, relative.parts[1]).joinpath(*relative.parts[2:])
             if relative.parts[:2] == ('current', 'recordings_v5'):
                 return processed_artifact_path(parent, 'recordings_v5').joinpath(*relative.parts[2:])
             return processed_artifact_path(parent, relative.parts[0]).joinpath(*relative.parts[1:])

@@ -31,6 +31,7 @@ const navItems: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/live", label: "Live conversation", icon: Video, activePaths: ["/live", "/setup"] },
   { to: "/dataset-collector", label: "Dataset Collector", icon: Database },
+  { to: "/recognition-lab", label: "Recognition lab", icon: Video },
   { to: "/history", label: "History", icon: History, activePaths: ["/history", "/summary"] },
   { to: "/faq", label: "FAQ", icon: BookOpen },
   { to: "/settings", label: "Settings", icon: Settings },

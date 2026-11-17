@@ -29,6 +29,7 @@ test('live camera collects timing for the paired hand and pose status',()=>{
   const {h,feedOptions}=setup()
   assert.equal(feedOptions.landmarkMode,'both')
   assert.equal(feedOptions.trackLiveTiming,true)
+  assert.equal(feedOptions.reviewHandTracking,true)
   h.unmount()
 })
 test('live recognition forwards only confirmed entries once and ignores callbacks after stop',async()=>{

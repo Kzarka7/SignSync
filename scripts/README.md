@@ -33,6 +33,22 @@ Run the checks with:
 python -c "import sys, unittest; sys.path.insert(0, 'scripts'); result = unittest.TextTestRunner().run(unittest.defaultTestLoader.discover('scripts/tests')); sys.exit(not result.wasSuccessful())"
 ```
 
+## Landmark playback
+
+```powershell
+.\.venv-gru\Scripts\python.exe scripts/compare_landmarks.py --batches --label AGAIN
+```
+
+The viewer defaults to 240 display frames at a 120 FPS playback target for a
+two-second loop. The source-frame lines show the current target. Up and Down
+adjust playback speed, and `--fps` and `--display-frames` override the startup
+defaults. GIF export defaults to 60 FPS.
+Interpolated playback fills in
+motion only where adjacent captures detected the same landmark. Add
+`--raw-frames` to review recorded landmarks. If the renderer falls behind,
+interactive playback skips to the current frame. Pause or step with the arrow
+keys to read the source frame number at the current comparison position.
+
 ## Live conversation
 
 See [LIVE_V5.md](LIVE_V5.md) for the v5 camera-to-conversation setup, artifact

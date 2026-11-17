@@ -3,7 +3,7 @@ import { WASM_BASE_URL, createHandLandmarker, createPoseLandmarker, buildFrameSa
 import type { DatasetFrame, VideoImportMetadata, VideoQualityWindow } from '../../types/dataset'
 import { assessVideoQuality, assessBoundaryVideoQuality } from './videoQuality'
 import { sourceFrameSelector } from './frameTiming'
-import { assignVideoHands, swapVideoHands, type VideoHandDetection } from './videoHandAssignment'
+import { assignVideoHands, readHandDetections, swapVideoHands, type VideoHandDetection } from './videoHandAssignment'
 import { detectVideoHandContact } from './videoHandOverlap'
 import { createLowLightInput, LOW_LIGHT_MAX_DIMENSION, stabilizeLowLightFrames } from './lowLightTracking'
 
@@ -56,23 +56,18 @@ export async function processVideo(file: File, signal: AbortSignal, onProgress: 
       const input = enhance?.(frame.canvas) ?? frame.canvas
       const detection = hands.detectForVideo(input, timestamp)
       const raw = buildFrameSample(timestamp, null, pose.detectForVideo(input, timestamp))
-      const candidates = detection.landmarks.flatMap((landmarks, index): VideoHandDetection[] => {
-        if (landmarks.length !== 21 || !landmarks.every(({ x, y, z }) => [x, y, z].every(Number.isFinite))) return []
-        const category = detection.handedness[index]?.[0]
-        const name = category?.categoryName
-        return [{ landmarks, handedness: name === 'Left' || name === 'Right' ? name : undefined, score: category?.score ?? 0 }]
-      })
+      const candidates = readHandDetections(detection)
       observations.push({ frame: { timestamp, raw, sourceTimestampMs: seconds * 1000, sourceDurationMs: frame.duration * 1000 }, hands: candidates })
       onProgress(Math.min(99, Math.round((seconds - start) / (end - start) * 100)))
       await new Promise(resolve => setTimeout(resolve, 0))
     }
     signal.throwIfAborted()
     let frames = assignVideoHands(observations)
-    if (lowLight && frames.length) frames = stabilizeLowLightFrames(frames, inputWidth / inputHeight)
     if (!options.samplePurpose) {
       const contact = detectVideoHandContact(frames, inputWidth / inputHeight)
       if (contact.some(Boolean)) frames = assignVideoHands(observations, contact)
     }
+    if (lowLight && frames.length) frames = stabilizeLowLightFrames(frames, inputWidth / inputHeight)
     if (options.swapHandSides) frames = swapVideoHands(frames)
     const elapsed = performance.now() - began
     const effectiveTargetFps = Math.min(targetFps, source.metrics.medianFrameRate)

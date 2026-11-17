@@ -32,7 +32,7 @@ exports.hookHarness = function (file, exportName, imports, args = () => [], glob
   let timer = 0
   const intervals=new Map(), listeners=new Map()
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: {
-    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020,
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX,
   }}).outputText
   vm.runInNewContext(code, { exports, require: name => name === 'react' ? react : imports(name),
     setTimeout: () => ++timer, clearTimeout() {}, setInterval: fn => {const id=++timer;intervals.set(id,fn);return id}, clearInterval(id) {intervals.delete(id)},

@@ -1,0 +1,6 @@
+{
+  "id": "demo-please-wait-at-future-time",
+  "tags": {"TIME": ["TODAY", "TOMORROW"]},
+  "tokens": ["TIME", "WAIT", "PLEASE"],
+  "order": [2, 1, 0]
+}

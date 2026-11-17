@@ -10,10 +10,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts"))
-from processed_paths import p4_prepared_folder, processed_artifact_path, resolve_experiment_path
+from processed_paths import SIMILAR_SIGNS, p4_prepared_folder, processed_artifact_path, resolve_experiment_path
 from model_paths import model_artifact_folder
 from run_recordings_v5_experiments import raw_geometry_features, standardize_for_model
-from shape_motion_sequence import SHAPE_MOTION_V1, raw_shape_motion_features
+from shape_motion_sequence import GEOMETRY_V3, SHAPE_MOTION_V1, raw_shape_motion_features
 
 POSE_NAMES = ("nose", "leftShoulder", "rightShoulder", "leftElbow", "rightElbow", "leftWrist", "rightWrist", "leftHip", "rightHip")
 HAND_NAMES = ("wrist", "thumb_cmc", "thumb_mcp", "thumb_ip", "thumb_tip", "index_mcp", "index_pip", "index_dip", "index_tip", "middle_mcp", "middle_pip", "middle_dip", "middle_tip", "ring_mcp", "ring_pip", "ring_dip", "ring_tip", "pinky_mcp", "pinky_pip", "pinky_dip", "pinky_tip")
@@ -174,11 +174,24 @@ _candidate_recognizer = None
 _load_lock = Lock()
 _diagnostic_recognizer = None
 _diagnostic_load_lock = Lock()
-LIVE_DIAGNOSTIC_MODELS = {
-    'lab-signs43-similarity': 'samples_43_signs_similarity_v1',
+LAB_EXPERIMENTS = {
+    'lab-grouped': 'samples_55_signs_rest_idle_geometry_v1',
+    'lab-clip': 'samples_55_signs_rest_idle_clip_60_15_25_v1',
+    'lab-signs38': 'samples_38_signs_grouped_v1',
+    'lab-signs38-clip': 'samples_38_signs_clip_70_15_15_v1',
+    'lab-signs33': 'samples_33_signs_weekdays_clip_70_15_15_v1',
+    'lab-signs43-numbers': 'samples_43_signs_days_numbers_clip_70_15_15_v1',
+    'lab-signs43-shape-motion': 'samples_43_signs_shape_motion_v1',
+    'lab-signs43-similarity': SIMILAR_SIGNS,
+    'lab-signs43-similarity-v2': 'samples_43_signs_similarity_v2',
+    'lab-signs75-candidate': 'samples_75_signs_batch_expansion_v1',
+    'lab-signs75-multi-batch': 'samples_75_signs_multi_batch_dev_v1',
+    'lab-signs32-standalone': 'samples_32_signs_standalone_v1',
+    'lab-signs32-similarity': 'samples_32_signs_similarity_v1',
     'lab-alphabet': 'alphabet_26_j460_v2',
+    'lab-stage2': 'alphabet_numbers_36_joint_v1_rerun_20261109',
 }
-_live_diagnostic_models = {}
+_lab_recognizers = {}
 
 
 class SampleDiagnosticRecognizer(P4CandidateRecognizer):
@@ -189,25 +202,48 @@ class SampleDiagnosticRecognizer(P4CandidateRecognizer):
         import tensorflow as tf
         from sample_pipeline import digest
         from sample_training import validate_candidate
-        experiment = LIVE_DIAGNOSTIC_MODELS[mode]
+        experiment = LAB_EXPERIMENTS[mode]
+        similar_signs_v2 = mode == 'lab-signs43-similarity-v2'
+        preparation = SIMILAR_SIGNS if similar_signs_v2 else experiment
         processed = dataset_root / 'processed'
-        prepared = processed_artifact_path(processed, experiment)
+        prepared = (processed_artifact_path(processed, preparation) if preparation == SIMILAR_SIGNS
+                    else processed / 'candidates' / preparation)
         metadata_bytes = (prepared / 'metadata.json').read_bytes()
         metadata = json.loads(metadata_bytes)
         config = validate_candidate(prepared, metadata)
-        if metadata.get('featureVariant') != SHAPE_MOTION_V1:
-            raise ValueError('Similar Signs feature variant mismatch.')
-        self.raw_features = raw_shape_motion_features
+        shape_motion_background_classes = {
+            'lab-signs75-candidate': 77, 'lab-signs75-multi-batch': 77, 'lab-signs32-standalone': 34,
+        }
+        shape_motion_background = mode in shape_motion_background_classes
+        shape_motion = (preparation == SIMILAR_SIGNS or mode in ('lab-signs43-shape-motion', 'lab-signs32-similarity')
+                        or shape_motion_background)
+        self.supports_short_preview = shape_motion
+        expected_variant = SHAPE_MOTION_V1 if shape_motion else GEOMETRY_V3
+        if metadata.get('featureVariant', GEOMETRY_V3) != expected_variant:
+            raise ValueError('Pilot feature variant mismatch.')
+        if shape_motion:
+            self.raw_features = raw_shape_motion_features
         mapping = metadata['labelToIndex']
         self.labels = sorted(mapping, key=mapping.get)
-        class_count = 43
-        labels_ok = set(mapping) == set(config['labels']) and not {'REST', 'IDLE_MOVEMENT'}.intersection(mapping)
+        sign_only_classes = {'lab-signs38': 38, 'lab-signs38-clip': 38, 'lab-signs33': 33,
+                             'lab-signs43-numbers': 43, 'lab-signs43-shape-motion': 43,
+                             'lab-signs43-similarity': 43, 'lab-signs43-similarity-v2': 43,
+                             'lab-signs32-similarity': 32}
+        sign_only = mode in sign_only_classes
+        class_count = shape_motion_background_classes.get(mode, sign_only_classes.get(mode, 57))
+        background = {'REST', 'IDLE_MOVEMENT'}
+        labels_ok = (set(mapping) == set(config['labels']) and not background.intersection(mapping)
+                     if sign_only else background.issubset(mapping))
+        if shape_motion_background:
+            labels_ok = labels_ok and set(mapping) == set(config['labels'])
         if (sorted(mapping.values()) != list(range(class_count)) or not labels_ok or
                 metadata['featureCount'] != 238 or metadata['sequenceLength'] != 40 or
                 json.loads((prepared / 'feature_schema.json').read_text(encoding='utf-8'))['order'] != FEATURE_ORDER):
-            raise ValueError(f'Expected {class_count}-class {SHAPE_MOTION_V1} pilot artifacts.')
+            raise ValueError(f'Expected {class_count}-class {expected_variant} pilot artifacts.')
         models = dataset_root / 'models'
-        folder = model_artifact_folder(models, experiment) / experiment
+        model_group = (model_artifact_folder(models, experiment) if mode == 'lab-signs43-similarity'
+                       else models / 'candidates' / experiment)
+        folder = model_group / experiment
         evaluation = json.loads((folder / 'evaluation.json').read_text(encoding='utf-8'))
         selection = json.loads((folder / 'threshold_selection.json').read_text(encoding='utf-8'))
         if (evaluation['preprocessingMetadata'] != metadata or evaluation['randomSeed'] != 42 or
@@ -219,13 +255,14 @@ class SampleDiagnosticRecognizer(P4CandidateRecognizer):
             raise ValueError('Invalid pilot acceptance threshold.')
         with np.load(prepared / 'gru_data.npz', allow_pickle=False) as arrays:
             mean, std = arrays['feature_mean'].copy(), arrays['feature_std'].copy()
-        checkpoint = folder / 'best_model.h5'
-        verified = json.loads((folder / 'checkpoint_verification.json').read_text(encoding='utf-8'))
-        if (verified['experiment'] != experiment or verified['seed'] != 42 or verified['labels'] != self.labels or
-                verified['checkpoint'] != checkpoint.name or evaluation['checkpoint'] != checkpoint.name or
-                verified['metadataSha256'] != digest(metadata_bytes) or
-                verified['checkpointSha256'] != digest(checkpoint.read_bytes())):
-            raise ValueError('Similar Signs checkpoint verification mismatch.')
+        checkpoint = folder / ('best_model.h5' if sign_only and not similar_signs_v2 else 'best_model.keras')
+        if sign_only or shape_motion_background:
+            verified = json.loads((folder / 'checkpoint_verification.json').read_text(encoding='utf-8'))
+            if (verified['experiment'] != experiment or verified['seed'] != 42 or verified['labels'] != self.labels or
+                    verified['checkpoint'] != checkpoint.name or evaluation['checkpoint'] != checkpoint.name or
+                    verified['metadataSha256'] != digest(metadata_bytes) or
+                    verified['checkpointSha256'] != digest(checkpoint.read_bytes())):
+                raise ValueError(f'{class_count}-sign checkpoint verification mismatch.')
         model = tf.keras.models.load_model(checkpoint, compile=False)
         if tuple(model.input_shape[1:]) != (40, 238) or model.output_shape[-1] != class_count:
             raise ValueError('Pilot checkpoint shape mismatch.')
@@ -278,17 +315,20 @@ class GraphP4DiagnosticRecognizer(P4CandidateRecognizer):
 
 def get_diagnostic_recognizer(mode: str = 'p4-candidate'):
     global _diagnostic_recognizer
-    if mode in LIVE_DIAGNOSTIC_MODELS:
+    if mode in LAB_EXPERIMENTS:
         from app.core.config import settings
         with _diagnostic_load_lock:
-            if mode not in _live_diagnostic_models:
+            if mode not in _lab_recognizers:
                 root = Path(settings.dataset_root) if settings.dataset_root else REPO.parent / 'SignSync Dataset'
                 if mode == 'lab-alphabet':
                     from app.alphabet_recognition import AlphabetDiagnosticRecognizer
-                    _live_diagnostic_models[mode] = AlphabetDiagnosticRecognizer(root)
+                    _lab_recognizers[mode] = AlphabetDiagnosticRecognizer(root)
+                elif mode == 'lab-stage2':
+                    from app.stage2_recognition import Stage2DiagnosticRecognizer
+                    _lab_recognizers[mode] = Stage2DiagnosticRecognizer(root)
                 else:
-                    _live_diagnostic_models[mode] = GraphP4DiagnosticRecognizer(SampleDiagnosticRecognizer(root, mode))
-            return _live_diagnostic_models[mode]
+                    _lab_recognizers[mode] = GraphP4DiagnosticRecognizer(SampleDiagnosticRecognizer(root, mode))
+            return _lab_recognizers[mode]
     if mode != 'p4-candidate':
         raise ValueError('Unknown diagnostic model.')
     candidate = get_recognizer('p4-candidate')
