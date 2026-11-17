@@ -4,6 +4,7 @@ from pathlib import Path
 MODEL_LAYOUT = {
     'gru_model_train_test_geometry_v3_recordings_v5': 'baseline/recordings_v5',
     'samples_43_signs_similarity_v1': 'current/samples_43_signs_similarity_v1',
+    'alphabet_26_j460_v2_seed43': 'current/alphabet_26_j460_v2/alphabet_26_j460_v2_seed43',
     'gru_model_train_test_geometry_v3_recordings_v6': 'candidates/recordings_v6',
     'gru_model_train_test_geometry_v3': 'archive/geometry_v3',
     'gru_model_train_test_handshape_v2': 'archive/handshape_v2',
@@ -16,6 +17,7 @@ MODEL_LAYOUT = {
 PREVIOUS_MODEL_LAYOUT = {
     'gru_model_train_test_geometry_v3_recordings_v5': 'current/recordings_v5',
     'samples_43_signs_similarity_v1': 'candidates/samples_43_signs_similarity_v1',
+    'alphabet_26_j460_v2_seed43': 'candidates/alphabet_26_j460_v2/alphabet_26_j460_v2_seed43',
 }
 for version in (2, 3, 4):
     MODEL_LAYOUT[f'gru_model_train_test_geometry_v3_recordings_v{version}'] = f'archive/recordings_v{version}'

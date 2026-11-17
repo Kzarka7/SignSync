@@ -1,5 +1,14 @@
 # Training from sign folders
 
+The exploratory `samples_55_signs_rest_idle_clip_60_15_25_v1` config freezes a
+stratified split of the 4,841 approved clips into 2,905 training, 726 validation,
+and 1,210 test clips. Its explicit `stratified-clip-exploratory` mode permits
+shared signers, sessions and collection batches across splits. Exact sample
+contents remain unique and identified source recordings cannot cross splits.
+Unknown or reencoded recording relationships remain unresolved. Use its results
+to assess clip-level performance. Metadata marks signer independence false.
+The default connected-group preparation still uses `splitGroups`.
+
 The source for new experiments is `SignSync Dataset/samples/<SIGN>/*.json`.
 Each JSON contains one complete sample in the existing collector export format.
 No participant folders or collector participant prompts are required.
@@ -24,6 +33,22 @@ For changed data, labels or splits, copy the experiment config with a new `name`
 All commands accept `--dataset-root`; put it before the subcommand for
 `sample_pipeline.py`. The `--prepared` argument takes the actual folder path.
 Legacy v5/v6 runners reproduce fixed experiments and do not discover new data.
+
+### 43 Similar Signs v2 experiment
+
+The v2 trainer uses the frozen seed-42 v1 preparation, including its labels,
+splits and scaler. The second command adds synthetic windows only to the training
+split. Each command writes a separate, versioned candidate and protects existing
+runs.
+
+```powershell
+.venv-gru/Scripts/python.exe scripts/train_similarity_v2.py
+.venv-gru/Scripts/python.exe scripts/train_similarity_v2.py --window-augmentation
+```
+
+In Recognition Lab, **43 Similar Signs (v2 experiment)** loads the first
+candidate. The run report in the dataset vault compares it with v1 and the
+window-augmentation run.
 
 ## Review and approval
 

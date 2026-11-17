@@ -47,6 +47,33 @@ def held_pose(sequence):
     return dict(sequence, frames=[dict(pose, timestamp=t) for t in range(0, 401, 25)])
 
 
+def similarity_views(root, rows, meta, order, *, pairs, static):
+    """Build the pilot's position, speed and held-pose views from training clips."""
+    rng = np.random.default_rng(42)
+    x, y, ids, kinds = [], [], [], []
+
+    def add(seq, label, kind):
+        x.append(raw_shape_motion_features(seq, order).astype(np.float32))
+        y.append(meta['labelToIndex'][label]); ids.append(seq['id']); kinds.append(kind)
+
+    for sid in meta['sequenceIds']['training']:
+        row = rows[sid]
+        label = row['label']
+        varied = label in pairs or rng.random() < .25
+        if not varied and label not in static:
+            continue
+        export, seq, checksum, _ = load_sample(root / row['sample_path'], label)
+        if checksum != row['sha256'] or seq['id'] != sid or export['featureSchema']['order'] != order:
+            raise ValueError(f'Approved source changed: {sid}')
+        if varied:
+            add(shifted(seq, dx=rng.uniform(-.10,.10), dy=rng.uniform(-.24,.24),
+                        time_scale=rng.uniform(.8,1.25)), label, 'height-and-speed')
+        hold = held_pose(seq) if label in static else None
+        if hold is not None:
+            add(shifted(hold, dy=rng.uniform(-.18,.18), drift=rng.uniform(-.05,.05)), label, 'steady-hold')
+    return np.stack(x), np.asarray(y), np.asarray(ids), np.asarray(kinds)
+
+
 def prepare(root):
     prepared = root / 'processed' / 'candidates'
     baseline = prepared / BASELINE
@@ -65,31 +92,10 @@ def prepare(root):
         raise ValueError('Baseline checkpoint verification failed')
     rows = read_csv(baseline / 'samples.csv')
     order = read_json(baseline / 'feature_schema.json')['order']
-    rng = np.random.default_rng(42)
-    x, y, ids, kinds = [], [], [], []
-
-    def add(seq, label, kind):
-        x.append(raw_shape_motion_features(seq, order).astype(np.float32))
-        y.append(meta['labelToIndex'][label]); ids.append(seq['id']); kinds.append(kind)
-
-    for sid in meta['sequenceIds']['training']:
-        row = rows[sid]
-        label = row['label']
-        varied = label in PAIRS or rng.random() < .25
-        if not varied and label not in STATIC:
-            continue
-        export, seq, checksum, _ = load_sample(root / row['sample_path'], label)
-        if checksum != row['sha256'] or seq['id'] != sid or export['featureSchema']['order'] != order:
-            raise ValueError(f'Approved source changed: {sid}')
-        if varied:
-            add(shifted(seq, dx=rng.uniform(-.10,.10), dy=rng.uniform(-.24,.24),
-                        time_scale=rng.uniform(.8,1.25)), label, 'height-and-speed')
-        hold = held_pose(seq) if label in STATIC else None
-        if hold is not None:
-            add(shifted(hold, dy=rng.uniform(-.18,.18), drift=rng.uniform(-.05,.05)), label, 'steady-hold')
+    x, y, ids, kinds = similarity_views(root, rows, meta, order, pairs=PAIRS, static=STATIC)
 
     with np.load(baseline / 'gru_data.npz', allow_pickle=False) as data:
-        x = (np.stack(x)-data['feature_mean'])/data['feature_std']
+        x = (x-data['feature_mean'])/data['feature_std']
     target.mkdir(parents=True, exist_ok=False)
     for name in meta['artifactSha256']:
         dest = target / name

@@ -8,10 +8,37 @@ from stage2_features import palm_relative_frames
 
 GEOMETRY_V3 = 'geometry-v3'
 SHAPE_MOTION_V1 = 'shape-motion-v1'
+SHAPE_MOTION_ROLL_V1 = 'shape-motion-torso-roll-v1'
 MAX_GAP_SECONDS = .2
 
 
-def raw_shape_motion_features(sequence, order, length=40):
+def align_torso_roll(raw, valid):
+    """Level the shoulders using one robust planar rotation for the window."""
+    shoulder_dx = raw[:, 8] - raw[:, 4]
+    shoulder_dy = raw[:, 9] - raw[:, 5]
+    visible = valid & (raw[:, 7] >= .5) & (raw[:, 11] >= .5)
+    visible &= np.hypot(shoulder_dx, shoulder_dy) >= .1
+    if not visible.any():
+        return raw
+
+    # Align the shoulder axis without turning mirrored observations upside down.
+    angles = np.arctan2(shoulder_dy[visible], shoulder_dx[visible])
+    roll = np.median((angles + np.pi / 2) % np.pi - np.pi / 2)
+    cosine, sine = np.cos(roll), np.sin(roll)
+    leveled = raw.copy()
+    for x, y in ((slice(0, 36, 4), slice(1, 36, 4)),
+                 (slice(37, 100, 3), slice(38, 100, 3)),
+                 (slice(101, 164, 3), slice(102, 164, 3))):
+        leveled[:, x] = raw[:, x] * cosine + raw[:, y] * sine
+        leveled[:, y] = raw[:, y] * cosine - raw[:, x] * sine
+    return leveled
+
+
+def raw_torso_roll_features(sequence, order, length=40):
+    return raw_shape_motion_features(sequence, order, length, correct_roll=True)
+
+
+def raw_shape_motion_features(sequence, order, length=40, *, correct_roll=False):
     frames = sequence['frames']
     raw = np.asarray([frame['features'] for frame in frames], dtype=float)
     time = np.asarray([frame['timestamp'] for frame in frames], dtype=float) / 1000
@@ -20,6 +47,8 @@ def raw_shape_motion_features(sequence, order, length=40):
     if not len(dt) or np.any(dt <= 0):
         raise ValueError('Shape and motion features require ordered frames')
     valid = np.asarray([frame['valid'] for frame in frames], dtype=bool)
+    if correct_roll:
+        raw = align_torso_roll(raw, valid)
     grid = np.linspace(0, time[-1], length)
     # Reject interpolation through a dropped observation or a long source gap.
     right = np.searchsorted(time, grid).clip(0, len(time) - 1)

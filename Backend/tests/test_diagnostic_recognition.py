@@ -12,14 +12,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.main import app
 from app.recognition import GraphP4DiagnosticRecognizer
 from app.alphabet_recognition import AlphabetDiagnosticRecognizer
+from app.stage2_recognition import Stage2DiagnosticRecognizer
 
 
 class DiagnosticRecognitionTests(unittest.TestCase):
-    def test_live_models_route_to_the_selected_diagnostic_checkpoint(self):
-        for mode in ('lab-alphabet', 'lab-signs43-similarity'):
-            recognizer_id = AlphabetDiagnosticRecognizer.model_id if mode == 'lab-alphabet' else mode + '-seed42-graph-diagnostics'
-            members = [('seed42',)]
-            supports_short_preview = False
+    def test_lab_models_route_to_the_selected_diagnostic_checkpoint(self):
+        for mode in ('lab-grouped', 'lab-clip', 'lab-alphabet', 'lab-stage2', 'lab-signs38',
+                     'lab-signs38-clip', 'lab-signs33', 'lab-signs43-numbers', 'lab-signs43-shape-motion',
+                     'lab-signs43-similarity', 'lab-signs43-similarity-v2', 'lab-signs32-similarity'):
+            recognizer_id = {'lab-alphabet': AlphabetDiagnosticRecognizer.model_id,
+                             'lab-stage2': Stage2DiagnosticRecognizer.model_id}.get(mode, mode + '-seed42-graph-diagnostics')
+            members = [(f'seed{s}',) for s in (42, 43, 44)] if mode == 'lab-stage2' else [('seed42',)]
+            supports_short_preview = mode in ('lab-signs43-shape-motion', 'lab-signs43-similarity',
+                                              'lab-signs43-similarity-v2', 'lab-signs32-similarity')
             recognizer = SimpleNamespace(members=members, model_id=recognizer_id, supports_short_preview=supports_short_preview)
             with patch('app.ws.translate.get_diagnostic_recognizer', return_value=recognizer) as load, TestClient(app) as client:
                 with client.websocket_connect('/ws/translate?model=' + mode + '&diagnostics=1') as socket:

@@ -8,6 +8,7 @@ from time import perf_counter
 import numpy as np
 
 from app.recognition import SignRequest, validate_capture, FEATURE_ORDER, raw_geometry_features, standardize_for_model
+from model_paths import model_artifact_folder
 
 
 def hand_features(frames):
@@ -142,7 +143,7 @@ class AlphabetDiagnosticRecognizer:
     def __init__(self, dataset_root: Path):
         import tensorflow as tf
         name = 'alphabet_26_j460_v2_seed43'
-        folder = dataset_root / 'models' / 'candidates' / 'alphabet_26_j460_v2' / name
+        folder = model_artifact_folder(dataset_root / 'models', name)
         checksums = json.loads((folder / 'artifact_checksums.json').read_text(encoding='utf-8'))
         for filename in ('best_model.keras', 'metadata.json', 'scalers.npz', 'labels.json'):
             with (folder / filename).open('rb') as handle:

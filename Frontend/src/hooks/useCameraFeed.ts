@@ -2,7 +2,8 @@ import { WASM_BASE_URL, UPPER_BODY_POSE_INDEX, createHandLandmarker, createPoseL
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { createCameraProfile, createRecentCameraTiming, type DetectionTiming } from "../services/cameraProfile";
 import { createDetectionInput, type DetectionInputWidth } from "../services/detectionInput";
-import type { PairedLandmarksResponse } from "../services/landmarks/pairedLandmarksWorker";
+import { HAND_OVERLAY_COLORS } from "../services/landmarks/handOverlayColors";
+import { createStreamingHandAssignment } from "../services/dataset/videoHandAssignment";
 import {
   FilesetResolver,
   HandLandmarker,
@@ -120,9 +121,10 @@ export interface UseCameraFeedOptions {
   detectionInputWidth?: DetectionInputWidth;
   landmarkMode?: LandmarkMode;
   trackLiveTiming?: boolean;
-  usePairedLandmarksWorker?: boolean;
+  trackOverlayPaint?: boolean;
   showHandLandmarks?: boolean;
   showPoseLandmarks?: boolean;
+  reviewHandTracking?: boolean;
   // Fired once per detection tick with synchronized hand + pose landmarks
   // for that frame. This is the hook for a future dataset collector to
   // record samples from - left undefined today since nothing consumes it
@@ -145,10 +147,10 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
   const benchmarkRef = useRef(createCameraProfile());
   const recentTimingRef = useRef(createRecentCameraTiming());
   const trackLiveTiming = options?.trackLiveTiming ?? false;
+  const trackOverlayPaint = options?.trackOverlayPaint ?? false;
   const landmarkMode = options?.landmarkMode ?? "both";
   const useHands = landmarkMode !== "pose";
   const usePose = landmarkMode !== "hands";
-  const useWorker = options?.usePairedLandmarksWorker === true && landmarkMode === "both";
   const profileInfoRef = useRef({
     capture: {} as { width?: number; height?: number; configuredFps?: number },
     detectionInput: {} as { width?: number; height?: number; mode?: string },
@@ -157,6 +159,11 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
   });
   const recordedProfileInfoRef = useRef<typeof profileInfoRef.current | null>(null);
   const benchmarkInfoRef = useRef<typeof profileInfoRef.current | null>(null);
+  const reportMode = useCallback((info: typeof profileInfoRef.current) => ({
+    ...info,
+    ...(info.landmarkMode === "pose" && { handDelegate: "disabled", handFallback: "" }),
+    ...(info.landmarkMode === "hands" && { poseDelegate: "disabled", poseFallback: "" }),
+  }), []);
   const startPerformanceProfile = useCallback(() => {
     recordedProfileInfoRef.current = null;
     profileRef.current.start();
@@ -168,11 +175,15 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
   }, []);
   const stopLandmarkBenchmark = useCallback(() => {
     benchmarkRef.current.stop();
+    const info = reportMode(benchmarkInfoRef.current ?? profileInfoRef.current);
     return JSON.stringify({
       format: "signsync-landmark-benchmark",
       version: 1,
-      ...(benchmarkInfoRef.current ?? profileInfoRef.current),
-      overlay: { ...overlayOptionsRef.current },
+      ...info,
+      overlay: {
+        hands: info.landmarkMode !== "pose" && overlayOptionsRef.current.hands,
+        pose: info.landmarkMode !== "hands" && overlayOptionsRef.current.pose,
+      },
       ...benchmarkRef.current.snapshot(),
       notes: [
         "Fresh hand FPS counts distinct video timestamps with at least one detected hand.",
@@ -180,19 +191,19 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
         "Compare foreground-only runs with matched delegates and actual capture settings.",
       ],
     });
-  }, []);
+  }, [reportMode]);
   const getPerformanceReport = useCallback(() => JSON.stringify({
     version: 2,
-    ...(recordedProfileInfoRef.current ?? profileInfoRef.current),
+    ...reportMode(recordedProfileInfoRef.current ?? profileInfoRef.current),
     ...profileRef.current.snapshot(),
     notes: [
       "Timings are wall-clock API-call durations, not GPU utilization or GPU-only execution times.",
       "GPU means the GPU delegate initialized; this does not identify the physical adapter or rule out software rendering.",
       "Configured FPS is a track setting. Browser-presented FPS is compositor cadence, not proof of distinct phone images or camera delivery rate.",
-      "Processing totals exclude waiting between callbacks and deferred painting. Worker totals include frame copying, messaging and waiting for the result.",
+      "Processing totals exclude waiting between callbacks and deferred painting.",
       "Hidden-tab runs are not comparable.",
     ],
-  }, null, 2), []);
+  }, null, 2), [reportMode]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -204,10 +215,10 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
   const getLiveTiming = useCallback(() => {
     const timing = recentTimingRef.current.snapshot(performance.now());
     return timing && { ...timing,
-      handDelegate: useHands && (useWorker || landmarkerRef.current) ? profileInfoRef.current.handDelegate : null,
-      poseDelegate: usePose && (useWorker || poseLandmarkerRef.current) ? profileInfoRef.current.poseDelegate : null,
+      handDelegate: useHands && landmarkerRef.current ? profileInfoRef.current.handDelegate : null,
+      poseDelegate: usePose && poseLandmarkerRef.current ? profileInfoRef.current.poseDelegate : null,
       inputWidth: profileInfoRef.current.detectionInput.width, inputHeight: profileInfoRef.current.detectionInput.height };
-  }, [useHands, usePose, useWorker]);
+  }, [useHands, usePose]);
   // MediaPipe requires each call to detectForVideo() on a given landmarker
   // to use a strictly increasing timestamp. video.currentTime resets to 0
   // every time the camera is restarted, but the landmarker instances above
@@ -230,8 +241,9 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
   const onFrameRef = useRef(options?.onFrame);
   onFrameRef.current = options?.onFrame;
   const overlayOptionsRef = useRef({ hands: true, pose: true });
-  overlayOptionsRef.current.hands = options?.showHandLandmarks ?? true;
-  overlayOptionsRef.current.pose = options?.showPoseLandmarks ?? true;
+  overlayOptionsRef.current.hands = useHands && (options?.showHandLandmarks ?? true);
+  overlayOptionsRef.current.pose = usePose && (options?.showPoseLandmarks ?? true);
+  const reviewHandTracking = options?.reviewHandTracking ?? false;
   const detectionInputWidthRef = useRef(options?.detectionInputWidth ?? null);
   detectionInputWidthRef.current = options?.detectionInputWidth ?? null;
   const prepareDetectionInputRef = useRef(createDetectionInput());
@@ -265,22 +277,22 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     let videoFrameId: number | null = null;
     let cancelled = false;
     let lastLightSample = 0;
-    let worker: Worker | null = null;
-    let workerFrame: FrameTiming | null = null;
-    let lastWorkerMediaTime: number | null = null;
+    const assignHands = reviewHandTracking ? createStreamingHandAssignment() : null;
     type FrameTiming = {
       started: number;
       timestamp: number;
       resizeMs: number;
-      frameCopyMs: number;
       mediaTime: number;
       presentedFrames?: number;
       hidden: boolean;
     };
     profileInfoRef.current.landmarkMode = landmarkMode;
-    profileInfoRef.current.inferenceThread = useWorker ? "worker" : "main";
 
     async function setup() {
+      setCameraReady(false);
+      setHandsDetected(false);
+      setPoseDetected(false);
+      latestFrameRef.current = null;
       setError(null);
       setModelError(null);
 
@@ -341,39 +353,6 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
           sampleCanvasRef.current.height = BRIGHTNESS_SAMPLE_SIZE;
         }
 
-        if (useWorker) {
-          // Release the inactive GPU contexts before the worker comparison.
-          landmarkerRef.current?.close();
-          landmarkerRef.current = null;
-          poseLandmarkerRef.current?.close();
-          poseLandmarkerRef.current = null;
-          Object.assign(profileInfoRef.current, {
-            handDelegate: "not initialized", poseDelegate: "not initialized", handFallback: "", poseFallback: "",
-          });
-          const { createPairedLandmarksWorker } = await import("../services/landmarks/pairedLandmarksWorker");
-          if (cancelled) return;
-          worker = createPairedLandmarksWorker();
-          worker.onmessage = ({ data }: MessageEvent<PairedLandmarksResponse>) => {
-            if (cancelled || !worker) return;
-            if (data.type === "error") {
-              workerFailed(data.message);
-            } else if (data.type === "ready") {
-              Object.assign(profileInfoRef.current, {
-                handDelegate: data.hands.delegate, handFallback: data.hands.fallback ?? "",
-                poseDelegate: data.pose.delegate, poseFallback: data.pose.fallback ?? "",
-              });
-              scheduleNextFrame();
-            } else if (workerFrame) {
-              const frame = workerFrame;
-              workerFrame = null;
-              completeFrame(frame, data.hands, data.pose, data.handMs, data.poseMs);
-              scheduleNextFrame();
-            }
-          };
-          worker.onerror = event => workerFailed(event.message || "Worker failed to load");
-          worker.onmessageerror = () => workerFailed("The browser could not read the landmark results");
-          return;
-        }
 
         const needsHands = useHands && !landmarkerRef.current;
         const needsPose = usePose && !poseLandmarkerRef.current;
@@ -411,10 +390,6 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
         scheduleNextFrame();
       } catch (err) {
         if (cancelled) return;
-        if (useWorker) {
-          workerFailed(String(err));
-          return;
-        }
         console.error("[useCameraFeed] Model loading error:", err);
         if (useHands) profileInfoRef.current.handDelegate = "unavailable";
         else profileInfoRef.current.poseDelegate = "unavailable";
@@ -422,16 +397,6 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
           `${useHands ? "Hand" : "Pose"} detection isn't available right now (the detection model failed to load). Your camera is still working.`,
         );
       }
-    }
-
-    function workerFailed(message: string) {
-      if (cancelled) return;
-      worker?.terminate();
-      worker = null;
-      workerFrame = null;
-      setHandsDetected(false);
-      setPoseDetected(false);
-      setModelError(`Landmark worker failed. ${message}`);
     }
 
     function scheduleNextFrame() {
@@ -452,10 +417,6 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       const video = videoRef.current;
       if (video.readyState >= 2) {
         const mediaTime = metadata?.mediaTime ?? video.currentTime;
-        if (useWorker && !metadata && mediaTime === lastWorkerMediaTime) {
-          scheduleNextFrame();
-          return;
-        }
         // Strictly increasing across the landmarkers' lifetime, even
         // across stop/start - see lastTimestampRef comment above. The same
         // timestamp is fed to both models so their results describe the
@@ -479,14 +440,9 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
           profileInfoRef.current.detectionInput = { width, height, mode };
         }
         const frame: FrameTiming = {
-          started: processingStart, timestamp, resizeMs, frameCopyMs: 0, mediaTime,
+          started: processingStart, timestamp, resizeMs, mediaTime,
           presentedFrames: metadata?.presentedFrames, hidden: document.hidden,
         };
-        if (useWorker) {
-          lastWorkerMediaTime = mediaTime;
-          if (worker) void sendWorkerFrame(frame, input);
-          return;
-        }
         const handStart = performance.now();
         const handResult = useHands ? landmarkerRef.current?.detectForVideo(input, timestamp) ?? null : null;
         const handEnd = performance.now();
@@ -499,23 +455,6 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       scheduleNextFrame();
     }
 
-    async function sendWorkerFrame(frame: FrameTiming, input: HTMLVideoElement | HTMLCanvasElement) {
-      const copyStart = performance.now();
-      let bitmap: ImageBitmap | null = null;
-      try {
-        bitmap = await createImageBitmap(input);
-        if (cancelled || !worker) return;
-        frame.frameCopyMs = performance.now() - copyStart;
-        workerFrame = frame;
-        worker.postMessage({ bitmap, timestamp: frame.timestamp }, [bitmap]);
-        bitmap = null; // Ownership moved to the worker.
-      } catch (error) {
-        workerFailed(String(error));
-      } finally {
-        bitmap?.close();
-      }
-    }
-
     function completeFrame(
       frame: FrameTiming,
       handResult: HandLandmarkerResult | null,
@@ -525,18 +464,21 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     ) {
       const video = videoRef.current;
       if (!video) return;
-      const handsDetected = !!handResult?.landmarks.length;
+      const sample = assignHands
+        ? assignHands(buildFrameSample(frame.timestamp, null, poseResult), handResult, video.videoWidth / video.videoHeight)
+        : buildFrameSample(frame.timestamp, handResult, poseResult);
+      const handCount = assignHands ? Number(!!sample.leftHand) + Number(!!sample.rightHand) : handResult?.landmarks.length ?? 0;
+      const handsDetected = handCount > 0;
       setHandsDetected(handsDetected);
       setPoseDetected(!!poseResult?.landmarks.length);
       const overlayStart = performance.now();
-      drawOverlay(handResult, poseResult);
+      drawOverlay(handResult, poseResult, assignHands ? sample : undefined);
       const overlayEnd = performance.now();
       if (frame.timestamp - lastLightSample >= 500) {
         updateLightLevel(video);
         lastLightSample = frame.timestamp;
       }
 
-      const sample = buildFrameSample(frame.timestamp, handResult, poseResult);
       latestFrameRef.current = sample;
       onFrameRef.current?.(sample);
       const completedAt = performance.now();
@@ -548,20 +490,21 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       if (benchmarkRef.current.isActive() && !benchmarkInfoRef.current) {
         benchmarkInfoRef.current = { ...profileInfoRef.current, capture: { ...profileInfoRef.current.capture } };
       }
-      const handCount = handResult?.landmarks.length ?? 0;
       const timing: DetectionTiming = {
         handMs, poseMs, overlayMs, resizeMs: frame.resizeMs, totalMs, completedAt,
         otherMs: totalMs - handMs - poseMs - overlayMs - frame.resizeMs,
         presentedFrames: frame.presentedFrames,
         hidden: frame.hidden || document.hidden,
-        frameCopyMs: frame.frameCopyMs, mediaTime: frame.mediaTime, handsDetected,
+        mediaTime: frame.mediaTime, handsDetected,
         handCount,
-        singleHandSide: handCount === 1 ? displayHandSide(handResult?.handedness?.[0]?.[0]?.categoryName) : undefined,
+        singleHandSide: handCount === 1
+          ? assignHands ? (sample.leftHand ? "Right" : "Left") : displayHandSide(handResult?.handedness?.[0]?.[0]?.categoryName)
+          : undefined,
       };
       profileRef.current.add(timing);
       benchmarkRef.current.add(timing);
       if (trackLiveTiming) recentTimingRef.current.add(timing);
-      if (benchmarkRef.current.isActive() && !timing.hidden && (overlayOptionsRef.current.hands || overlayOptionsRef.current.pose)) {
+      if ((trackOverlayPaint || benchmarkRef.current.isActive()) && !timing.hidden && (overlayOptionsRef.current.hands || overlayOptionsRef.current.pose)) {
         requestAnimationFrame(() => requestAnimationFrame(() => {
           if (!cancelled && !document.hidden) timing.overlayPaintOpportunityMs = performance.now() - frame.started;
         }));
@@ -574,6 +517,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     function drawOverlay(
       handResult: HandLandmarkerResult | null,
       poseResult: PoseLandmarkerResult | null,
+      assigned?: LandmarkFrameSample,
     ) {
       const canvas = canvasRef.current;
       const video = videoRef.current;
@@ -623,14 +567,20 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
         }
       }
 
-      if (!hands || !handResult) return;
-      // Match Matplotlib's tab:blue and tab:orange in compare_landmarks.py.
-      const leftColor = "#1F77B4";
-      const rightColor = "#FF7F0E";
-      for (const [index, hand] of handResult.landmarks.entries()) {
-        const side = displayHandSide(handResult.handedness?.[index]?.[0]?.categoryName);
+      if (!hands) return;
+      // Review swaps the display colors. Recognition uses the assigned
+      // anatomical slots expected by the current checkpoints.
+      const leftColor = assigned ? HAND_OVERLAY_COLORS.left : "#1F77B4";
+      const rightColor = assigned ? HAND_OVERLAY_COLORS.right : "#FF7F0E";
+      const displayHands = assigned
+        ? [[assigned.rightHand, "Left"], [assigned.leftHand, "Right"]] as const
+        : handResult?.landmarks.map((hand, index) => [hand, displayHandSide(handResult.handedness?.[index]?.[0]?.categoryName)] as const) ?? [];
+      for (const [hand, side] of displayHands) {
+        if (!hand) continue;
         ctx.strokeStyle = side === "Left" ? leftColor : side === "Right" ? rightColor : "#FFFFFF";
-        ctx.fillStyle = side === "Left" ? rightColor : side === "Right" ? leftColor : "#FFE83B";
+        ctx.fillStyle = assigned
+          ? ctx.strokeStyle
+          : side === "Left" ? rightColor : side === "Right" ? leftColor : "#FFE83B";
         ctx.lineWidth = 4;
 
         for (const [start, end] of HAND_CONNECTIONS) {
@@ -693,8 +643,6 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     // close landmarkerRef - see the dedicated unmount-only effect below.
     return () => {
       cancelled = true;
-      worker?.terminate();
-      worker = null;
       profileRef.current.stop();
       benchmarkRef.current.stop();
       recentTimingRef.current.clear();
@@ -707,7 +655,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       const canvas = canvasRef.current;
       if (canvas) canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
     };
-  }, [enabled, trackLiveTiming, landmarkMode, useHands, usePose, useWorker]);
+  }, [enabled, trackLiveTiming, trackOverlayPaint, landmarkMode, useHands, usePose, reviewHandTracking]);
 
   // Full-unmount-only cleanup: release both MediaPipe models.
   useEffect(() => {

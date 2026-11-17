@@ -29,6 +29,7 @@ test('camera modes load and run only the selected detectors, even after both are
     navigator: { mediaDevices: { getUserMedia: async () => stream } },
     document: { hidden: false, createElement: () => ({ getContext: () => null }) },
     performance: { now: () => ++now },
+    requestAnimationFrame: () => 1,
   })
   harness.render().videoRef.current = {
     videoWidth: 1280, videoHeight: 720, readyState: 2, play: async () => {},
@@ -36,13 +37,15 @@ test('camera modes load and run only the selected detectors, even after both are
     cancelVideoFrameCallback() { nextFrame = null },
   }
 
-  async function run(mode, expected) {
+  async function run(mode, expected, keepCameraOn = false) {
     landmarkMode = mode
     detected.length = 0
-    harness.render().toggleCamera()
+    const current = harness.render()
+    if (!current.enabled) current.toggleCamera()
     harness.render()
     await new Promise(resolve => setImmediate(resolve))
-    nextFrame(now, { presentedFrames: 1 })
+    harness.render().startLandmarkBenchmark()
+    nextFrame(now, { presentedFrames: 1, mediaTime: 1 })
     const feed = harness.render()
     assert.deepEqual(detected, expected)
     assert.equal(feed.handsDetected, expected.includes('hands'))
@@ -50,79 +53,81 @@ test('camera modes load and run only the selected detectors, even after both are
     assert.equal(feed.getLiveTiming().handDelegate, feed.handsDetected ? 'GPU' : null)
     assert.equal(feed.getLiveTiming().latest.singleHandSide, feed.handsDetected ? 'Right' : undefined)
     assert.equal(feed.getLiveTiming().poseDelegate, feed.poseDetected ? 'GPU' : null)
-    feed.toggleCamera()
-    harness.render()
-    assert.equal(feed.getLiveTiming(), null)
+    const report = JSON.parse(feed.stopLandmarkBenchmark())
+    assert.equal(report.landmarkMode, mode ?? 'both')
+    assert.equal(report.handDelegate, expected.includes('hands') ? 'GPU' : 'disabled')
+    assert.equal(report.poseDelegate, expected.includes('pose') ? 'GPU' : 'disabled')
+    assert.deepEqual(report.overlay, { hands: expected.includes('hands'), pose: expected.includes('pose') })
+    if (!keepCameraOn) {
+      feed.toggleCamera()
+      harness.render()
+      assert.equal(feed.getLiveTiming(), null)
+    }
   }
 
   await run('pose', ['pose'])
   assert.deepEqual(loaded, ['pose'])
   await run('hands', ['hands'])
   assert.deepEqual(loaded, ['pose', 'hands'])
-  await run(undefined, ['hands', 'pose'])
-  await run('pose', ['pose'])
+  await run(undefined, ['hands', 'pose'], true)
+  await run('pose', ['pose'], true)
   await run('hands', ['hands'])
   assert.deepEqual(loaded, ['pose', 'hands'])
   harness.unmount()
 })
 
-test('worker delivers one paired observation per submitted frame and ignores results after stop', async () => {
-  let nextFrame, now = 1000
-  const sent = [], observations = []
-  let terminated = false
-  const worker = {
-    postMessage(data, transfer) { sent.push({ data, transfer }) },
-    terminate() { terminated = true },
-  }
-  const bitmap = { close() {} }
-  const track = { stop() {}, getSettings: () => ({}) }
-  const stream = { getTracks: () => [track], getVideoTracks: () => [track] }
+test('review-style camera overlay swaps colors while recognition receives the stable hand slot', async () => {
+  let nextFrame, now = 1000, side = 'Right'
+  const points = Array.from({ length: 21 }, () => ({ x: .4, y: .5, z: 0 }))
+  const samples = [], fills = [], paintCallbacks = []
+  const context = { clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, arc() {}, stroke() {},
+    fill() { fills.push(this.fillStyle) } }
+  const stream = { getTracks: () => [], getVideoTracks: () => [] }
   const root = path.join(__dirname, '../src')
   const harness = hookHarness(path.join(root, 'hooks/useCameraFeed.ts'), 'useCameraFeed', name => {
-    if (name === '@mediapipe/tasks-vision') return {}
-    if (name.endsWith('/pairedLandmarksWorker')) return { createPairedLandmarksWorker: () => worker }
+    if (name === '@mediapipe/tasks-vision') return { FilesetResolver: { forVisionTasks: async () => ({}) } }
     if (name.endsWith('/visionRuntime')) return {
-      buildFrameSample: (timestamp, hands, pose) => ({ timestamp, hands, pose }),
+      createHandLandmarker: async () => ({ detectForVideo: () => ({ landmarks: [points], handedness: [[{ categoryName: side, score: .99 }]] }), close() {} }),
+      buildFrameSample: timestamp => ({ timestamp, leftHand: null, rightHand: null, pose: null }),
     }
     return load(path.resolve(root, 'hooks', name + '.ts'))
-  }, () => [{ usePairedLandmarksWorker: true, trackLiveTiming: true, onFrame: frame => observations.push(frame) }], {
+  }, () => [{ landmarkMode: 'hands', reviewHandTracking: true, trackLiveTiming: true, trackOverlayPaint: true,
+    onFrame: frame => samples.push(frame) }], {
     navigator: { mediaDevices: { getUserMedia: async () => stream } },
     document: { hidden: false, createElement: () => ({ getContext: () => null }) },
     performance: { now: () => ++now },
-    createImageBitmap: async () => bitmap,
+    requestAnimationFrame: callback => paintCallbacks.push(callback),
   })
-  harness.render().videoRef.current = {
-    videoWidth: 1280, videoHeight: 720, readyState: 2, play: async () => {},
-    requestVideoFrameCallback(callback) { nextFrame = callback; return 1 },
-    cancelVideoFrameCallback() { nextFrame = null },
-  }
-  harness.render().toggleCamera()
-  harness.render()
+  const feed = harness.render()
+  feed.videoRef.current = { videoWidth: 640, videoHeight: 480, readyState: 2, play: async () => {},
+    requestVideoFrameCallback(callback) { nextFrame = callback; return 1 }, cancelVideoFrameCallback() {} }
+  feed.canvasRef.current = { width: 640, height: 480, getContext: () => context }
+  feed.toggleCamera(); harness.render()
   await new Promise(resolve => setImmediate(resolve))
-  worker.onmessage({ data: { type: 'ready', hands: { delegate: 'GPU' }, pose: { delegate: 'GPU' } } })
-  const capture = nextFrame
-  nextFrame = null
-  capture(now, { mediaTime: .1, presentedFrames: 1 })
-  await new Promise(resolve => setImmediate(resolve))
-  assert.equal(sent.length, 1)
-  assert.equal(sent[0].data.bitmap, bitmap)
-  assert.equal(sent[0].transfer[0], bitmap)
-  assert.equal(nextFrame, null)
-  assert.equal(observations.length, 0)
+  nextFrame(now, { mediaTime: .033, presentedFrames: 1 })
+  assert.equal(paintCallbacks.length, 1)
+  paintCallbacks.shift()()
+  assert.equal(paintCallbacks.length, 1)
+  paintCallbacks.shift()()
+  assert.ok(feed.getLiveTiming().latest.overlayPaintOpportunityMs > 0)
 
-  const hands = { landmarks: [[]] }, pose = { landmarks: [[]] }
-  const result = { data: { type: 'result', hands, pose, handMs: 30, poseMs: 15 } }
-  worker.onmessage(result)
-  assert.equal(observations.length, 1)
-  assert.equal(observations[0].timestamp, sent[0].data.timestamp)
-  assert.equal(observations[0].hands, hands)
-  assert.equal(observations[0].pose, pose)
-  assert.equal(typeof nextFrame, 'function')
-
-  harness.render().toggleCamera()
-  harness.render()
-  assert.equal(terminated, true)
-  worker.onmessage(result)
-  assert.equal(observations.length, 1)
+  feed.startLandmarkBenchmark()
+  side = 'Left'; now += 33
+  nextFrame(now, { mediaTime: .066, presentedFrames: 2 })
+  assert.equal(paintCallbacks.length, 1)
+  paintCallbacks.shift()()
+  assert.equal(paintCallbacks.length, 1)
+  paintCallbacks.shift()()
+  const report = JSON.parse(feed.stopLandmarkBenchmark())
+  assert.equal(report.completedCallbacks, 1)
+  assert.equal(report.benchmark.callbackToOverlayPaintOpportunityMs.count, 1)
+  assert.equal(samples.length, 2)
+  assert.ok(samples.every(sample => sample.rightHand === points && sample.leftHand === null))
+  assert.equal(fills.length, 42)
+  assert.ok(fills.every(color => color === '#22c55e'))
+  assert.equal(harness.render().getLiveTiming().latest.singleHandSide, 'Left')
+  now += 33
+  nextFrame(now, { mediaTime: .099, presentedFrames: 3 })
+  assert.equal(paintCallbacks.length, 1)
   harness.unmount()
 })

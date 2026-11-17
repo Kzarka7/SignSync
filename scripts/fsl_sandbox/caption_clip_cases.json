@@ -1,0 +1,7 @@
+{
+  "cases": [
+    {"id": "single-label-phrase", "clips": ["5d28be2b-59cb-4de1-9fa1-0907fb065476"]},
+    {"id": "demo-compound", "clips": ["06d07062-5a44-4193-b91b-f598fcddf26c", "09baa31c-7392-401d-a8a8-89971e1ae41c"]},
+    {"id": "demo-syntax", "clips": ["1726c5ed-332a-476c-a29b-16b34f650ad0", "03d79eed-8718-4c2d-9797-033bbec04cc4"]}
+  ]
+}

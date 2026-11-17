@@ -1,0 +1,17 @@
+{
+  "cases": [
+    {"id": "single-label-phrase", "labels": ["GOOD_MORNING"], "expected": {"status": "lexical", "caption": "Good morning"}},
+    {"id": "gratitude", "labels": ["THANK_YOU"], "expected": {"status": "lexical", "caption": "Thank you"}},
+    {"id": "compound", "labels": ["FAMILY", "FRIEND"], "expected": {"status": "compound", "caption": "Family friend"}},
+    {"id": "different-order", "labels": ["FRIEND", "FAMILY"], "expected": {"status": "fallback", "caption": null}},
+    {"id": "reorder", "labels": ["WAIT", "PLEASE"], "expected": {"status": "syntax", "caption": "Please wait."}},
+    {"id": "time-reorder", "labels": ["TODAY", "WAIT", "PLEASE"], "expected": {"status": "syntax", "caption": "Please wait today."}},
+    {"id": "repetition", "labels": ["WAIT", "WAIT"], "expected": {"status": "fallback", "caption": null}},
+    {"id": "uncertain-gap", "labels": ["WAIT", null, "PLEASE"], "expected": {"status": "fallback", "reason": "uncertain-sign"}},
+    {"id": "unhandled-negation", "labels": ["NO", "WAIT", "PLEASE"], "expected": {"status": "fallback", "caption": null}},
+    {"id": "first-utterance", "labels": ["WAIT"], "expected": {"status": "fallback", "caption": null}},
+    {"id": "second-utterance", "labels": ["PLEASE"], "expected": {"status": "fallback", "caption": null}},
+    {"id": "outside-vocabulary", "labels": ["UNKNOWN", "PLEASE"], "expected": {"status": "fallback", "reason": "unknown-label"}},
+    {"id": "empty", "labels": [], "expected": {"status": "fallback", "reason": "no-signs"}}
+  ]
+}

@@ -21,10 +21,22 @@ function setup(mode = 'p4-candidate') {
   return { client: exports.createDiagnosticPredictor(mode), socket, timers }
 }
 
-test('live models verify their own checkpoint identity and reject the other model', async () => {
+test('lab selections verify their own checkpoint identity and reject the other model', async () => {
   for (const [mode, identity, otherModel] of [
-    ['lab-signs43-similarity', 'lab-signs43-similarity-seed42-graph-diagnostics', model],
+    ['lab-grouped', 'lab-grouped-seed42-graph-diagnostics', model],
+    ['lab-clip', 'lab-clip-seed42-graph-diagnostics', model],
+    ['lab-signs38', 'lab-signs38-seed42-graph-diagnostics', 'lab-clip-seed42-graph-diagnostics'],
+    ['lab-signs38-clip', 'lab-signs38-clip-seed42-graph-diagnostics', 'lab-signs38-seed42-graph-diagnostics'],
+    ['lab-signs33', 'lab-signs33-seed42-graph-diagnostics', 'lab-signs38-clip-seed42-graph-diagnostics'],
+    ['lab-signs43-numbers', 'lab-signs43-numbers-seed42-graph-diagnostics', 'lab-signs33-seed42-graph-diagnostics'],
+    ['lab-signs43-shape-motion', 'lab-signs43-shape-motion-seed42-graph-diagnostics', 'lab-signs43-numbers-seed42-graph-diagnostics'],
+    ['lab-signs43-similarity', 'lab-signs43-similarity-seed42-graph-diagnostics', 'lab-signs43-shape-motion-seed42-graph-diagnostics'],
+    ['lab-signs43-similarity-v2', 'lab-signs43-similarity-v2-seed42-graph-diagnostics', 'lab-signs43-similarity-seed42-graph-diagnostics'],
+    ['lab-signs75-multi-batch', 'lab-signs75-multi-batch-seed42-graph-diagnostics', 'lab-signs43-similarity-seed42-graph-diagnostics'],
+    ['lab-signs32-standalone', 'lab-signs32-standalone-seed42-graph-diagnostics', 'lab-signs75-multi-batch-seed42-graph-diagnostics'],
     ['lab-alphabet', 'lab-alphabet-j460-v2-seed43-graph-diagnostics', model],
+    ['lab-stage2', 'lab-stage2-rerun-20261109-seeds42-43-44-no-hold-graph-diagnostics',
+      'lab-stage2-rerun-20261109-seeds42-43-44-graph-diagnostics'],
   ]) {
     const { client, socket } = setup(mode)
     const loading = client.connect()

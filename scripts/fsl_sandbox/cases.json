@@ -1,0 +1,20 @@
+{
+  "cases": [
+    {
+      "id": "multiword-labels",
+      "clips": ["5d28be2b-59cb-4de1-9fa1-0907fb065476", "143e59a0-1f14-4842-bbaa-5d8bf4b4e290"]
+    },
+    {
+      "id": "similar-signs",
+      "clips": ["a4edefb9-dd74-4795-bb4d-d11b71f0973a", "0be2d409-3631-438b-811c-9594a4d37116", "04a0860a-5069-40c8-9238-a86a5e168727", "a5233ec4-6a80-4dc2-91bc-39b335d2134b"]
+    },
+    {
+      "id": "repeated-label",
+      "clips": ["1726c5ed-332a-476c-a29b-16b34f650ad0", "2197bf3f-4a89-443b-9a8d-ecb3db7f534a"]
+    },
+    {
+      "id": "input-order",
+      "clips": ["cc5c9147-7e6a-4527-90ea-b6a541ca7a5d", "1f18bc7b-7884-4445-9c3c-c7e89ae21394"]
+    }
+  ]
+}

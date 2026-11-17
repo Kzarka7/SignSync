@@ -1,0 +1,14 @@
+{
+  "cases": [
+    {"id": "lexical-display", "labels": ["GOOD_MORNING"], "expected": {"status": "lexical", "caption": "Good morning"}},
+    {"id": "existing-compound", "labels": ["FAMILY", "FRIEND"], "expected": {"status": "compound", "caption": "Family friend"}},
+    {"id": "exact-rule-before-template", "labels": ["TODAY", "WAIT", "PLEASE"], "expected": {"status": "syntax", "caption": "Please wait today."}},
+    {"id": "future-time-template", "labels": ["TOMORROW", "WAIT", "PLEASE"], "expected": {"status": "template", "caption": "Please wait tomorrow."}},
+    {"id": "past-time-outside-template", "labels": ["YESTERDAY", "WAIT", "PLEASE"], "expected": {"status": "fallback", "caption": "Yesterday · wait · please"}},
+    {"id": "negative-cue-preserved", "labels": ["NO", "WAIT", "PLEASE"], "expected": {"status": "fallback", "caption": "No · wait · please"}},
+    {"id": "duplicate-request", "events": [{"label": "WAIT", "requestId": "a"}, {"label": "WAIT", "requestId": "a"}, {"label": "PLEASE", "requestId": "b"}], "expected": {"status": "syntax", "caption": "Please wait."}},
+    {"id": "distinct-requests", "events": [{"label": "WAIT", "requestId": "a"}, {"label": "WAIT", "requestId": "b"}, {"label": "PLEASE", "requestId": "c"}], "expected": {"status": "fallback", "caption": "Wait · wait · please"}},
+    {"id": "no-dedup-without-evidence", "labels": ["WAIT", "WAIT", "PLEASE"], "expected": {"status": "fallback", "caption": "Wait · wait · please"}},
+    {"id": "uncertain-gap", "labels": ["WAIT", null, "PLEASE"], "expected": {"status": "fallback", "caption": null, "reason": "uncertain-sign"}}
+  ]
+}

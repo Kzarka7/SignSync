@@ -13,6 +13,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [settingsUnavailable, setSettingsUnavailable] = useState(false)
   const [recognition, setRecognition] = useState(getRecognitionSettings)
+  const [acceptanceDraft, setAcceptanceDraft] = useState<string | null>(null)
 
   useEffect(() => {
     getSettings().then(setSettings).catch(() => setSettingsUnavailable(true))
@@ -23,6 +24,14 @@ export default function SettingsPage() {
     const next = { ...settings, ...partial }
     setSettings(next) // optimistic update
     updateSettings(partial)
+  }
+
+  function commitAcceptanceSpeed(value: number) {
+    const { min, max } = RECOGNITION_SETTING_LIMITS.acceptanceMs
+    if (Number.isInteger(value) && value >= min && value <= max) {
+      setRecognition(updateRecognitionSettings({ acceptanceMs: value }))
+    }
+    setAcceptanceDraft(null)
   }
 
   return (
@@ -37,7 +46,7 @@ export default function SettingsPage() {
             <Card className="space-y-4">
               <div>
                 <h2 id="recognition-settings-heading" className="text-lg font-semibold text-ink">Recognition</h2>
-                <p className="text-sm text-text-2">Applies to Live Conversation when you start a new run.</p>
+                <p className="text-sm text-text-2">Applies to Recognition Lab and Live Conversation when you start a new run.</p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block min-w-0 space-y-1 text-sm">
@@ -55,21 +64,34 @@ export default function SettingsPage() {
                     onChange={event => setRecognition(updateRecognitionSettings({ minimumConfidence: event.currentTarget.valueAsNumber }))} />
                   <span id="recognition-confidence-help" className="block text-xs text-text-2">Each model’s own acceptance rules also apply.</span>
                 </label>
-                <label className="block min-w-0 space-y-1 text-sm">
-                  <span className="flex flex-wrap justify-between gap-x-2 font-semibold">
-                    <span>Acceptance speed</span>
+                <div className="min-w-0 space-y-1 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 font-semibold">
+                    <label htmlFor="recognition-speed-slider">Acceptance speed</label>
                     <span className="inline-flex items-center gap-2 tabular-nums">
                       {recognition.acceptanceMs === DEFAULT_RECOGNITION_SETTINGS.acceptanceMs && <span className="text-xs font-normal text-text-2">Default</span>}
-                      {recognition.acceptanceMs} ms
+                      <input type="number" {...RECOGNITION_SETTING_LIMITS.acceptanceMs}
+                        aria-label="Acceptance speed in milliseconds"
+                        aria-describedby="recognition-speed-help"
+                        className="w-20 rounded border bg-transparent px-2 py-1 text-right"
+                        value={acceptanceDraft ?? recognition.acceptanceMs}
+                        onChange={event => setAcceptanceDraft(event.currentTarget.value)}
+                        onBlur={event => commitAcceptanceSpeed(event.currentTarget.valueAsNumber)}
+                        onKeyDown={event => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            event.currentTarget.blur()
+                          }
+                        }} />
+                      <span aria-hidden="true">ms</span>
                     </span>
-                  </span>
-                  <input type="range" {...RECOGNITION_SETTING_LIMITS.acceptanceMs}
-                    aria-label="Acceptance speed" aria-valuetext={`${recognition.acceptanceMs} milliseconds`}
+                  </div>
+                  <input id="recognition-speed-slider" type="range" {...RECOGNITION_SETTING_LIMITS.acceptanceMs}
+                    aria-valuetext={`${recognition.acceptanceMs} milliseconds`}
                     aria-describedby="recognition-speed-help" className="block w-full accent-signal"
                     value={recognition.acceptanceMs}
-                    onChange={event => setRecognition(updateRecognitionSettings({ acceptanceMs: event.currentTarget.valueAsNumber }))} />
-                  <span id="recognition-speed-help" className="block text-xs text-text-2">Lower values require a shorter span of agreeing predictions.</span>
-                </label>
+                    onChange={event => commitAcceptanceSpeed(event.currentTarget.valueAsNumber)} />
+                  <span id="recognition-speed-help" className="block text-xs text-text-2">{RECOGNITION_SETTING_LIMITS.acceptanceMs.min}–{RECOGNITION_SETTING_LIMITS.acceptanceMs.max} ms. Lower values require a shorter span of agreeing predictions.</span>
+                </div>
               </div>
             </Card>
           </section>

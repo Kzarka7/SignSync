@@ -1,5 +1,6 @@
 import type { DatasetFrame } from '../../types/dataset'
 import type { LandmarkFrameSample, LandmarkPoint, UpperBodyPoseLandmarkName } from '../../types/landmarks'
+import { HAND_OVERLAY_COLORS } from '../landmarks/handOverlayColors'
 
 const HAND_EDGES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[0,17],[17,18],[18,19],[19,20]]
 const BODY_EDGES: [UpperBodyPoseLandmarkName, UpperBodyPoseLandmarkName][] = [
@@ -7,7 +8,7 @@ const BODY_EDGES: [UpperBodyPoseLandmarkName, UpperBodyPoseLandmarkName][] = [
   ['rightShoulder','rightElbow'], ['rightElbow','rightWrist'], ['leftShoulder','leftHip'],
   ['rightShoulder','rightHip'], ['leftHip','rightHip'],
 ]
-export const PREVIEW_COLORS = { left: '#22c55e', right: '#38bdf8', body: '#fbbf24' }
+export const PREVIEW_COLORS = { ...HAND_OVERLAY_COLORS, body: '#fbbf24' }
 
 // Use stored timestamps, not an assumed frame count/rate. Never bridge a gap.
 export function previewFrame(frames: DatasetFrame[], sourceSeconds: number, start: number, end: number, fps = 20) {
