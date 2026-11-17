@@ -4,6 +4,7 @@ const path = require('node:path')
 const load = require('../scripts/loadTypeScript.cjs')
 const { createRecognitionWindows, createActivityPolicy, createObservationTracking, CONTINUOUS_SETTINGS } = load(path.resolve('src/services/landmarks/continuousRecognition.ts'))
 const { createDiagnosticSession } = load(path.resolve('src/services/landmarks/recognitionDiagnostics.ts'))
+const { resampleLiveWindow } = load(path.resolve('src/services/landmarks/windowResampling.ts'))
 const { assessSignMotion } = load(path.resolve('src/services/landmarks/signMotionEvidence.ts'))
 
 function feature(t, valid = true, hands = true) {
@@ -371,6 +372,52 @@ test('150 ms trial keeps the 400 ms acceptance span and 1500 ms movement window'
   assert.equal(report.settings.confirmationMs, 400)
   assert.equal(report.transcript[0].decisionMs, 1950)
   assert.deepEqual(Array.from(report.rows.slice(0, 4), row => row.endMs), [1500, 1650, 1800, 1950])
+})
+
+test('wall-clock grid interpolates irregular observations without filling missing hands or long gaps', () => {
+  const frames = [0, 72, 134, 201, 275, 340, 405, 470, 535, 600, 850, 915, 981, 1045, 1110, 1175, 1240, 1305, 1400]
+    .map(time => {
+      const frame = feature(time, true, time < 275 || time >= 340)
+      frame.features[0] = time / 1000
+      frame.features[37] = frame.features[36] ? time / 1000 : 0
+      return frame
+    })
+  assert.equal(resampleLiveWindow(frames.slice(1)), null, 'a short observation span cannot cover a full window')
+  const result = resampleLiveWindow(frames)
+  assert.equal(result.length, 40)
+  assert.equal(result[0].timestamp, 100)
+  assert.equal(result.at(-1).timestamp, 1400)
+  assert.ok(Math.abs(result[0].features[37] - .1) < 1e-9)
+  assert.ok(result.slice(1).every((frame, i) => Math.abs(frame.timestamp - result[i].timestamp - 1000 / 30) < 1e-7))
+  assert.equal(result[5].features[36], 0)
+  assert.equal(result[5].features[37], 0)
+  assert.equal(result[18].valid, false)
+  assert.ok(result[18].features.every(value => value === 0))
+  assert.equal(result.at(-1).features[36], 1)
+})
+
+test('full Lab Camera gesture windows send 40 samples and retain real observations in diagnostics', async () => {
+  const requests = []
+  const session = createDiagnosticSession({ source: 'camera', name: 'wall clock', wallClockWindows: true,
+    recognitionMode: 'segmented', segmentAcceptance: 'confirmation',
+    onChange() {}, now: () => 0, id: () => 'grid',
+    predict: async request => { requests.push(request); return prediction('UNKNOWN', false) },
+  })
+  for (let t = 0; t <= 2300; t += 62) {
+    const frame = feature(t)
+    for (let j = 0; j < 21; j++) frame.features[37 + j * 3] = t / 1000
+    await session.observeFeatures(frame)
+    await new Promise(resolve => setImmediate(resolve))
+  }
+  const report = session.report()
+  assert.equal(report.windowSampling.windowMs, 1333)
+  assert.equal(requests[0].frames[1].timestamp - requests[0].frames[0].timestamp, 62,
+    'short gesture windows retain their native observation span')
+  const input = requests.find(({ frames }) => frames.length === 40)
+  assert.ok(input)
+  assert.equal(input.frames.at(-1).timestamp - input.frames[0].timestamp, 1300)
+  assert.ok(report.rows.some(row => row.modelInputFrameCount === 40 && row.frameCount !== 40))
+  assert.ok(report.frames.every(frame => frame.timestamp % 62 === 0))
 })
 
 test('two-of-three cannot bridge invalid tracking, stale predictions, or long evidence gaps', () => {

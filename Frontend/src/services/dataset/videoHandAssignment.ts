@@ -23,7 +23,7 @@ function wristDistance(a: LandmarkPoint, b: LandmarkPoint) {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
-function observationCost({ pose }: LandmarkFrameSample, assignment: Assignment, contact?: HandContact) {
+function observationCost(pose: LandmarkFrameSample['pose'], assignment: Assignment, contact?: HandContact) {
   return sides.reduce((cost, side, index) => {
     const hand = assignment[index]
     if (!hand) return cost
@@ -54,7 +54,7 @@ export function createStreamingHandAssignment() {
   let previous: Assignment = [undefined, undefined]
   let lastObserved = -Infinity
   let lastClose = -Infinity
-  return (sample: LandmarkFrameSample, result: HandLandmarkerResult | null, aspect: number): LandmarkFrameSample => {
+  return (sample: LandmarkFrameSample, result: HandLandmarkerResult | null, aspect: number, usePoseWrists = true): LandmarkFrameSample => {
     const [first, second] = readHandDetections(result)
     if (!first) {
       lastClose = -Infinity
@@ -71,7 +71,8 @@ export function createStreamingHandAssignment() {
     if (second) lastClose = proximity ? sample.timestamp : -Infinity
 
     const direct: Assignment = [first, second], swapped: Assignment = [second, first]
-    const cost = (option: Assignment) => observationCost(sample, option, contact) + transitionCost(previous, option, elapsed)
+    const pose = usePoseWrists ? sample.pose : null
+    const cost = (option: Assignment) => observationCost(pose, option, contact) + transitionCost(previous, option, elapsed)
     previous = cost(direct) <= cost(swapped) ? direct : swapped
     lastObserved = sample.timestamp
     return { ...sample, leftHand: previous[0]?.landmarks ?? null, rightHand: previous[1]?.landmarks ?? null }
@@ -99,7 +100,7 @@ export function assignVideoHands(observations: Observation[], contacts?: (HandCo
     if (!first) return []
     const options: [Assignment, Assignment] = [[first, second], [second, first]]
     const contact = contacts?.[index]
-    const costs: Costs = [observationCost(frame.raw, options[0], contact), observationCost(frame.raw, options[1], contact)]
+    const costs: Costs = [observationCost(frame.raw.pose, options[0], contact), observationCost(frame.raw.pose, options[1], contact)]
     return [{ index, frame, options, costs }]
   })
   if (!tracked.length) return frames

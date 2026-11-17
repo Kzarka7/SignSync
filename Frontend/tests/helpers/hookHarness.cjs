@@ -6,6 +6,7 @@ exports.hookHarness = function (file, exportName, imports, args = () => [], glob
   const slots = []; let cursor = 0, dirty = false, effects = [], result
   const same = (a, b) => a && b && a.length === b.length && a.every((x, i) => Object.is(x, b[i]))
   const react = {
+    memo(component) { return component },
     useState(initial) {
       const i = cursor++
       if (!slots[i]) slots[i] = { value: typeof initial === 'function' ? initial() : initial }

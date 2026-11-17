@@ -50,6 +50,10 @@ def raw_shape_motion_features(sequence, order, length=40, *, correct_roll=False)
     if correct_roll:
         raw = align_torso_roll(raw, valid)
     grid = np.linspace(0, time[-1], length)
+    # A uniformly sampled input already occupies the target grid. Retain the
+    # original timestamps so float roundoff cannot erase exact observed points.
+    if len(time) == length and np.allclose(time, grid, rtol=0, atol=1e-9):
+        grid = time
     # Reject interpolation through a dropped observation or a long source gap.
     right = np.searchsorted(time, grid).clip(0, len(time) - 1)
     left = np.where(time[right] == grid, right, np.maximum(right - 1, 0))
