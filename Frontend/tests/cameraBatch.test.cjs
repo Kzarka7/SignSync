@@ -74,6 +74,7 @@ function harness(boundary) {
   render()
   return {
     render, child, recorderOptions:()=>recorderOptions,
+    startLiveRecording() { recorder.isRecording = true; render() },
     method(value) { all(node=>node.type==='select' && ['video','live'].includes(node.props.value))[0].props.onChange({target:{value}});render() },
     capture(filename) {
       const camera = child('CameraVideoRecorder')
@@ -99,6 +100,12 @@ for (const boundary of [false, true]) {
     h.method('live');assert.equal(h.recorderOptions().hotkeysEnabled,true)
     h.source('Upload videos');assert.equal(h.recorderOptions().hotkeysEnabled,false)
     h.source('Camera');assert.equal(h.recorderOptions().hotkeysEnabled,true)
+    const previewFeed = h.child('CollectorCameraPreview').props.feed
+    assert.equal(previewFeed, h.child('CameraDiagnostics').props.feed)
+    h.startLiveRecording()
+    assert.equal(h.child('CollectorCameraPreview').props.feed, previewFeed, 'recording keeps the shared live overlay feed')
+    assert.equal(h.child('RecordingControls').props.isRecording, true)
+    assert.equal(h.child('CameraVideoRecorder'), undefined)
   })
   test(`${category} captures wait on the camera screen, retain labels/tasks and transfer only on Process all`, () => {
     const h = harness(boundary)
