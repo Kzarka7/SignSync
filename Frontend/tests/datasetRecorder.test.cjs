@@ -161,10 +161,11 @@ test('live collector exports exact samples that produce the same wall-clock grid
   const h = recorderHarness()
   h.render(); await new Promise(resolve => setImmediate(resolve))
   const recorder = h.render()
-  for (const key of ['decoupleVideoFrames', 'stridePairedPose', 'dynamicHandCapacity', 'relaxedHandTracking', 'reviewHandTracking']) {
+  for (const key of ['decoupleVideoFrames', 'stridePairedPose', 'reviewHandTracking']) {
     assert.equal(h.cameraOptions[key], true, key)
   }
   assert.equal(h.cameraOptions.gatePreviewHands ?? false, false)
+  assert.equal(h.cameraOptions.dynamicHandCapacity ?? false, false)
 
   const point = (x, y) => ({ x, y, z: 0, visibility: 1 })
   const pose = { nose: point(.5, .1), leftShoulder: point(.3, .3), rightShoulder: point(.7, .3),

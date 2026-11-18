@@ -232,7 +232,7 @@ export default function RecognitionLabPage() {
   const feed = useCameraFeed({
     ...OPTIMIZED_LIVE_CAMERA_OPTIONS,
     onFrame: onCameraFrame, trackLiveTiming: true, landmarkMode, showPoseLandmarks, detectionInputWidth,
-    trackOverlayPaint: true, gatePreviewHands: source === 'camera' && !running,
+    trackOverlayPaint: true,
   })
   const canRecognizeFromCamera = landmarkMode === 'both' && feed.cameraReady && feed.poseDetected && !feed.modelError
 
@@ -314,6 +314,7 @@ export default function RecognitionLabPage() {
       setBackend(verifiedBackend)
       const current = createDiagnosticSession({ source, ...LIVE_RECOGNITION_POLICY, ...confirmation, modelMode, name: source === 'video' ? file!.name : 'Continuous camera',
         wallClockWindows: source === 'camera',
+        poseGuidedOcclusion: source === 'camera',
         staticMotionCheck: supportsMotionEvidence,
         predict: request => client.predict(request),
         onWordBoundary: modelMode === 'lab-alphabet' ? () => {
