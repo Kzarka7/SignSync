@@ -509,6 +509,42 @@ test('intentional stop cannot become an inference failure when transport cancell
   assert.equal(session.state.rows.length, 0)
 })
 
+test('Lab Camera preserves the tracking revision through raised-wrist occlusion for up to 250 ms', async () => {
+  const session = createDiagnosticSession({ source: 'camera', poseGuidedOcclusion: true, name: 'occlusion',
+    onChange() {}, predict: async () => prediction('HELLO') })
+  const observe = async (t, hands = false, lowered = false, valid = true) => {
+    const frame = raw(t, hands, valid)
+    if (lowered) frame.pose.leftWrist.y = frame.pose.rightWrist.y = .95
+    await session.observe(frame)
+    return session.state.tracking
+  }
+  const initial = await observe(0, true)
+  for (const t of [50, 150, 300]) {
+    const missing = await observe(t)
+    assert.equal(missing.state, 'hands-missing')
+    assert.equal(missing.revision, initial.revision)
+  }
+  const expired = await observe(301)
+  assert.equal(expired.state, 'no-hands')
+  assert.equal(expired.revision, initial.revision + 1)
+  assert.equal((await observe(350)).revision, expired.revision)
+
+  const visible = await observe(400, true)
+  assert.equal((await observe(450)).revision, visible.revision)
+  assert.equal((await observe(700, true)).revision, visible.revision, 'recovery within grace preserves revision')
+  await observe(750)
+  const lowered = await observe(800, false, true)
+  assert.equal(lowered.state, 'no-hands')
+  assert.equal(lowered.revision, visible.revision + 1)
+  assert.equal((await observe(850)).state, 'no-hands', 'a raised wrist cannot restart grace until a hand is seen')
+  const seenAgain = await observe(900, true)
+  await observe(950)
+  const lostPose = await observe(1000, false, false, false)
+  assert.equal(lostPose.state, 'pose-lost')
+  assert.equal(lostPose.revision, seenAgain.revision + 1)
+  assert.equal((await observe(1400)).state, 'frame-gap')
+})
+
 test('no-hands IDLE requires sustained absence and valid shoulders, independent of body position', () => {
   for (const shoulderY of [.25, .65]) {
     const tracker = createObservationTracking()

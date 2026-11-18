@@ -241,15 +241,14 @@ test('decoupled camera inference uses the latest bitmap and releases every frame
   assert.equal(callbacks.size, 0)
 })
 
-test('paired Lab pose cadence controls preview idle and switches between reusable hand trackers', async () => {
-  let nextFrame, now = 1000, gatePreviewHands = true
-  let lowered = true, rightRaised = false, shoulderX = 0.25, tracked = true
-  let failSingle = false
-  const frames = [], poseCalls = [], handCalls = [], wristChecks = [], assignmentChecks = []
-  const handLimits = [], loadedLimits = [], closedLimits = []
+test('paired camera runs hands continuously and holds each overlay hand without changing raw samples', async () => {
+  let nextFrame, now = 1000, shoulderX = 0.25, tracked = true, detectedHands = 2
+  let loaded = 0, closed = 0, pointsDrawn = 0
+  const frames = [], poseCalls = [], handCalls = [], assignmentChecks = []
   const root = path.join(__dirname, '../src')
   const stream = { getTracks: () => [], getVideoTracks: () => [] }
   const posePoint = (x, y) => ({ x, y, z: 0, visibility: 1 })
+  const hand = Array.from({ length: 21 }, () => posePoint(0.4, 0.2))
   function visionHelper(name) {
     let args
     const environment = hookHarness(path.join(root, 'services/landmarks/visionRuntime.ts'), name, name =>
@@ -261,45 +260,46 @@ test('paired Lab pose cadence controls preview idle and switches between reusabl
   const harness = hookHarness(path.join(root, 'hooks/useCameraFeed.ts'), 'useCameraFeed', name => {
     if (name === '@mediapipe/tasks-vision') return { FilesetResolver: { forVisionTasks: async () => ({}) } }
     if (name.endsWith('/visionRuntime')) return {
-      createHandLandmarker: async (_fileset, report, _relaxed, numHands = 2) => {
-        loadedLimits.push(numHands)
+      createHandLandmarker: async (_fileset, report) => {
+        loaded++
         report('GPU')
         return { detectForVideo(_, timestamp) {
-          if (numHands === 1 && failSingle) throw Error('lost GPU context')
           handCalls.push(timestamp)
-          handLimits.push(numHands)
-          return { landmarks: [] }
-        }, close() { closedLimits.push(numHands) } }
+          return { landmarks: Array(detectedHands).fill(hand) }
+        }, close() { closed++ } }
       },
       createPoseLandmarker: async () => ({ detectForVideo(_, timestamp) {
         poseCalls.push(timestamp)
         const pose = Array.from({ length: 33 }, () => posePoint(0.5, 0.5))
         pose[11] = posePoint(shoulderX, 0.25)
         pose[12] = posePoint(0.75, 0.25)
-        pose[15] = posePoint(0.25, lowered ? 0.8 : 0.4)
-        pose[16] = posePoint(0.75, rightRaised ? 0.4 : 0.8)
+        pose[15] = posePoint(0.25, 0.8)
+        pose[16] = posePoint(0.75, 0.8)
         pose[23] = posePoint(0.25, 0.65)
         pose[24] = posePoint(0.75, 0.7)
         return { landmarks: tracked ? [pose] : [] }
       }, close() {} }),
       smoothPoseShoulders: visionHelper('smoothPoseShoulders'),
-      countRaisedPoseWrists: visionHelper('countRaisedPoseWrists'),
-      createHandCapacityController: visionHelper('createHandCapacityController'),
-      filterHandsByPoseWrist: (hand, pose) => { wristChecks.push(pose); return hand },
       buildFrameSample: (timestamp, _hand, pose) => ({ timestamp, pose: pose?.landmarks[0] ?? null }),
     }
     if (name.endsWith('/videoHandAssignment')) return { createStreamingHandAssignment: () =>
-      (sample, _hands, _aspect, usePoseWrists) => { assignmentChecks.push(usePoseWrists); return sample } }
+      (sample, result, _aspect, usePoseWrists) => {
+        assignmentChecks.push(usePoseWrists)
+        return { ...sample, leftHand: result.landmarks[0] ?? null, rightHand: result.landmarks[1] ?? null }
+      } }
     return load(path.resolve(root, 'hooks', name + '.ts'))
-  }, () => [{ stridePairedPose: true, gatePreviewHands, dynamicHandCapacity: true, relaxedHandTracking: true, reviewHandTracking: true,
+  }, () => [{ stridePairedPose: true, reviewHandTracking: true, showPoseLandmarks: false,
     trackLiveTiming: true, onFrame: sample => frames.push(sample) }], {
     navigator: { mediaDevices: { getUserMedia: async () => stream } },
     document: { hidden: false, createElement: () => ({ getContext: () => null }) },
-    performance: { now: () => ++now },
+    performance: { now: () => now },
     requestAnimationFrame: () => 1,
     console: { warn() {} },
   })
   const feed = harness.render()
+  const context = { clearRect() { pointsDrawn = 0 }, arc() { pointsDrawn++ }, beginPath() {},
+    moveTo() {}, lineTo() {}, stroke() {}, fill() {} }
+  feed.canvasRef.current = { getContext: () => context }
   feed.videoRef.current = {
     videoWidth: 1280, videoHeight: 720, readyState: 2, play: async () => {},
     requestVideoFrameCallback(fn) { nextFrame = fn; return 1 }, cancelVideoFrameCallback() {},
@@ -313,68 +313,54 @@ test('paired Lab pose cadence controls preview idle and switches between reusabl
 
   feed.toggleCamera(); harness.render(); await drain()
   assert.equal(frame(1000).pose[11].x, 0.25)
-  assert.equal(frame(1050).pose, frames[0].pose)
-  assert.deepEqual(poseCalls, [1001])
-  assert.deepEqual(handCalls, [], 'a fresh resting pose also gates hands on reused pose frames')
-  gatePreviewHands = false; harness.render()
-  frame(1100)
-  assert.deepEqual(handCalls, [1101], 'active recognition overrides preview gating without restarting pose cadence')
-  gatePreviewHands = true; harness.render()
+  assert.equal(pointsDrawn, 42)
+  detectedHands = 1
+  const single = frame(1050)
+  assert.equal(single.pose, frames[0].pose)
+  assert.equal(single.rightHand, null)
+  assert.equal(pointsDrawn, 42, 'only the canvas holds the missing hand')
+  detectedHands = 0
+  assert.equal(frame(1100).leftHand, null)
+  assert.equal(feed.getLatestFrame().rightHand, null)
+  assert.equal(feed.getLiveTiming().latest.handCount, 0)
+  assert.equal(pointsDrawn, 42)
   frame(1150)
+  assert.equal(pointsDrawn, 42, 'both hands are within their display hold')
 
-  lowered = false; shoulderX = 0.45
+  shoulderX = 0.45
   const refreshed = frame(1200)
   assert.equal(refreshed.pose[11].x, 0.35)
-  assert.equal(refreshed.pose[15].y, 0.4)
-  assert.deepEqual(handCalls, [1101, 1201], 'a raised wrist wakes hand inference on the pose refresh')
-  assert.deepEqual(poseCalls, [1001, 1201])
+  assert.equal(pointsDrawn, 21, 'the earlier dropout expires first')
+  assert.deepEqual(handCalls, [1000, 1050, 1100, 1150, 1200], 'hands run even when the pose wrists are lowered')
+  assert.deepEqual(poseCalls, [1000, 1200])
   assert.equal(frame(1250).pose, refreshed.pose)
+  assert.equal(pointsDrawn, 0, 'the hold never refreshes itself')
   assert.equal(feed.getLiveTiming().latest.poseMs, 0)
   assert.deepEqual(assignmentChecks, [true, false, false, false, true, false])
-  assert.equal(wristChecks.length, 2)
   const expired = frame(1600)
   assert.equal(expired.pose, null)
   assert.equal(handCalls.at(-1), expired.timestamp)
   frame(1650)
   tracked = false
   assert.equal(frame(1700).pose, null)
+  detectedHands = 1
   assert.equal(frame(1750).pose, null)
+  assert.equal(pointsDrawn, 21)
 
   feed.toggleCamera(); harness.render()
   feed.toggleCamera(); harness.render(); await drain()
-  tracked = true; lowered = true
+  tracked = true; detectedHands = 0
   feed.startLandmarkBenchmark()
   const restarted = frame(1800)
   assert.equal(restarted.pose[11].x, shoulderX)
-  assert.equal(handCalls.at(-1), restarted.timestamp, 'benchmark keeps hands active while resting')
+  assert.equal(handCalls.at(-1), restarted.timestamp)
+  assert.equal(pointsDrawn, 0, 'a camera restart clears the overlay hold')
   const report = JSON.parse(feed.stopLandmarkBenchmark())
   assert.equal(report.poseStride, 4)
-  assert.equal(report.dynamicHandCapacity, true)
-
-  lowered = false
-  const runThrough = (from, to) => { for (let i = from; i <= to; i++) frame(1800 + 50 * i) }
-  runThrough(1, 35)
-  assert.equal(handLimits.at(-1), 2, 'eight fresh one-wrist observations are insufficient')
-  runThrough(36, 36)
-  assert.equal(handLimits.at(-1), 1)
-  assert.equal(feed.getLiveTiming().latest.handCapacity, 1)
-  rightRaised = true
-  runThrough(37, 47)
-  assert.equal(handLimits.at(-1), 1, 'cached wrists do not advance the two-hand streak')
-  runThrough(48, 48)
-  assert.equal(handLimits.at(-1), 2)
-  rightRaised = false
-  runThrough(49, 84)
-  assert.equal(handLimits.at(-1), 1)
-  tracked = false
-  runThrough(85, 88)
-  assert.equal(handLimits.at(-1), 2, 'pose loss restores two-hand capacity')
-  tracked = true
-  failSingle = true
-  runThrough(89, 124)
-  assert.equal(handLimits.at(-1), 2, 'a one-hand inference failure retries with the two-hand tracker')
-  assert.deepEqual(loadedLimits, [2, 1], 'switches and camera restart reuse existing graphs')
-  assert.deepEqual(closedLimits, [1])
+  assert.equal(report.dynamicHandCapacity, false)
+  assert.equal(feed.getLiveTiming().latest.handCapacity, 2)
+  assert.equal(loaded, 1)
+  assert.equal(closed, 0)
   harness.unmount()
-  assert.deepEqual(closedLimits, [1, 2])
+  assert.equal(closed, 1)
 })

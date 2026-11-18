@@ -23,9 +23,7 @@ export const UPPER_BODY_POSE_INDEX: Record<UpperBodyPoseLandmarkName, number> = 
 
 type VisionFileset = Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>;
 export type PoseLandmarks = Pick<PoseLandmarkerResult, 'landmarks'>;
-export type HandCapacity = 1 | 2;
 const SHOULDER_VISIBILITY = 0.5;
-const WRIST_VISIBILITY = 0.65;
 
 function visiblePoint(point: LandmarkPoint | undefined, threshold: number): point is LandmarkPoint {
   return !!point && (point.visibility ?? 0) >= threshold && Number.isFinite(point.x) && Number.isFinite(point.y);
@@ -34,15 +32,13 @@ function visiblePoint(point: LandmarkPoint | undefined, threshold: number): poin
 export async function createHandLandmarker(
   fileset: VisionFileset,
   report: (delegate: string, fallback?: string) => void,
-  relaxedTracking = false,
-  numHands: HandCapacity = 2,
 ): Promise<HandLandmarker> {
   const options = {
     runningMode: "VIDEO" as const,
-    numHands,
-    minHandDetectionConfidence: relaxedTracking ? 0.45 : 0.5,
-    minHandPresenceConfidence: relaxedTracking ? 0.25 : 0.5,
-    minTrackingConfidence: relaxedTracking ? 0.30 : 0.5,
+    numHands: 2,
+    minHandDetectionConfidence: 0.5,
+    minHandPresenceConfidence: 0.5,
+    minTrackingConfidence: 0.5,
   };
   try {
     const model = await HandLandmarker.createFromOptions(fileset, {
@@ -65,36 +61,6 @@ export async function createHandLandmarker(
   }
 }
 
-export function filterHandsByPoseWrist(
-  result: HandLandmarkerResult | null,
-  poseResult: PoseLandmarks | null,
-  aspect: number,
-): HandLandmarkerResult | null {
-  const pose = poseResult?.landmarks[0];
-  if (!result?.landmarks.length || !pose || !Number.isFinite(aspect) || aspect <= 0) return result;
-
-  const { leftShoulder, rightShoulder, leftWrist, rightWrist } = UPPER_BODY_POSE_INDEX;
-  const distance = (a: LandmarkPoint, b: LandmarkPoint) => Math.hypot((a.x - b.x) * aspect, a.y - b.y);
-  const left = pose[leftShoulder], right = pose[rightShoulder];
-  if (!visiblePoint(left, SHOULDER_VISIBILITY) || !visiblePoint(right, SHOULDER_VISIBILITY)) return result;
-
-  const maxDistance = 0.25 * distance(left, right);
-  const wrists = [pose[leftWrist], pose[rightWrist]].filter(wrist => visiblePoint(wrist, WRIST_VISIBILITY));
-  if (!Number.isFinite(maxDistance) || maxDistance <= 0 || !wrists.length) return result;
-
-  const kept = result.landmarks.flatMap((hand, index) => wrists.some(wrist =>
-    hand[0] && distance(hand[0], wrist) <= maxDistance) ? [index] : []);
-  if (kept.length === result.landmarks.length) return result;
-
-  const handedness = kept.map(index => result.handedness[index]);
-  return {
-    landmarks: kept.map(index => result.landmarks[index]),
-    worldLandmarks: kept.map(index => result.worldLandmarks[index]),
-    handedness,
-    handednesses: handedness,
-  };
-}
-
 export function smoothPoseShoulders(previous: PoseLandmarks | null, fresh: PoseLandmarks | null): PoseLandmarks | null {
   const points = fresh?.landmarks[0];
   if (!points?.length) return null;
@@ -109,38 +75,6 @@ export function smoothPoseShoulders(previous: PoseLandmarks | null, fresh: PoseL
     smoothed[index] = { ...after, x: (before.x + after.x) / 2, y: (before.y + after.y) / 2, z: (before.z + after.z) / 2 };
   }
   return { landmarks: [smoothed] };
-}
-
-export function countRaisedPoseWrists(result: PoseLandmarks | null): 0 | HandCapacity | null {
-  const pose = result?.landmarks[0];
-  if (!pose) return null;
-  const { leftWrist, rightWrist, leftHip, rightHip } = UPPER_BODY_POSE_INDEX;
-  const hips = [pose[leftHip], pose[rightHip]];
-  const wrists = [pose[leftWrist], pose[rightWrist]];
-  if (![...hips, ...wrists].every(point => visiblePoint(point, WRIST_VISIBILITY))) return null;
-  const torsoBottom = Math.max(...hips.map(hip => hip.y));
-  const leftRaised = wrists[0].y <= torsoBottom, rightRaised = wrists[1].y <= torsoBottom;
-  return leftRaised && rightRaised ? 2 : leftRaised || rightRaised ? 1 : 0;
-}
-
-export function createHandCapacityController() {
-  let limit: HandCapacity = 2;
-  let streak = 0;
-  return {
-    get limit() { return limit; },
-    observe(raisedWrists: ReturnType<typeof countRaisedPoseWrists>) {
-      if (raisedWrists === null) {
-        // With uncertain pose, leave room for a second hand.
-        limit = 2;
-        streak = 0;
-      } else if (raisedWrists === 0 || raisedWrists === limit) {
-        streak = 0;
-      } else if (++streak >= (raisedWrists === 2 ? 3 : 9)) {
-        limit = raisedWrists;
-        streak = 0;
-      }
-    },
-  };
 }
 
 export async function createPoseLandmarker(

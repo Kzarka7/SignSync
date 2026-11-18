@@ -46,6 +46,24 @@ test('pose loss, high hand disappearance and frame gaps cannot complete a gestur
     assert.ok(!events.some(e=>e.type==='complete'),cause)
   }
 })
+test('Lab Camera segmentation keeps an active gesture during the raised-wrist occlusion grace', async () => {
+  const session = createDiagnosticSession({ source:'camera', name:'occlusion', recognitionMode:'segmented',
+    poseGuidedOcclusion:true, predict:async request => prediction(request), onChange(){}, now:()=>0, id:()=>'occlusion' })
+  for(let t=0;t<=700;t+=50) await session.observeFeatures(motion(t))
+  const segment = session.state.activeSegmentId
+  assert.ok(segment)
+  for(let t=750;t<=1000;t+=50) {
+    const missing = frame(t,-.6,false)
+    missing.features[29] = missing.features[33] = 1
+    missing.features[31] = missing.features[35] = 1
+    await session.observeFeatures(missing)
+    assert.equal(session.state.activeSegmentId, segment)
+  }
+  const expired = frame(1001,-.6,false)
+  await session.observeFeatures(expired)
+  assert.equal(session.state.activeSegmentId, null)
+  assert.equal(session.state.lastSegmentationEvent.reason, 'unverified_hand_loss')
+})
 test('stationary visible hands and small jitter cannot create repeated gestures',()=>{
   const d=createGestureSegmentation(),events=[]
   for(let t=0;t<=4000;t+=50)events.push(...d.push(frame(t,Math.sin(t)*.002)).events)
