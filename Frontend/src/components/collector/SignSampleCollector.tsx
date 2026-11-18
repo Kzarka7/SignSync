@@ -92,6 +92,7 @@ export default function SignSampleCollector({
   const recordedSamples = (
     <SequenceList isLoading={recorder.isLoading} storageBusy={recorder.isSaving || uploadBusy} storageError={recorder.saveError} onRetry={recorder.refreshSequences}
       collapsible
+      showCameraClipDownload={mode === "camera" && cameraMethod === "live"}
       pendingVideos={pendingVideos}
       pendingLocked={locked}
       onRemoveVideo={id => setPendingVideos(previous => previous.filter(take => take.id !== id))}
@@ -158,6 +159,7 @@ export default function SignSampleCollector({
             <CollectorCameraPreview
               feed={recorder.feed}
               countdown={recorder.countdown}
+              cameraToggleDisabled={recorder.isRecording || recorder.countdown !== null}
             />
           )}
           </div>
@@ -181,7 +183,7 @@ export default function SignSampleCollector({
                       Preserve video, process afterward
                     </option>
                     <option value="live">
-                      Live landmarks (existing workflow)
+                      Live landmarks + camera clips
                     </option>
                   </select>
                 </label>
@@ -217,6 +219,7 @@ export default function SignSampleCollector({
                         Start the camera above before recording a sample.
                       </p>
                     )}
+                    {recorder.videoCaptureError && <p role="alert" className="text-sm text-danger">{recorder.videoCaptureError}</p>}
                     {recorder.saveError && (
                       <p role="alert" className="text-sm text-danger">
                         {recorder.saveError}

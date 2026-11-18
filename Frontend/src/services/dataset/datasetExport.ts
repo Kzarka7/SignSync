@@ -2,6 +2,7 @@ import JSZip from 'jszip'
 import { DatasetExportFile, ExportedSequence, LabeledSequence } from '../../types/dataset'
 import { buildFeatureSchema, toFeatureVector } from '../landmarks/normalize'
 import { normalizeIdleSequence } from './idleCollection'
+import { cameraClipFile } from './cameraClip'
 
 // Applies the normalization pipeline to every stored (raw) frame and
 // assembles the full export payload - this is the one place raw landmarks
@@ -163,4 +164,9 @@ export async function buildOriginalVideosZipExport(takes: { label: string; file:
     zip.file(`${label}-${number}.${extension}`, await take.file.arrayBuffer())
   }
   return { blob: await zip.generateAsync({ type: 'blob' }), filename: `${folder}.zip` }
+}
+
+export function buildCameraClipsZipExport(sequences: LabeledSequence[]) {
+  return buildOriginalVideosZipExport(sequences.flatMap(({ cameraClip, label, id }) =>
+    cameraClip?.size ? [{ label, file: cameraClipFile(cameraClip, id) }] : []))
 }

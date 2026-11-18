@@ -95,6 +95,7 @@ export default function BoundarySampleCollector({ onLocked }: { onLocked: (locke
     </details>}
   </div></Card>
   const recordedSamples = <SequenceList isLoading={recorder.isLoading} storageBusy={recorder.isSaving || uploadBusy} storageError={recorder.saveError} onRetry={recorder.refreshSequences} collapsible sequences={recorder.sequences} onDelete={recorder.removeSequence} onExportZip={recorder.exportPerSampleZip}
+    showCameraClipDownload={mode === 'camera' && cameraMethod === 'live'}
     pendingVideos={pendingVideos} pendingLocked={locked} onRemoveVideo={id => setPendingVideos(previous => previous.filter(take => take.id !== id))}
     onProcessVideos={() => {
       if (locked || !pendingVideos.length) return
@@ -119,14 +120,14 @@ export default function BoundarySampleCollector({ onLocked }: { onLocked: (locke
         onRecorded={(file, label, fps) => {
           if (!training) return
           setPendingVideos(previous => [...previous, { id: crypto.randomUUID(), file, label, fps, training: { ...training } }])
-        }} /> : <CollectorCameraPreview feed={recorder.feed} countdown={recorder.countdown} />}
+        }} /> : <CollectorCameraPreview feed={recorder.feed} countdown={recorder.countdown} cameraToggleDisabled={recorder.isRecording || recorder.countdown !== null} />}
       </div>
       <div className="space-y-4">{settings}
         <Card><div className="space-y-4">
           <label className="block text-sm">Camera collection method
             <select aria-label="Camera collection method" className="block border rounded p-2 w-full" disabled={locked} value={cameraMethod}
               onChange={event => { if (recorder.feed.enabled) recorder.feed.toggleCamera(); setCameraMethod(event.target.value as 'video' | 'live') }}>
-              <option value="video">Preserve video, process afterward</option><option value="live">Live landmarks (existing workflow)</option>
+              <option value="video">Preserve video, process afterward</option><option value="live">Live landmarks + camera clips</option>
             </select>
           </label>
           {cameraMethod === 'video' && <div ref={setVideoControls} />}
@@ -137,6 +138,7 @@ export default function BoundarySampleCollector({ onLocked }: { onLocked: (locke
               countdown={recorder.countdown} countdownSeconds={recorder.countdownSeconds} onChangeCountdownSeconds={recorder.setCountdownSeconds}
               onStart={recorder.startRecording} onCancelCountdown={recorder.cancelCountdown} onStop={recorder.stopRecording} onDiscard={recorder.discardRecording} />
             <CameraDiagnostics feed={recorder.feed} detectionInputWidth={recorder.detectionInputWidth} onChangeInputWidth={recorder.setDetectionInputWidth} locked={locked} />
+            {recorder.videoCaptureError && <p role="alert" className="text-sm text-danger">{recorder.videoCaptureError}</p>}
             {recorder.saveError && <p role="alert" className="text-sm text-danger">{recorder.saveError}</p>}
           </>}
         </div></Card>
