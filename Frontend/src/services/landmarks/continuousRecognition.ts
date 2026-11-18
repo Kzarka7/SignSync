@@ -22,11 +22,16 @@ export type ObservationTracking = {
   state: 'visible' | 'hands-missing' | 'no-hands' | 'pose-lost' | 'frame-gap'
   timestampMs: number; noHandsMs: number; revision: number; gapMs: number
 }
-export function createObservationTracking(overrides: Partial<ContinuousSettings> = {}) {
+export function createObservationTracking(overrides: Partial<ContinuousSettings> = {}, occlusion?: {
+  graceMs: number
+  wristsRaised: (frame: FeatureFrame) => boolean | null
+}) {
   const settings = { ...CONTINUOUS_SETTINGS, ...overrides }
   let previousMs: number | null = null, missingSince: number | null = null, revision = 0
   let state: ObservationTracking['state'] = 'visible'
+  let inOcclusionGrace = false
   return {
+    get occlusionActive() { return inOcclusionGrace },
     push(frame: FeatureFrame): ObservationTracking {
       if (!Number.isFinite(frame.timestamp) || (previousMs !== null && frame.timestamp <= previousMs)) throw Error('Frame timestamps must increase.')
       const gapMs = previousMs === null ? 0 : frame.timestamp - previousMs
@@ -35,15 +40,26 @@ export function createObservationTracking(overrides: Partial<ContinuousSettings>
       if (gap) missingSince = null
       const poseValid = frame.valid && frame.features[7] >= settings.minShoulderVisibility && frame.features[11] >= settings.minShoulderVisibility
       const hands = frame.features[36] === 1 || frame.features[100] === 1
+      const recoveredInGrace = !!occlusion && inOcclusionGrace && poseValid && !gap && hands
+        && missingSince !== null && frame.timestamp - missingSince <= occlusion.graceMs
+      let grace = false
       let next: ObservationTracking['state']
       if (!poseValid) { missingSince = null; next = 'pose-lost' }
       else if (gap) { next = 'frame-gap' }
       else if (hands) { missingSince = null; next = 'visible' }
       else {
         missingSince ??= frame.timestamp
-        next = frame.timestamp - missingSince >= settings.noHandsIdleMs ? 'no-hands' : 'hands-missing'
+        const missingMs = frame.timestamp - missingSince
+        const wristsRaised = occlusion?.wristsRaised(frame)
+        // A missing wrist observation can continue an established grace period.
+        const raisedDuringDropout = wristsRaised === true || (wristsRaised === null && inOcclusionGrace)
+        const idle = state === 'no-hands' || (raisedDuringDropout && occlusion
+          ? missingMs > occlusion.graceMs : wristsRaised === false || missingMs >= settings.noHandsIdleMs)
+        next = idle ? 'no-hands' : 'hands-missing'
+        grace = !idle && raisedDuringDropout
       }
-      if (next !== state || gap) revision++
+      if (!grace && !recoveredInGrace && (next !== state || gap)) revision++
+      inOcclusionGrace = grace
       state = next
       return { state, timestampMs: frame.timestamp, noHandsMs: missingSince === null ? 0 : frame.timestamp - missingSince, revision, gapMs: gap ? gapMs : 0 }
     },

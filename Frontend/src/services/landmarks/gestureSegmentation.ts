@@ -110,7 +110,7 @@ export function createGestureSegmentation(updateMs: number = GESTURE_SETTINGS.up
         confirmedHold = settleConfirmedHold
       }
     },
-    push(frame: FeatureFrame): { window: GestureWindow | null; events: GestureEvent[] } {
+    push(frame: FeatureFrame, occlusionActive = false): { window: GestureWindow | null; events: GestureEvent[] } {
       const t = frame.timestamp, events: GestureEvent[] = []
       if (!Number.isFinite(t) || previous && t <= previous.timestamp) throw Error('Frame timestamps must increase.')
       const old = previous; previous = frame
@@ -189,7 +189,7 @@ export function createGestureSegmentation(updateMs: number = GESTURE_SETTINGS.up
       })
       if (!hands.length || missingActive) missingSince ??= t
       else missingSince = null
-      if (missingSince !== null && t-missingSince >= GESTURE_SETTINGS.missingMs && !trustedReturn) return discard('unverified_hand_loss')
+      if (!occlusionActive && missingSince !== null && t-missingSince >= GESTURE_SETTINGS.missingMs && !trustedReturn) return discard('unverified_hand_loss')
       const wristMoved = travel >= GESTURE_SETTINGS.minTravel
       const shapeMoved = shapeTravel >= STAGE2_SHAPE_TRAVEL
       let holdReleased = false
@@ -238,7 +238,7 @@ export function createGestureSegmentation(updateMs: number = GESTURE_SETTINGS.up
       const moving = preview ? purposefulMotion : wristMoved || shapeMoved
       if (hands.length && !missingActive && speed <= GESTURE_SETTINGS.quietSpeed && (moving || confirmedHold)) quietSince ??= t
       else quietSince = null
-      const withdrawal = trustedReturn && missingSince !== null && t-missingSince >= GESTURE_SETTINGS.missingMs
+      const withdrawal = !occlusionActive && trustedReturn && missingSince !== null && t-missingSince >= GESTURE_SETTINGS.missingMs
       const quietMs = confirmationPending ? confirmationQuietMs
         : fasterBoundaries ? FAST_PREVIEW_BOUNDARIES.settleMs : GESTURE_SETTINGS.quietMs
       let settled = quietSince !== null && t-quietSince >= quietMs
