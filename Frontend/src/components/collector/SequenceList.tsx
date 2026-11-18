@@ -1,9 +1,10 @@
 import { getEvaluationTaskTitle } from '../../services/dataset/boundaryEvaluation'
-import { memo, useEffect, useState } from 'react'
-import { FolderArchive, Loader2, Trash2 } from 'lucide-react'
+import { memo, useEffect, useRef, useState } from 'react'
+import { Download, FolderArchive, Loader2, Trash2 } from 'lucide-react'
 import Card from '../shared/Card'
 import Button from '../shared/Button'
 import { LabeledSequence } from '../../types/dataset'
+import { buildCameraClipsZipExport, triggerDownload } from '../../services/dataset/datasetExport'
 import PendingVideoRecordings, { type PreservedVideoTake } from './PendingVideoRecordings'
 
 interface SequenceListProps {
@@ -24,6 +25,7 @@ interface SequenceListProps {
   zipReady: boolean
   exportError: string | null
   onClearAll: () => void
+  showCameraClipDownload?: boolean
 }
 
 // Wrapped in memo: during a recording session every prop here
@@ -34,8 +36,27 @@ interface SequenceListProps {
 // because its sibling (RecordingControls) re-renders, which is wasted
 // work that competes with the detection loop for main-thread time.
 function SequenceList({ isLoading = false, storageBusy = false, storageError, onRetry, collapsible = false, sequences, onDelete, onExportZip, onDownloadZip, isExportingZip, zipReady, exportError, onClearAll,
-  pendingVideos = [], pendingLocked = false, onProcessVideos = () => {}, onRemoveVideo = () => {} }: SequenceListProps) {
+  pendingVideos = [], pendingLocked = false, onProcessVideos = () => {}, onRemoveVideo = () => {}, showCameraClipDownload = false }: SequenceListProps) {
   const [capacity, setCapacity] = useState('')
+  const [isDownloadingClips, setIsDownloadingClips] = useState(false)
+  const [clipDownloadError, setClipDownloadError] = useState('')
+  const downloadingClips = useRef(false)
+  const hasCameraClips = sequences.some(sequence => sequence.cameraClip?.size)
+  async function downloadCameraClips() {
+    if (pendingLocked || downloadingClips.current || !hasCameraClips) return
+    downloadingClips.current = true
+    setIsDownloadingClips(true)
+    setClipDownloadError('')
+    try {
+      const { blob, filename } = await buildCameraClipsZipExport(sequences)
+      triggerDownload(blob, filename)
+    } catch {
+      setClipDownloadError('Could not download the camera clips. Try again.')
+    } finally {
+      downloadingClips.current = false
+      setIsDownloadingClips(false)
+    }
+  }
   useEffect(() => {
     let active = true
     if (navigator.storage?.estimate) void navigator.storage.estimate().then(({ usage, quota }) => {
@@ -50,6 +71,7 @@ function SequenceList({ isLoading = false, storageBusy = false, storageError, on
       {capacity && <p className="text-xs text-text-2 mb-3">{capacity} Capacity varies; export backups regularly.</p>}
       {pendingVideos.length > 0 && <PendingVideoRecordings recordings={pendingVideos} locked={pendingLocked} onProcessAll={onProcessVideos} onRemove={onRemoveVideo} />}
       {sequences.length > 0 && <div className="mb-3 space-y-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
@@ -62,9 +84,17 @@ function SequenceList({ isLoading = false, storageBusy = false, storageError, on
           {isExportingZip ? <Loader2 size={13} className="animate-spin" /> : <FolderArchive size={13} />}
           {isExportingZip ? 'Preparing ZIP' : zipReady ? 'Export as ZIP' : 'Prepare ZIP'}
         </Button>
-        <Button size="sm" variant="danger" disabled={isLoading || storageBusy} onClick={onClearAll} title="Clear all saved landmark samples; pending videos remain.">
+        <Button size="sm" variant="danger" disabled={isLoading || storageBusy} onClick={onClearAll} title="Clear saved samples and their camera clips. Pending videos remain.">
           Clear all
         </Button>
+        </div>
+        {showCameraClipDownload && <Button type="button" size="sm" className="ml-auto"
+          onClick={downloadCameraClips} disabled={isLoading || storageBusy || pendingLocked || isDownloadingClips || !hasCameraClips}
+          aria-busy={isDownloadingClips}
+          title={hasCameraClips ? 'Download the saved camera clips in one ZIP' : 'Record a new live-landmark take to save a camera clip'}>
+          {isDownloadingClips ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+          {isDownloadingClips ? 'Preparing videos' : 'Download all as video'}
+        </Button>}
         </div>
         <p className="text-sm text-text-2" role="status">
           {isExportingZip
@@ -75,6 +105,7 @@ function SequenceList({ isLoading = false, storageBusy = false, storageError, on
         </p>
       </div>}
       {exportError && <p role="alert" className="text-sm text-danger mb-3">{exportError}</p>}
+      {showCameraClipDownload && clipDownloadError && <p role="alert" className="text-sm text-danger mb-3">{clipDownloadError}</p>}
 
       {!isLoading && !storageError && sequences.length === 0 && pendingVideos.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border bg-sky p-4"><p className="text-sm font-semibold">No saved samples yet</p><p className="text-xs text-text-2 mt-1">Record a take or save a reviewed sample.</p></div>

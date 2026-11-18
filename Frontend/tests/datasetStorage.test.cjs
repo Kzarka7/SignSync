@@ -17,7 +17,7 @@ function fixture() {
       if (cache.has(file)) return cache.get(file)
       const exports = {}; cache.set(file, exports)
       vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText,
-        { exports, indexedDB, localStorage, Blob, console, require: name => name.startsWith('.') ? load(path.resolve(path.dirname(file), name + '.ts')) : require(name) })
+        { exports, indexedDB, localStorage, Blob, File, console, require: name => name.startsWith('.') ? load(path.resolve(path.dirname(file), name + '.ts')) : require(name) })
       return exports
     }
     return { ...load('datasetStorage.ts'), exporter: load('datasetExport.ts') }
@@ -32,6 +32,23 @@ function sample(id = 'one') {
       quality: { result: 'Review', findings: ['gap'] }, intervalReview: { choice: 'trimmed' }, review: { completeSign: true, qualityFindingsAccepted: true } } }
 }
 const plain = value => JSON.parse(JSON.stringify(value))
+test('live camera clips survive reload and export separately from landmarks', async () => {
+  const f = fixture(), db = f.reload()
+  const video = new Uint8Array([1, 2, 3, 4])
+  await db.saveSequence({ ...sample('live'), videoImport: undefined, cameraClip: new Blob([video], { type: 'video/webm' }) })
+  await db.saveSequence(sample('legacy'))
+  const reopened = f.reload()
+  const saved = await reopened.getSequences()
+  const data = reopened.exporter.buildDatasetExport(saved)
+  assert.equal(Object.hasOwn(data.sequences[0], 'cameraClip'), false)
+  assert.equal(data.sequences[0].frames.length, 2)
+  const { blob } = await reopened.exporter.buildCameraClipsZipExport(saved)
+  const zip = await require('jszip').loadAsync(await blob.arrayBuffer())
+  assert.deepEqual(Object.keys(zip.files), ['HELLO-1.webm'])
+  assert.deepEqual(await zip.file('HELLO-1.webm').async('uint8array'), video)
+  await reopened.deleteSequence('live')
+  assert.equal((await reopened.getSequences()).some(sequence => sequence.cameraClip), false)
+})
 test('previously saved DON_T_UNDERSTAND takes export with the new label', async () => {
   const f = fixture(), db = f.reload()
   const previous = { ...sample(), label: 'DON_T_UNDERSTAND' }

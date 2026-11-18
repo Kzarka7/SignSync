@@ -80,6 +80,21 @@ test('pending camera videos share Recorded samples without appearing as approved
   assert.equal((html.match(/bg-white border border-border rounded-xl2 p-5/g) ?? []).length, 1)
 })
 
+test('live camera clip download sits to the right of the landmark actions and requires a saved clip', () => {
+  const SequenceList = loadComponent('SequenceList')
+  for (const withClip of [true, false]) {
+    const html = renderToStaticMarkup(React.createElement(SequenceList, {
+      showCameraClipDownload: true,
+      sequences: [{ id: 'live', label: 'HELLO', frames: [], durationMs: 0, createdAt: '2026-11-18T00:00:00Z',
+        ...(withClip ? { cameraClip: new Blob(['video'], { type: 'video/webm' }) } : {}) }],
+    }))
+    const download = html.match(/Clear all<\/button><\/div>(<button[^>]*>)[\s\S]*?Download all as video<\/button>/)
+    assert.ok(download)
+    assert.match(download[1], /\bml-auto\b/)
+    assert.equal(/\bdisabled\b/.test(download[1]), !withClip)
+  }
+})
+
 test('landmark progress polls captured frames every 125 ms and measures FPS over real elapsed time', () => {
   let now = 100, captured = 0, cleanup, cursor = 0
   const state = [], timers = new Map()

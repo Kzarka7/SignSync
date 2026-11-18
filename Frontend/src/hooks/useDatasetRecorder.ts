@@ -12,6 +12,7 @@ import {
   saveSequence,
 } from '../services/dataset/datasetStorage'
 import { downloadDatasetExport, buildPerSampleZipExport, triggerDownload } from '../services/dataset/datasetExport'
+import { startCameraClip } from '../services/dataset/cameraClip'
 import { DEFAULT_SIGN_LABELS, RETIRED_SIGN_LABELS } from '../services/dataset/signLabelSearch'
 
 function createSequenceId(): string {
@@ -58,6 +59,7 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
   const [selectedLabel, setSelectedLabel] = useState<string>(DEFAULT_SIGN_LABELS[0])
   const [isRecording, setIsRecording] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [videoCaptureError, setVideoCaptureError] = useState<string | null>(null)
   const [isExportingZip, setIsExportingZip] = useState(false)
   const [zipExport, setZipExport] = useState<{ blob: Blob; filename: string } | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
@@ -84,6 +86,7 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
   const bufferRef = useRef<LandmarkFrameSample[]>([])
   const getRecordedFrameCount = useCallback(() => bufferRef.current.length, [])
   const recordingStartedAtRef = useRef<number | null>(null)
+  const finishClipRef = useRef<ReturnType<typeof startCameraClip> | null>(null)
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const finishRecordingRef = useRef<(discard: boolean) => void>(() => {})
@@ -116,6 +119,8 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
       }
       if (recordingTimeoutRef.current !== null) clearTimeout(recordingTimeoutRef.current)
       recordingStartedAtRef.current = null
+      void finishClipRef.current?.(true)
+      finishClipRef.current = null
     }
   }, [])
 
@@ -139,13 +144,23 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
     feed.startPerformanceProfile()
     bufferRef.current = []
     setSaveError(null)
+    setVideoCaptureError(null)
+    if (recordingContextRef.current.scope === 'training') {
+      try {
+        const stream = feed.videoRef.current?.srcObject
+        if (!(stream instanceof MediaStream)) throw new Error('Camera stream unavailable')
+        finishClipRef.current = startCameraClip(stream)
+      } catch {
+        setVideoCaptureError('Video capture could not start. This take will save landmarks only.')
+      }
+    }
     recordingStartedAtRef.current = performance.now()
     setIsRecording(true)
 
     if (durationLimitMs && durationLimitMs > 0) {
       recordingTimeoutRef.current = setTimeout(() => finishRecordingRef.current(false), durationLimitMs)
     }
-  }, [feed.startPerformanceProfile, durationLimitMs])
+  }, [feed.startPerformanceProfile, feed.videoRef, durationLimitMs])
 
   const startRecording = useCallback(() => {
     if (savingRef.current || isLoading || !recordingAllowed || recordingStartedAtRef.current !== null) return
@@ -202,20 +217,28 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
       setIsRecording(false)
       const samples = bufferRef.current
       bufferRef.current = []
+      const finishClip = finishClipRef.current
+      finishClipRef.current = null
 
-      if (discard) return
+      if (discard) {
+        void finishClip?.(true)
+        return
+      }
       if (samples.length === 0) {
+        void finishClip?.(true)
         setSaveError('No frames were captured. Check the camera and record again.')
         return
       }
 
       const durationMs = samples[samples.length - 1].timestamp - samples[0].timestamp
       if (recordingContextRef.current.collection?.kind === 'idle' && durationMs < 2000) {
+        void finishClip?.(true)
         setSaveError('Idle clips need at least 2 seconds of captured frames. This clip was not saved; please record again.')
         return
       }
       const trainingContext = recordingContextRef.current.training
       if (trainingContext && (samples.length < 8 || durationMs < 400)) {
+        void finishClip?.(true)
         setSaveError('Not enough captured frames or recording time. Please record this task again.')
         return
       }
@@ -233,6 +256,11 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
       savingRef.current = true
       setIsSaving(true)
       try {
+        if (finishClip) {
+          const clip = await finishClip(false)
+          if (clip) sequence.cameraClip = clip
+          else setVideoCaptureError('The camera video could not be saved. This take has landmarks only.')
+        }
         await saveSequence(sequence, recordingContextRef.current.scope)
         await refreshSequences()
         setLastSavedSequence(sequence)
@@ -375,6 +403,7 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
     setSelectedLabel,
     isRecording,
     saveError,
+    videoCaptureError,
     countdown,
     countdownSeconds,
     setCountdownSeconds,

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import CollectorCameraPreview from './CollectorCameraPreview'
 import RecordingControls from './RecordingControls'
 import { IMPORT_FPS } from '../../services/dataset/videoImport'
+import { cameraClipFile, createCameraMediaRecorder } from '../../services/dataset/cameraClip'
 
 export default function CameraVideoRecorder({ label, onRecorded, onBusy, controlsContainer, countdownSeconds = 0,
   onChangeCountdownSeconds = () => {}, durationLimitMs, onChangeDurationLimitMs = () => {} }: {
@@ -96,9 +97,7 @@ export default function CameraVideoRecorder({ label, onRecorded, onBusy, control
     const chunks: Blob[] = []
     discard.current = false; setError('')
     try {
-      const mimeType = ['video/webm;codecs=vp8', 'video/mp4', 'video/webm'].find(type => MediaRecorder.isTypeSupported(type))
-      if (!mimeType) throw Error('No supported recording format. Record using your phone and upload the file.')
-      const recorder = new MediaRecorder(stream.current, { mimeType, videoBitsPerSecond: 8000000 })
+      const recorder = createCameraMediaRecorder(stream.current)
       recording.current = recorder
       recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data) }
       recorder.onerror = () => { discard.current = true; clearTimeout(timer.current); if (alive.current) { setError('Camera recording failed. Try another take.'); setBusy(false); onBusy(false) } }
@@ -109,9 +108,8 @@ export default function CameraVideoRecorder({ label, onRecorded, onBusy, control
         if (discard.current) return
         const blob = new Blob(chunks, { type: recorder.mimeType })
         if (!blob.size) { setError('The recording is empty. Try another take.'); return }
-        const suffix = recorder.mimeType.includes('mp4') ? 'mp4' : 'webm'
-        const name = `${assignedLabel.replace(/[^a-z0-9_-]/gi, '_')}-${new Date().toISOString().replace(/[:.]/g, '-')}.${suffix}`
-        onRecorded(new File([blob], name, { type: blob.type }), assignedLabel, selectedFps)
+        const name = `${assignedLabel.replace(/[^a-z0-9_-]/gi, '_')}-${new Date().toISOString().replace(/[:.]/g, '-')}`
+        onRecorded(cameraClipFile(blob, name), assignedLabel, selectedFps)
       }
       recorder.start(500); setBusy(true); onBusy(true)
       timer.current = setTimeout(() => { if (recorder.state !== 'inactive') recorder.stop() }, Math.min(durationLimitMs ?? 120000, 120000))
