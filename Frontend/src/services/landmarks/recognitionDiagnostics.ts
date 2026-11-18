@@ -33,6 +33,24 @@ const PREVIEW_ACCEPTANCE = { recentMs: 650, strongScore: .90, strongMargin: .30,
   minHandFraction: .8, recoveryScore: .50, recoveryMargin: .15, recoveryVoteSpanMs: 150 } as const
 type PreviewVote = { label: string; timestampMs: number; evidence: GestureWindow['evidence']; strong: boolean }
 export const FINGERSPELLING_PAUSE_MS = 1200
+const POSE_OCCLUSION_GRACE_MS = 250
+const OCCLUSION_LANDMARK_VISIBILITY = .65
+const poseObservationOffsets = (name: 'leftHip' | 'rightHip' | 'leftWrist' | 'rightWrist') => ({
+  y: FEATURE_ORDER.indexOf(`pose.${name}.y`),
+  visibility: FEATURE_ORDER.indexOf(`pose.${name}.visibility`),
+})
+const hips = [poseObservationOffsets('leftHip'), poseObservationOffsets('rightHip')]
+const wrists = [poseObservationOffsets('leftWrist'), poseObservationOffsets('rightWrist')]
+
+function wristsRaised({ features }: FeatureFrame): boolean | null {
+  const visible = ({ y, visibility }: typeof hips[number]) =>
+    Number.isFinite(features[y]) && features[visibility] >= OCCLUSION_LANDMARK_VISIBILITY
+  if (!hips.every(visible)) return null
+  const torsoBottom = Math.max(features[hips[0].y], features[hips[1].y])
+  if (wrists.some(wrist => visible(wrist) && features[wrist.y] <= torsoBottom)) return true
+  return wrists.every(visible) ? false : null
+}
+
 const predictionMargin = (prediction: SignPrediction) => prediction.score - (prediction.top3.find(p => p.label !== prediction.label)?.score ?? 1)
 const strongPreview = (prediction: SignPrediction) => prediction.score >= PREVIEW_ACCEPTANCE.strongScore
   && predictionMargin(prediction) >= PREVIEW_ACCEPTANCE.strongMargin
@@ -56,10 +74,12 @@ export function createDiagnosticSession(options: {
   settleConfirmedHold?: boolean
   staticMotionCheck?: boolean
   wallClockWindows?: boolean
+  poseGuidedOcclusion?: boolean
 }) {
   const now = options.now ?? (() => performance.now())
   const id = options.id ?? (() => crypto.randomUUID())
   const wallClockWindows = options.source === 'camera' && options.wallClockWindows === true
+  const poseGuidedOcclusion = options.source === 'camera' && options.poseGuidedOcclusion === true
   const settings = { ...CONTINUOUS_SETTINGS, ...options.settings,
     ...(wallClockWindows && { windowMs: LIVE_WINDOW_GRID.windowMs }) }
   const { minimumConfidence } = options
@@ -97,7 +117,8 @@ export function createDiagnosticSession(options: {
   const segmentAcceptanceEvents: {timestampMs:number;type:string;reason:string;label:string|null;source:string|null;evidenceMs:number}[] = []
   type WorkWindow = RecognitionWindow & Partial<Pick<GestureWindow, 'segmentId' | 'complete' | 'decisionMs' | 'evidence' | 'earlyPreview'>>
   const windows = createRecognitionWindows(settings), policy = createActivityPolicy(settings, stage2)
-  const tracker = createObservationTracking(settings)
+  const tracker = createObservationTracking(settings, poseGuidedOcclusion
+    ? { graceMs: POSE_OCCLUSION_GRACE_MS, wristsRaised } : undefined)
   const boundaries = createContinuousSignCapture()
   const frames: FeatureFrame[] = [], rows: DiagnosticRow[] = [], transcript: LabTranscriptEntry[] = []
   const boundaryEvents: unknown[] = []
@@ -359,12 +380,14 @@ export function createDiagnosticSession(options: {
         wordBoundaries.push(latestMs)
       }
       const trackingChanged = !tracking || tracking.state !== nextTracking.state || nextTracking.gapMs > 0
+      const trackingInterrupted = tracking?.revision !== nextTracking.revision
       const wasWaiting = policy.state.waitingForBoundary
       if (trackingChanged) trackingEvents.push(nextTracking)
       tracking = nextTracking
-      if (trackingChanged && (tracking.state === 'pose-lost' || tracking.state === 'frame-gap' || tracking.state === 'hands-missing')) completedBoundary = null
+      if (trackingInterrupted && (tracking.state === 'pose-lost' || tracking.state === 'frame-gap' || tracking.state === 'hands-missing'
+        || poseGuidedOcclusion && tracking.state === 'no-hands')) completedBoundary = null
       if (tracking.state === 'pose-lost' || tracking.state === 'frame-gap') bodyRevision++
-      if (continuousSignTransitions && trackingChanged && tracking.state !== 'visible') {
+      if (continuousSignTransitions && trackingInterrupted && tracking.state !== 'visible') {
         transitionStart = null
         if (lastAcceptedSegment !== null) segmentPolicies.delete(lastAcceptedSegment)
       }
@@ -373,7 +396,7 @@ export function createDiagnosticSession(options: {
         segmentAcceptanceEvents.push({timestampMs:latestMs,type:'rearmed',reason:'sustained_non_sign_evidence',label:lastSegmentLabel,source:'no-hands',evidenceMs:tracking.noHandsMs-settings.noHandsIdleMs})
       }
       let window: WorkWindow | null
-      const result = segmenter.push(featureFrame)
+      const result = segmenter.push(featureFrame, tracker.occlusionActive)
       segmentationEvents.push(...result.events)
       if (recognitionMode === 'segmented') {
         for (const event of result.events) {
@@ -450,6 +473,7 @@ export function createDiagnosticSession(options: {
           ...(waitForConfirmation ? {confirmationQuietMs} : {})} : null, segmentationEvents,
         featureOrder: FEATURE_ORDER, annotations: [],
         ...(wallClockWindows && { windowSampling: LIVE_WINDOW_GRID }),
+        ...(poseGuidedOcclusion && { poseOcclusionGraceMs: POSE_OCCLUSION_GRACE_MS }),
         summary: { frameCount: frames.length, durationMs: latestMs, windowCount: rows.length,
           replacedWindows, staleResults, frameGaps, boundaryPhase: boundaries.phase,
           transcriptEntries: transcript.length, status, failure,
