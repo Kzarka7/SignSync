@@ -147,8 +147,10 @@ export async function buildPerSampleZipExport(
 }
 
 
-export async function buildOriginalVideosZipExport(takes: { label: string; file: Pick<File, 'name' | 'arrayBuffer'> }[]): Promise<{ blob: Blob; filename: string }> {
+export async function buildOriginalVideosZipExport(takes: { label: string; file: Pick<File, 'name' | 'arrayBuffer'> }[],
+  { startNumber = 1, separator = '-' } = {}): Promise<{ blob: Blob; filename: string }> {
   if (!takes.length) throw new Error('No queued videos to download.')
+  if (!Number.isSafeInteger(startNumber) || startNumber < 1) throw new Error('Clip numbering must start at a positive whole number.')
   const zip = new JSZip()
   const labels = takes.map(take => take.label.trim().toUpperCase()
     .replace(/[\s-]+/g, '_').replace(/[^A-Z0-9_]/g, '') || 'SIGN')
@@ -158,15 +160,16 @@ export async function buildOriginalVideosZipExport(takes: { label: string; file:
   const counts = new Map<string, number>()
   for (const [index, take] of takes.entries()) {
     const label = labels[index]
-    const number = (counts.get(label) ?? 0) + 1
+    const number = (counts.get(label) ?? (startNumber - 1)) + 1
+    if (!Number.isSafeInteger(number)) throw new Error('Clip number exceeds the supported range.')
     counts.set(label, number)
     const extension = take.file.name.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase() ?? 'mp4'
-    zip.file(`${label}-${number}.${extension}`, await take.file.arrayBuffer())
+    zip.file(`${label}${separator}${number}.${extension}`, await take.file.arrayBuffer())
   }
   return { blob: await zip.generateAsync({ type: 'blob' }), filename: `${folder}.zip` }
 }
 
-export function buildCameraClipsZipExport(sequences: LabeledSequence[]) {
+export function buildCameraClipsZipExport(sequences: LabeledSequence[], startNumber = 1) {
   return buildOriginalVideosZipExport(sequences.flatMap(({ cameraClip, label, id }) =>
-    cameraClip?.size ? [{ label, file: cameraClipFile(cameraClip, id) }] : []))
+    cameraClip?.size ? [{ label, file: cameraClipFile(cameraClip, id) }] : []), { startNumber, separator: ' - ' })
 }

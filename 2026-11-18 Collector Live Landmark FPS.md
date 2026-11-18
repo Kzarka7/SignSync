@@ -6,12 +6,14 @@ Verify the camera options, capture boundaries, raw and exported frames, and equi
 
 ## Implemented and reviewed
 
-- Sign Language Collector and Rest and Idle Collector now share the Lab's live preset. It enables latest-frame scheduling, pose refresh every fourth processed frame with the existing pose cache, pose-guided one- and two-hand tracking, and the Lab's filtering and hand assignment. Collector hand inference also runs during rest.
+- Sign Language Collector and Rest and Idle Collector share the Lab's live preset. The current [Phase 1 hand continuity settings](2026-11-17%20Recognition%20Lab%20FPS%20Plan.md#phase-1-hand-continuity--2026-11-18) use two hands continuously at 0.50, latest-frame scheduling, pose refresh every fourth processed frame, and a per-hand 150 ms canvas hold. The recorder stores the actual detections, including missing hands.
 - The recording callback appends each in-clip `LandmarkFrameSample` directly to a ref. The recording status samples its count every 125 ms and measures FPS once per second. A queued frame timestamped before Start is excluded. Saving preserves the original timestamps, hands, and pose in the existing dataset format.
 - [Recorder parity test](Frontend/tests/datasetRecorder.test.cjs) verified the JSON round trip and identical 40-frame grids using irregular source timestamps, missing hands, and two-hand samples. [Progress tests](Frontend/tests/collectorFps.test.cjs) verified polling intervals, wall-time FPS, and cleanup. The complete frontend suite and production build passed. Vite emitted its bundle-size warning.
 - The collector export provides the input for the Lab's 1,333 ms resampling rule. The default offline training recipe still uses frame-index interpolation. Sustained 19–20 FPS and live tracking quality on the target webcam remain unmeasured.
 
 ## Original video downloads · 2026-11-18
+
+The video ZIP has a **Start number** field beside **Download all as video**. The field defaults to 1, and numbering starts at the chosen number for each sign. Verified 20 HELLO files named `HELLO - 21.webm` through `HELLO - 40.webm` in capture order. All 22 focused tests and the production build passed.
 
 Add a video-only archive action to Recorded samples in both live-landmark Collector views. Capture the camera stream during new takes and store each clip with its sample in local IndexedDB. Verify the capture and discard lifecycle, original video bytes in the ZIP, and legacy samples that have no clip.
 
