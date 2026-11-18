@@ -18,7 +18,7 @@ function loadWithImports(relativePath, imports) {
 
 const { OPTIMIZED_LIVE_CAMERA_OPTIONS } = loadWithImports('hooks/useCameraFeed.ts', () => ({}))
 
-function recorderHarness(options = {}, storageOptions = {}) {
+function recorderHarness(options = {}, storageOptions = {}, camera = {}) {
   const slots = [], pendingEffects = [], timers = new Map(), saved = [], listeners = new Map()
   let cursor = 0, nextTimer = 0, cameraOptions, now = 0
   const react = {
@@ -45,7 +45,8 @@ function recorderHarness(options = {}, storageOptions = {}) {
       }
     },
   }
-  const feed = { enabled: true, cameraReady: true, startPerformanceProfile() {}, stopPerformanceProfile() {} }
+  const feed = { enabled: true, cameraReady: true, startPerformanceProfile() {}, stopPerformanceProfile() {},
+    videoRef: { current: { srcObject: camera.stream } } }
   const exports = {}
   const setTimer = (callback, ms) => { const id = ++nextTimer; timers.set(id, { callback, ms }); return id }
   const source = fs.readFileSync(path.resolve(__dirname, '../src/hooks/useDatasetRecorder.ts'), 'utf8')
@@ -54,6 +55,7 @@ function recorderHarness(options = {}, storageOptions = {}) {
   }).outputText, {
     exports, console, Date, crypto: { randomUUID: () => `sample-${saved.length}` },
     performance: { now: () => now },
+    MediaStream: camera.MediaStream,
     setInterval: setTimer, clearInterval: id => timers.delete(id),
     setTimeout: setTimer, clearTimeout: id => timers.delete(id),
     window: { addEventListener: (name, cb) => listeners.set(name, cb), removeEventListener: name => listeners.delete(name) },
@@ -64,6 +66,9 @@ function recorderHarness(options = {}, storageOptions = {}) {
         useCameraFeed: settings => { cameraOptions = settings; return feed },
       }
       if (name.endsWith('signLabelSearch')) return load(path.resolve(__dirname, '../src/services/dataset/signLabelSearch.ts'))
+      if (name.endsWith('cameraClip')) return load(path.resolve(__dirname, '../src/services/dataset/cameraClip.ts'), {
+        Blob, MediaRecorder: camera.MediaRecorder,
+      })
       if (name.endsWith('datasetStorage')) return {
         storageError: error => 'Could not save: ' + error.message,
         getSequences: async (scope = 'training') => saved.filter(s => !!s.evaluation === (scope === 'evaluation')),
@@ -92,6 +97,61 @@ function recorderHarness(options = {}, storageOptions = {}) {
     key(code, tagName = 'BODY', extra = {}) { const event = { code, target: { tagName }, defaultPrevented:false, preventDefault() { this.defaultPrevented=true }, ...extra }; listeners.get('keydown')(event); return event },
   }
 }
+
+test('live video starts after countdown, saves the final chunk, and is discarded with the take', async () => {
+  const captures = []
+  class MediaStream {}
+  class MediaRecorder {
+    static isTypeSupported(type) { return type === 'video/webm;codecs=vp8' }
+    constructor(stream, { mimeType }) {
+      this.stream = stream
+      this.mimeType = mimeType
+      this.state = 'inactive'
+      captures.push(this)
+    }
+    start() { this.state = 'recording' }
+    stop() {
+      this.state = 'inactive'
+      queueMicrotask(() => {
+        this.ondataavailable({ data: new Blob(['end'], { type: 'video/webm' }) })
+        this.onstop()
+      })
+    }
+  }
+  const stream = new MediaStream()
+  const h = recorderHarness({}, {}, { stream, MediaStream, MediaRecorder })
+  h.render(); await new Promise(resolve => setImmediate(resolve))
+  h.render().setCountdownSeconds(1)
+  h.render().startRecording()
+  assert.equal(captures.length, 0)
+  h.fire(1000)
+  assert.equal(captures[0].stream, stream)
+  captures[0].ondataavailable({ data: new Blob(['start-'], { type: 'video/webm' }) })
+  h.frame(100); h.frame(900)
+  const save = h.render().stopRecording()
+  assert.equal(h.saved.length, 0)
+  await save
+  assert.equal(await h.saved[0].cameraClip.text(), 'start-end')
+  assert.equal(h.saved[0].cameraClip.type, 'video/webm')
+  assert.equal(h.saved[0].frames.length, 2)
+
+  h.render().startRecording()
+  h.fire(1000)
+  h.frame(1000); h.frame(2000)
+  await h.render().discardRecording()
+  assert.equal(captures[1].state, 'inactive')
+  assert.equal(h.saved.length, 1)
+
+  h.render().startRecording()
+  h.fire(1000)
+  h.frame(2200); h.frame(2800)
+  captures[2].state = 'inactive'
+  captures[2].onerror()
+  await h.render().stopRecording()
+  assert.equal(h.saved.length, 2)
+  assert.equal(h.saved[1].cameraClip, undefined)
+  assert.match(h.render().videoCaptureError, /landmarks only/)
+})
 
 test('live collector exports exact samples that produce the same wall-clock grid as Lab Camera', async () => {
   const { buildDatasetExport } = loadWithImports('services/dataset/datasetExport.ts', (name, directory) =>
