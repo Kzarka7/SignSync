@@ -10,3 +10,11 @@ Verify the camera options, capture boundaries, raw and exported frames, and equi
 - The recording callback appends each in-clip `LandmarkFrameSample` directly to a ref. The recording status samples its count every 125 ms and measures FPS once per second. A queued frame timestamped before Start is excluded. Saving preserves the original timestamps, hands, and pose in the existing dataset format.
 - [Recorder parity test](Frontend/tests/datasetRecorder.test.cjs) verified the JSON round trip and identical 40-frame grids using irregular source timestamps, missing hands, and two-hand samples. [Progress tests](Frontend/tests/collectorFps.test.cjs) verified polling intervals, wall-time FPS, and cleanup. The complete frontend suite and production build passed. Vite emitted its bundle-size warning.
 - The collector export provides the input for the Lab's 1,333 ms resampling rule. The default offline training recipe still uses frame-index interpolation. Sustained 19–20 FPS and live tracking quality on the target webcam remain unmeasured.
+
+## Original video downloads · 2026-11-18
+
+Add a video-only archive action to Recorded samples in both live-landmark Collector views. Capture the camera stream during new takes and store each clip with its sample in local IndexedDB. Verify the capture and discard lifecycle, original video bytes in the ZIP, and legacy samples that have no clip.
+
+- **Download all as video** sits at the right of [Recorded samples](Frontend/src/components/collector/SequenceList.tsx). It packages the clips attached to the listed samples as WebM or MP4 files. Legacy landmark-only samples have no clip to archive.
+- [Camera capture](Frontend/src/services/dataset/cameraClip.ts) reads the existing camera stream without the landmark canvas. Saving and deleting operate on the sample and clip together. A recorder error leaves the landmark take available for saving.
+- The frontend suite and production build passed. Tests exercised countdown, final video data delivery, discard, recorder failure, reload, deletion, and byte-preserving ZIP export. Vite emitted a bundle-size warning. Physical camera playback and FPS with video encoding are unmeasured.

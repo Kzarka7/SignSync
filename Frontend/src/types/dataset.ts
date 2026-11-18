@@ -139,6 +139,7 @@ export interface IdleCollectionMetadata {
 // of frames from a single Start -> Stop recording.
 export interface LabeledSequence {
   videoImport?: VideoImportMetadata
+  cameraClip?: Blob
   training?: TrainingCollectionMetadata
   id: string
   label: string
