@@ -40,15 +40,19 @@ function SequenceList({ isLoading = false, storageBusy = false, storageError, on
   const [capacity, setCapacity] = useState('')
   const [isDownloadingClips, setIsDownloadingClips] = useState(false)
   const [clipDownloadError, setClipDownloadError] = useState('')
+  const [clipStart, setClipStart] = useState('1')
   const downloadingClips = useRef(false)
   const hasCameraClips = sequences.some(sequence => sequence.cameraClip?.size)
+  const clipStartNumber = Number(clipStart)
+  const validClipStart = Number.isSafeInteger(clipStartNumber) && clipStartNumber >= 1
+  const clipDownloadLocked = isLoading || storageBusy || pendingLocked || isDownloadingClips || !hasCameraClips
   async function downloadCameraClips() {
-    if (pendingLocked || downloadingClips.current || !hasCameraClips) return
+    if (clipDownloadLocked || downloadingClips.current || !validClipStart) return
     downloadingClips.current = true
     setIsDownloadingClips(true)
     setClipDownloadError('')
     try {
-      const { blob, filename } = await buildCameraClipsZipExport(sequences)
+      const { blob, filename } = await buildCameraClipsZipExport(sequences, clipStartNumber)
       triggerDownload(blob, filename)
     } catch {
       setClipDownloadError('Could not download the camera clips. Try again.')
@@ -71,8 +75,8 @@ function SequenceList({ isLoading = false, storageBusy = false, storageError, on
       {capacity && <p className="text-xs text-text-2 mb-3">{capacity} Capacity varies; export backups regularly.</p>}
       {pendingVideos.length > 0 && <PendingVideoRecordings recordings={pendingVideos} locked={pendingLocked} onProcessAll={onProcessVideos} onRemove={onRemoveVideo} />}
       {sequences.length > 0 && <div className="mb-3 space-y-3">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
         <Button
           size="sm"
           variant="primary"
@@ -81,20 +85,27 @@ function SequenceList({ isLoading = false, storageBusy = false, storageError, on
           aria-busy={isExportingZip}
           title="Download one JSON file per saved sample in a ZIP. Pending videos are excluded."
         >
-          {isExportingZip ? <Loader2 size={13} className="animate-spin" /> : <FolderArchive size={13} />}
+          {isExportingZip ? <Loader2 size={13} className="shrink-0 animate-spin" /> : <FolderArchive size={13} className="shrink-0" />}
           {isExportingZip ? 'Preparing ZIP' : zipReady ? 'Export as ZIP' : 'Prepare ZIP'}
         </Button>
         <Button size="sm" variant="danger" disabled={isLoading || storageBusy} onClick={onClearAll} title="Clear saved samples and their camera clips. Pending videos remain.">
           Clear all
         </Button>
         </div>
-        {showCameraClipDownload && <Button type="button" size="sm" className="ml-auto"
-          onClick={downloadCameraClips} disabled={isLoading || storageBusy || pendingLocked || isDownloadingClips || !hasCameraClips}
-          aria-busy={isDownloadingClips}
-          title={hasCameraClips ? 'Download the saved camera clips in one ZIP' : 'Record a new live-landmark take to save a camera clip'}>
-          {isDownloadingClips ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-          {isDownloadingClips ? 'Preparing videos' : 'Download all as video'}
-        </Button>}
+        {showCameraClipDownload && <div className="ml-auto flex min-w-0 items-center justify-end gap-1.5">
+          <input type="number" min={1} step={1} value={clipStart}
+            onChange={event => setClipStart(event.target.value)}
+            disabled={clipDownloadLocked} aria-invalid={!validClipStart}
+            aria-label="Start number" title="First clip number"
+            className="w-12 shrink-0 rounded-lg border border-border bg-white px-1.5 py-2 text-sm tabular-nums" />
+          <Button type="button" size="sm" onClick={downloadCameraClips} disabled={clipDownloadLocked || !validClipStart}
+            aria-busy={isDownloadingClips}
+            aria-label={isDownloadingClips ? 'Preparing videos' : 'Download all as video'}
+            className="h-9 w-9 shrink-0 justify-center"
+            title={hasCameraClips ? 'Download all as video' : 'Record a new live-landmark take to save a camera clip'}>
+            {isDownloadingClips ? <Loader2 aria-hidden="true" size={16} className="animate-spin" /> : <Download aria-hidden="true" size={16} />}
+          </Button>
+        </div>}
         </div>
         <p className="text-sm text-text-2" role="status">
           {isExportingZip

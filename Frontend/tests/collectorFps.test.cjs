@@ -88,10 +88,14 @@ test('live camera clip download sits to the right of the landmark actions and re
       sequences: [{ id: 'live', label: 'HELLO', frames: [], durationMs: 0, createdAt: '2026-11-18T00:00:00Z',
         ...(withClip ? { cameraClip: new Blob(['video'], { type: 'video/webm' }) } : {}) }],
     }))
-    const download = html.match(/Clear all<\/button><\/div>(<button[^>]*>)[\s\S]*?Download all as video<\/button>/)
+    const download = html.match(/Clear all<\/button><\/div><div class="ml-auto[^"]*"><input([^>]*)\/>(<button[^>]*>)([\s\S]*?)<\/button>/)
     assert.ok(download)
-    assert.match(download[1], /\bml-auto\b/)
+    assert.match(download[1], /type="number".*min="1".*value="1"/)
+    assert.match(download[1], /aria-label="Start number"/)
     assert.equal(/\bdisabled\b/.test(download[1]), !withClip)
+    assert.equal(/\bdisabled\b/.test(download[2]), !withClip)
+    assert.match(download[2], /aria-label="Download all as video"/)
+    assert.match(download[3], /^<svg.*<\/svg>$/)
   }
 })
 
