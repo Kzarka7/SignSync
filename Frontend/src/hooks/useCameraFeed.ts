@@ -9,6 +9,7 @@ import { createDetectionInput, type DetectionInputWidth } from "../services/dete
 import { HAND_OVERLAY_COLORS } from "../services/landmarks/handOverlayColors";
 import { createStreamingHandAssignment } from "../services/dataset/videoHandAssignment";
 import { createLowLightAssist } from "../services/landmarks/lowLightAssist";
+import { createHandCapacityController, type HandCapacity } from "../services/landmarks/handCapacity";
 import {
   FilesetResolver,
   HandLandmarker,
@@ -170,14 +171,30 @@ export interface UseCameraFeedOptions {
   // each sample is the cached one, at most one processed frame older than
   // in the default order.
   deferPose?: boolean;
+  // While exactly one hand is tracked, run a one-hand landmarker that skips
+  // the per-frame search for a second hand, with a two-hand search every few
+  // frames. See services/landmarks/handCapacity.
+  adaptiveHandCapacity?: boolean;
   // Delivers every processed frame, including cached pose when striding is enabled.
   onFrame?: (sample: LandmarkFrameSample) => void;
 }
 
+// Default capture size for Recognition Lab and the Dataset Collector.
+export const DEFAULT_LIVE_CAPTURE_PROFILE: CaptureProfile = "720p";
+
+// Palm detector threshold for live camera tracking; re-finds hands sooner
+// after fast motion or curled fingers. See handDetectionConfidence.
+export const LIVE_HAND_DETECTION_CONFIDENCE = 0.35;
+
+// Shared by Recognition Lab and the Dataset Collector so collected samples
+// come from the same detection schedule and thresholds recognition uses.
 export const OPTIMIZED_LIVE_CAMERA_OPTIONS = {
   decoupleVideoFrames: true,
   stridePairedPose: true,
   reviewHandTracking: true,
+  // Hands are delivered without waiting for the pose model.
+  deferPose: true,
+  handDetectionConfidence: LIVE_HAND_DETECTION_CONFIDENCE,
 } as const satisfies UseCameraFeedOptions;
 
 // Owns the camera stream and the MediaPipe HandLandmarker + PoseLandmarker
@@ -205,6 +222,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
   const captureProfile = options?.captureProfile ?? "720p";
   const handDetectionConfidence = options?.handDetectionConfidence ?? HAND_LANDMARKER_THRESHOLDS.minHandDetectionConfidence;
   const deferPose = (options?.deferPose ?? false) && poseStride > 1;
+  const adaptiveHandCapacity = (options?.adaptiveHandCapacity ?? false) && useHands;
   const profileInfoRef = useRef({
     capture: {} as { width?: number; height?: number; configuredFps?: number },
     detectionInput: {} as { width?: number; height?: number; mode?: string },
@@ -275,6 +293,9 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
   const landmarkerRef = useRef<HandLandmarker | null>(null);
   // Delegate the live hand landmarker was created for, so a change recreates it.
   const landmarkerPreferenceRef = useRef<string | null>(null);
+  // One-hand landmarker for adaptiveHandCapacity, kept alive like the others.
+  const singleLandmarkerRef = useRef<HandLandmarker | null>(null);
+  const singleLandmarkerPreferenceRef = useRef<string | null>(null);
   const poseLandmarkerRef = useRef<PoseLandmarker | null>(null);
   const getLiveTiming = useCallback(() => {
     const timing = recentTimingRef.current.snapshot(performance.now());
@@ -366,6 +387,8 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       copyMs: number;
     } | null = null;
     const assignHands = reviewHandTracking ? createStreamingHandAssignment() : null;
+    const capacityController = adaptiveHandCapacity ? createHandCapacityController() : null;
+    profileInfoRef.current.dynamicHandCapacity = false;
     const lowLight = lowLightAssist && useHands ? createLowLightAssist() : null;
     let lowLightActive = false;
     lowLightGainRef.current = 1;
@@ -382,6 +405,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       mediaTime: number;
       presentedFrames?: number;
       hidden: boolean;
+      handCapacity?: HandCapacity;
     };
     profileInfoRef.current.landmarkMode = landmarkMode;
     profileInfoRef.current.poseStride = poseStride;
@@ -468,9 +492,14 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
           landmarkerRef.current.close();
           landmarkerRef.current = null;
         }
+        if (singleLandmarkerRef.current && (!adaptiveHandCapacity || singleLandmarkerPreferenceRef.current !== landmarkerKey)) {
+          singleLandmarkerRef.current.close();
+          singleLandmarkerRef.current = null;
+        }
         const needsHands = useHands && !landmarkerRef.current;
         const needsPose = usePose && !poseLandmarkerRef.current;
-        if (needsHands || needsPose) {
+        const needsSingleHand = adaptiveHandCapacity && !singleLandmarkerRef.current;
+        if (needsHands || needsPose || needsSingleHand) {
           const fileset = await FilesetResolver.forVisionTasks(WASM_BASE_URL);
           if (cancelled) return;
           if (needsHands) {
@@ -482,6 +511,18 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
             if (cancelled) { hands.close(); return; }
             landmarkerRef.current = hands;
             landmarkerPreferenceRef.current = landmarkerKey;
+          }
+          if (needsSingleHand) {
+            // Optional: without it the two-hand model handles every frame.
+            try {
+              const single = await createHandLandmarker(fileset, () => {}, requestedHandDelegate, handDetectionConfidence, 1);
+              if (cancelled) { single.close(); return; }
+              singleLandmarkerRef.current = single;
+              singleLandmarkerPreferenceRef.current = landmarkerKey;
+            } catch (singleErr) {
+              if (cancelled) return;
+              console.warn("[useCameraFeed] One-hand landmarker unavailable; using two-hand tracking only:", singleErr);
+            }
           }
           if (needsPose) {
             try {
@@ -503,6 +544,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
         }
 
         if (cancelled) return;
+        profileInfoRef.current.dynamicHandCapacity = !!capacityController && !!singleLandmarkerRef.current;
         scheduleNextFrame();
       } catch (err) {
         if (cancelled) return;
@@ -663,6 +705,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
         profileInfoRef.current.detectionInput = { width, height, mode };
         processedFrameIndex = 0;
         cachedPose = null;
+        capacityController?.reset();
       }
       const frame: FrameTiming = {
         started, observedAt: copyMs === undefined ? started : timestamp, timestamp, resizeMs,
@@ -672,7 +715,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       const stridedPose = poseStride > 1;
       if (stridedPose && timestamp - cachedPoseAt > POSE_CACHE_MAX_AGE_MS) cachedPose = null;
       const handStart = performance.now();
-      const handResult = useHands ? landmarkerRef.current?.detectForVideo(detectionInput, timestamp) ?? null : null;
+      const handResult = useHands ? detectHands(detectionInput, timestamp, frame) : null;
       const handEnd = performance.now();
       if (deferPose) {
         const poseFresh = poseFreshForNextFrame;
@@ -698,6 +741,28 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       completeFrame(frame, handResult, stridedPose ? cachedPose : freshPose, !!freshPose,
         handResult ? handEnd - handStart : 0, poseDetection?.ms ?? 0);
       return null;
+    }
+
+    function detectHands(input: TexImageSource, timestamp: number, frame: FrameTiming): HandLandmarkerResult | null {
+      let capacity: HandCapacity = capacityController && singleLandmarkerRef.current ? capacityController.next() : 2;
+      let result: HandLandmarkerResult | null = null;
+      if (capacity === 1) {
+        try {
+          result = singleLandmarkerRef.current!.detectForVideo(input, timestamp);
+        } catch (err) {
+          // Keep tracking with the two-hand model for the rest of this run.
+          console.warn("[useCameraFeed] One-hand landmarker failed; using two-hand tracking only:", err);
+          singleLandmarkerRef.current?.close();
+          singleLandmarkerRef.current = null;
+          capacityController?.reset();
+          profileInfoRef.current.dynamicHandCapacity = false;
+          capacity = 2;
+        }
+      }
+      if (capacity === 2) result = landmarkerRef.current?.detectForVideo(input, timestamp) ?? null;
+      if (result) capacityController?.observe(capacity, result.landmarks.length);
+      frame.handCapacity = capacity;
+      return result;
     }
 
     function detectPose(input: TexImageSource, timestamp: number) {
@@ -753,7 +818,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
         hidden: frame.hidden || document.hidden,
         mediaTime: frame.mediaTime, handsDetected,
         handCount,
-        handCapacity: useHands && landmarkerRef.current ? 2 : undefined,
+        handCapacity: useHands && landmarkerRef.current ? frame.handCapacity ?? 2 : undefined,
         singleHandSide: handCount === 1
           ? assignHands ? (sample.leftHand ? "Right" : "Left") : displayHandSide(handResult?.handedness?.[0]?.[0]?.categoryName)
           : undefined,
@@ -946,13 +1011,15 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       const canvas = canvasRef.current;
       if (canvas) canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
     };
-  }, [enabled, trackLiveTiming, trackOverlayPaint, decoupleVideoFrames, landmarkMode, poseStride, useHands, usePose, reviewHandTracking, lowLightAssist, requestedHandDelegate, captureProfile, handDetectionConfidence, deferPose]);
+  }, [enabled, trackLiveTiming, trackOverlayPaint, decoupleVideoFrames, landmarkMode, poseStride, useHands, usePose, reviewHandTracking, lowLightAssist, requestedHandDelegate, captureProfile, handDetectionConfidence, deferPose, adaptiveHandCapacity]);
 
   // Full-unmount-only cleanup: release both MediaPipe models.
   useEffect(() => {
     return () => {
       landmarkerRef.current?.close();
       landmarkerRef.current = null;
+      singleLandmarkerRef.current?.close();
+      singleLandmarkerRef.current = null;
       poseLandmarkerRef.current?.close();
       poseLandmarkerRef.current = null;
     };

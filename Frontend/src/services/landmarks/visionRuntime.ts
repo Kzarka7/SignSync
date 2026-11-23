@@ -42,10 +42,11 @@ export async function createHandLandmarker(
   report: (delegate: string, fallback?: string) => void,
   preferred: HandDelegatePreference = "GPU",
   minHandDetectionConfidence: number = HAND_LANDMARKER_THRESHOLDS.minHandDetectionConfidence,
+  numHands: 1 | 2 = 2,
 ): Promise<HandLandmarker> {
   const options = {
     runningMode: "VIDEO" as const,
-    numHands: 2,
+    numHands,
     ...HAND_LANDMARKER_THRESHOLDS,
     minHandDetectionConfidence,
   };

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { buildEvaluationZip, downloadEvaluation } from '../services/dataset/boundaryEvaluation'
-import { OPTIMIZED_LIVE_CAMERA_OPTIONS, useCameraFeed } from './useCameraFeed'
+import { DEFAULT_LIVE_CAPTURE_PROFILE, OPTIMIZED_LIVE_CAMERA_OPTIONS, useCameraFeed, type CaptureProfile } from './useCameraFeed'
 import type { DetectionInputWidth } from '../services/detectionInput'
 import type { LandmarkFrameSample } from '../types/landmarks'
 import type { IdleCollectionMetadata, LabeledSequence, TrainingCategory } from '../types/dataset'
@@ -13,7 +13,12 @@ import {
 } from '../services/dataset/datasetStorage'
 import { downloadDatasetExport, buildPerSampleZipExport, triggerDownload } from '../services/dataset/datasetExport'
 import { startCameraClip } from '../services/dataset/cameraClip'
+import { normalizeIdleSequence } from '../services/dataset/idleCollection'
 import { DEFAULT_SIGN_LABELS, RETIRED_SIGN_LABELS } from '../services/dataset/signLabelSearch'
+
+// Longest wait for the clip encoder to report it started before frames are
+// kept anyway, so a browser that never fires the start event still records.
+const CLIP_START_WAIT_MS = 750
 
 function createSequenceId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -44,6 +49,8 @@ interface RecorderOptions {
 
 export function useDatasetRecorder({ collection, recordingAllowed = true, hotkeysEnabled = true, durationLimitMs, scope = 'training', evaluation, evaluationGroup, training, trainingBatchId, trainingCategory, legacyOnly = false, signsOnly = false }: RecorderOptions = {}) {
   const [detectionInputWidth, setDetectionInputWidth] = useState<DetectionInputWidth>(640)
+  // Same default as Recognition Lab; 640x360 stays selectable in Camera diagnostics.
+  const [captureProfile, setCaptureProfile] = useState<CaptureProfile>(DEFAULT_LIVE_CAPTURE_PROFILE)
   const [allSequences, setSequences] = useState<LabeledSequence[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -85,7 +92,14 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
 
   const bufferRef = useRef<LandmarkFrameSample[]>([])
   const getRecordedFrameCount = useCallback(() => bufferRef.current.length, [])
+  // Non-null while a take is active (including the clip start-up wait).
   const recordingStartedAtRef = useRef<number | null>(null)
+  // Frames are kept from this time on; Infinity while the clip encoder starts.
+  const captureFromRef = useRef(Infinity)
+  const takeRef = useRef(0)
+  const clipStartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scopeRef = useRef(scope)
+  scopeRef.current = scope
   const finishClipRef = useRef<ReturnType<typeof startCameraClip> | null>(null)
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -118,49 +132,74 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
         clearInterval(countdownIntervalRef.current)
       }
       if (recordingTimeoutRef.current !== null) clearTimeout(recordingTimeoutRef.current)
+      if (clipStartTimeoutRef.current !== null) clearTimeout(clipStartTimeoutRef.current)
+      takeRef.current += 1
       recordingStartedAtRef.current = null
+      captureFromRef.current = Infinity
       void finishClipRef.current?.(true)
       finishClipRef.current = null
     }
   }, [])
 
   const handleFrame = useCallback((sample: LandmarkFrameSample) => {
-    const startedAt = recordingStartedAtRef.current
     // Latest-frame inference can deliver a preview image captured before Start.
-    if (startedAt === null || sample.timestamp < startedAt) return
+    if (recordingStartedAtRef.current === null || sample.timestamp < captureFromRef.current) return
     bufferRef.current.push(sample)
   }, [])
 
   const feed = useCameraFeed({
     ...OPTIMIZED_LIVE_CAMERA_OPTIONS,
-    onFrame: handleFrame, detectionInputWidth, trackLiveTiming: true,
+    onFrame: handleFrame, detectionInputWidth, captureProfile, trackLiveTiming: true,
+    // Matches Recognition Lab; adds overlay paint timing to the performance report.
+    trackOverlayPaint: true,
   })
 
   // The actual recording - buffering frames, tracking frame count - starts
   // here, only once the countdown (if any) has finished. Camera detection
   // itself never stops or pauses during the countdown; only whether
-  // handleFrame keeps what it sees is gated by recordingStartedAtRef.
-  const beginActualRecording = useCallback(() => {
+  // handleFrame keeps what it sees is gated by captureFromRef.
+  //
+  // Training takes also record a video clip. Starting its encoder stalls
+  // detection briefly, so frames (and the duration limit) start once the
+  // encoder reports it is running, or after CLIP_START_WAIT_MS at most.
+  const beginKeepingFrames = useCallback((take: number) => {
+    if (takeRef.current !== take || recordingStartedAtRef.current === null || captureFromRef.current !== Infinity) return
+    if (clipStartTimeoutRef.current !== null) {
+      clearTimeout(clipStartTimeoutRef.current)
+      clipStartTimeoutRef.current = null
+    }
     feed.startPerformanceProfile()
+    captureFromRef.current = performance.now()
+    if (durationLimitMs && durationLimitMs > 0) {
+      recordingTimeoutRef.current = setTimeout(() => finishRecordingRef.current(false), durationLimitMs)
+    }
+  }, [feed.startPerformanceProfile, durationLimitMs])
+
+  const beginActualRecording = useCallback(() => {
+    const take = ++takeRef.current
     bufferRef.current = []
     setSaveError(null)
     setVideoCaptureError(null)
+    captureFromRef.current = Infinity
+    recordingStartedAtRef.current = performance.now()
+    setIsRecording(true)
+    let waitForClip = false
     if (recordingContextRef.current.scope === 'training') {
       try {
         const stream = feed.videoRef.current?.srcObject
         if (!(stream instanceof MediaStream)) throw new Error('Camera stream unavailable')
-        finishClipRef.current = startCameraClip(stream)
+        finishClipRef.current = startCameraClip(stream, () => beginKeepingFrames(take))
+        waitForClip = true
       } catch {
         setVideoCaptureError('Video capture could not start. This take will save landmarks only.')
       }
     }
-    recordingStartedAtRef.current = performance.now()
-    setIsRecording(true)
-
-    if (durationLimitMs && durationLimitMs > 0) {
-      recordingTimeoutRef.current = setTimeout(() => finishRecordingRef.current(false), durationLimitMs)
+    if (waitForClip && captureFromRef.current === Infinity) {
+      clipStartTimeoutRef.current = setTimeout(() => beginKeepingFrames(take), CLIP_START_WAIT_MS)
+    } else {
+      beginKeepingFrames(take)
     }
-  }, [feed.startPerformanceProfile, feed.videoRef, durationLimitMs])
+  }, [feed.videoRef, beginKeepingFrames])
 
   const startRecording = useCallback(() => {
     if (savingRef.current || isLoading || !recordingAllowed || recordingStartedAtRef.current !== null) return
@@ -212,8 +251,14 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
         clearTimeout(recordingTimeoutRef.current)
         recordingTimeoutRef.current = null
       }
+      if (clipStartTimeoutRef.current !== null) {
+        clearTimeout(clipStartTimeoutRef.current)
+        clipStartTimeoutRef.current = null
+      }
+      takeRef.current += 1
       feed.stopPerformanceProfile()
       recordingStartedAtRef.current = null
+      captureFromRef.current = Infinity
       setIsRecording(false)
       const samples = bufferRef.current
       bufferRef.current = []
@@ -262,14 +307,19 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
           else setVideoCaptureError('The camera video could not be saved. This take has landmarks only.')
         }
         await saveSequence(sequence, recordingContextRef.current.scope)
-        await refreshSequences()
+        // Add the take in memory. Reloading every stored sample (all frames)
+        // here blocked the page and the camera loop after each Stop.
+        if (recordingContextRef.current.scope === scopeRef.current) {
+          const stored = normalizeIdleSequence(sequence)
+          setSequences(previous => [...previous.filter(s => s.id !== stored.id), stored])
+        }
         setLastSavedSequence(sequence)
       } catch (err) {
         console.error('[useDatasetRecorder] Failed to save sequence:', err)
         setSaveError(storageError(err))
       } finally { savingRef.current = false; setIsSaving(false) }
     },
-    [feed.stopPerformanceProfile, refreshSequences],
+    [feed.stopPerformanceProfile],
   )
 
   useEffect(() => { finishRecordingRef.current = finishRecording }, [finishRecording])
@@ -316,15 +366,23 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [hotkeysEnabled, isRecording, countdown, startRecording, stopRecording, discardRecording, cancelCountdown])
 
-  const mutateSamples = useCallback(async (action: () => Promise<void>) => {
+  // Deletes update the list in memory instead of reloading every sample.
+  const removeStoredSamples = useCallback(async (ids: string[], remove: () => Promise<void>) => {
     if (savingRef.current) return
     savingRef.current = true; setIsSaving(true); setSaveError(null)
-    try { await action(); await refreshSequences() }
+    try {
+      await remove()
+      const removed = new Set(ids)
+      setSequences(previous => previous.filter(s => !removed.has(s.id)))
+    }
     catch (error) { setSaveError(storageError(error)) }
     finally { savingRef.current = false; setIsSaving(false) }
-  }, [refreshSequences])
-  const removeSequence = useCallback((id: string) => mutateSamples(() => deleteStoredSequence(id, scope)), [scope, mutateSamples])
-  const clearAll = useCallback(() => mutateSamples(() => clearSequences(scope, sequences.map(s => s.id))), [scope, sequences, mutateSamples])
+  }, [])
+  const removeSequence = useCallback((id: string) => removeStoredSamples([id], () => deleteStoredSequence(id, scope)), [scope, removeStoredSamples])
+  const clearAll = useCallback(() => {
+    const ids = sequences.map(s => s.id)
+    return removeStoredSamples(ids, () => clearSequences(scope, ids))
+  }, [scope, sequences, removeStoredSamples])
 
   const exportDataset = useCallback(() => {
     setExportError(null)
@@ -395,6 +453,8 @@ export function useDatasetRecorder({ collection, recordingAllowed = true, hotkey
     lastSavedSequence,
     detectionInputWidth,
     setDetectionInputWidth,
+    captureProfile,
+    setCaptureProfile,
     feed,
     getRecordedFrameCount,
     sequences,

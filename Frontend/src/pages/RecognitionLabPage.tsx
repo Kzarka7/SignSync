@@ -6,12 +6,11 @@ import PageHeader from '../components/layout/PageHeader'
 import CameraPanel from '../components/live/CameraPanel'
 import LabCaptionPreview from '../components/live/LabCaptionPreview'
 import LabGlossTrack, { LabGlossSuggestions } from '../components/live/LabGlossTrack'
-import { OPTIMIZED_LIVE_CAMERA_OPTIONS, useCameraFeed, type CaptureProfile, type LandmarkMode, type LiveCameraTiming } from '../hooks/useCameraFeed'
+import { DEFAULT_LIVE_CAPTURE_PROFILE, OPTIMIZED_LIVE_CAMERA_OPTIONS, useCameraFeed, type CaptureProfile, type LandmarkMode, type LiveCameraTiming } from '../hooks/useCameraFeed'
 import type { HandDelegatePreference } from '../services/landmarks/visionRuntime'
 
 // Lab only: the palm detector also accepts curled-finger shapes and blurred
 // hands. Other pages keep the 0.5 default.
-const LAB_HAND_DETECTION_CONFIDENCE = 0.35
 import { createDiagnosticSession, FINGERSPELLING_PAUSE_MS } from '../services/landmarks/recognitionDiagnostics'
 import { CONTINUOUS_SETTINGS, displayActivity } from '../services/landmarks/continuousRecognition'
 import { getRecognitionConfirmation, LIVE_RECOGNITION_POLICY, LIVE_SIGNS_MODEL } from '../services/landmarks/liveRecognitionPolicy'
@@ -224,8 +223,10 @@ export default function RecognitionLabPage() {
   const [detectionInputWidth, setDetectionInputWidth] = useState<DetectionInputWidth>(640)
   const [lowLightAssist, setLowLightAssist] = useState(true)
   const [handDelegate, setHandDelegate] = useState<HandDelegatePreference>('GPU')
-  const [captureProfile, setCaptureProfile] = useState<CaptureProfile>('720p')
+  const [captureProfile, setCaptureProfile] = useState<CaptureProfile>(DEFAULT_LIVE_CAPTURE_PROFILE)
   const [deferPose, setDeferPose] = useState(true)
+  // Lab trial before the Collector: one-hand model while a single hand is tracked.
+  const [adaptiveHandCapacity, setAdaptiveHandCapacity] = useState(true)
   const supportsMotionEvidence = modelMode === 'lab-signs43-shape-motion' || modelMode === LIVE_SIGNS_MODEL
     || modelMode === V2_MODEL || modelMode === EXPANDED_MODEL || modelMode === COMBINED_MODEL
   const [videoQueue, setVideoQueue] = useState<QueuedVideo[]>([])
@@ -265,7 +266,7 @@ export default function RecognitionLabPage() {
   const feed = useCameraFeed({
     ...OPTIMIZED_LIVE_CAMERA_OPTIONS,
     onFrame: onCameraFrame, trackLiveTiming: true, landmarkMode, showPoseLandmarks, detectionInputWidth, lowLightAssist,
-    handDelegate, captureProfile, deferPose, handDetectionConfidence: LAB_HAND_DETECTION_CONFIDENCE,
+    handDelegate, captureProfile, deferPose, adaptiveHandCapacity,
     trackOverlayPaint: true,
   })
   const canRecognizeFromCamera = landmarkMode === 'both' && feed.cameraReady && feed.poseDetected && !feed.modelError
@@ -929,6 +930,13 @@ export default function RecognitionLabPage() {
               disabled={running || benchmarking} onChange={event => setDeferPose(event.target.checked)} />
             <span>Run pose after hand landmarks
               <span className="block text-xs text-text-2">Hands are delivered without waiting for the pose model. Pose updates arrive one frame later.</span>
+            </span>
+          </label>}
+          {landmarkMode !== 'pose' && <label className="flex min-h-9 items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-signal" checked={adaptiveHandCapacity}
+              disabled={running || benchmarking} onChange={event => setAdaptiveHandCapacity(event.target.checked)} />
+            <span>Faster tracking with one hand
+              <span className="block text-xs text-text-2">While one hand is shown, skip the search for a second hand on most frames. It still checks every third frame. The timing panel shows “1 max” when active.</span>
             </span>
           </label>}
           {landmarkMode !== 'pose' && <label className="flex min-h-9 items-start gap-2 text-sm">
