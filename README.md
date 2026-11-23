@@ -7,7 +7,15 @@ Filipino Sign Language conversation assistant. This repository is a monorepo:
 
 ## Run locally
 
-Use two terminals.
+**One command** (from the repository root):
+
+```powershell
+npm run dev
+```
+
+This starts the FastAPI backend (`http://127.0.0.1:8000`, using `.venv-gru`, falling back to `Backend/.venv`) and the Vite frontend (`http://localhost:5173`) together. Press Ctrl+C to stop both. It installs frontend dependencies if they are missing and stops with a message if port 8000 is already in use. Options: `.\scripts\dev.ps1 -BackendPort 8010` or `-NoReload`.
+
+**Or run them separately** in two terminals.
 
 **Backend** (from `Backend/`):
 
