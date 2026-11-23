@@ -1,0 +1,35 @@
+node_modules/
+.venv/
+venv/
+__pycache__/
+dist/
+build/
+graphify-out/
+*.mp4
+*.webm
+*.avi
+*.keras
+*.h5
+*.npy
+*.npz
+
+# Claude Code config added by `graphify claude install`
+.claude/
+
+# Video, audio, and image files (prevents multimodal vision extraction on test media)
+*.mp4
+*.webm
+*.avi
+*.mov
+*.wav
+*.mp3
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+
+# Raw dataset arrays and batch diagnostic logs if tracked in Git
+*.npy
+*.csv
+logs/
