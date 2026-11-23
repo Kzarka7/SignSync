@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 const path = require('node:path')
 const load = require('../scripts/loadTypeScript.cjs')
 const { hookHarness } = require('./helpers/hookHarness.cjs')
+const THRESHOLDS = { minHandDetectionConfidence: 0.5, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5 }
 
 test('camera modes load and run only the selected detectors, even after both are cached', async () => {
   let landmarkMode, nextFrame, now = 1000
@@ -20,7 +21,7 @@ test('camera modes load and run only the selected detectors, even after both are
   const root = path.join(__dirname, '../src')
   const harness = hookHarness(path.join(root, 'hooks/useCameraFeed.ts'), 'useCameraFeed', name => {
     if (name === '@mediapipe/tasks-vision') return { FilesetResolver: { forVisionTasks: async () => ({}) } }
-    if (name.endsWith('/visionRuntime')) return {
+    if (name.endsWith('/visionRuntime')) return { HAND_LANDMARKER_THRESHOLDS: THRESHOLDS,
       createHandLandmarker: model('hands'), createPoseLandmarker: model('pose'),
       buildFrameSample: (_time, hands, pose) => ({ hands, pose }),
     }
@@ -86,7 +87,7 @@ test('review-style camera overlay swaps colors while recognition receives the st
   const root = path.join(__dirname, '../src')
   const harness = hookHarness(path.join(root, 'hooks/useCameraFeed.ts'), 'useCameraFeed', name => {
     if (name === '@mediapipe/tasks-vision') return { FilesetResolver: { forVisionTasks: async () => ({}) } }
-    if (name.endsWith('/visionRuntime')) return {
+    if (name.endsWith('/visionRuntime')) return { HAND_LANDMARKER_THRESHOLDS: THRESHOLDS,
       createHandLandmarker: async () => ({ detectForVideo: () => ({ landmarks: [points], handedness: [[{ categoryName: side, score: .99 }]] }), close() {} }),
       buildFrameSample: timestamp => ({ timestamp, leftHand: null, rightHand: null, pose: null }),
     }
@@ -146,7 +147,7 @@ test('decoupled camera inference uses the latest bitmap and releases every frame
   })
   const harness = hookHarness(path.join(root, 'hooks/useCameraFeed.ts'), 'useCameraFeed', name => {
     if (name === '@mediapipe/tasks-vision') return { FilesetResolver: { forVisionTasks: async () => ({}) } }
-    if (name.endsWith('/visionRuntime')) return {
+    if (name.endsWith('/visionRuntime')) return { HAND_LANDMARKER_THRESHOLDS: THRESHOLDS,
       createHandLandmarker: model('hand'),
       createPoseLandmarker: model('pose'),
       buildFrameSample: timestamp => ({ timestamp }),
@@ -259,7 +260,7 @@ test('paired camera runs hands continuously and holds each overlay hand without 
 
   const harness = hookHarness(path.join(root, 'hooks/useCameraFeed.ts'), 'useCameraFeed', name => {
     if (name === '@mediapipe/tasks-vision') return { FilesetResolver: { forVisionTasks: async () => ({}) } }
-    if (name.endsWith('/visionRuntime')) return {
+    if (name.endsWith('/visionRuntime')) return { HAND_LANDMARKER_THRESHOLDS: THRESHOLDS,
       createHandLandmarker: async (_fileset, report) => {
         loaded++
         report('GPU')
@@ -363,4 +364,69 @@ test('paired camera runs hands continuously and holds each overlay hand without 
   assert.equal(closed, 0)
   harness.unmount()
   assert.equal(closed, 1)
+})
+
+test('deferred pose delivers hands first, runs pose before the next frame, and keeps samples complete', async () => {
+  let nextFrame, now = 1000
+  const frames = [], calls = [], assignmentChecks = [], timers = []
+  const runTimers = () => { for (let id = 0; id < timers.length; id++) { const fn = timers[id]; timers[id] = null; fn?.() } }
+  const root = path.join(__dirname, '../src')
+  const point = (x, y) => ({ x, y, z: 0, visibility: 1 })
+  const hand = Array.from({ length: 21 }, () => point(0.4, 0.2))
+  const harness = hookHarness(path.join(root, 'hooks/useCameraFeed.ts'), 'useCameraFeed', name => {
+    if (name === '@mediapipe/tasks-vision') return { FilesetResolver: { forVisionTasks: async () => ({}) } }
+    if (name.endsWith('/visionRuntime')) return { HAND_LANDMARKER_THRESHOLDS: THRESHOLDS,
+      createHandLandmarker: async (_fileset, report, delegate, confidence) => {
+        calls.push(['created', delegate, confidence])
+        report('GPU')
+        return { detectForVideo(_, timestamp) { calls.push(['hand', timestamp]); return { landmarks: [hand] } }, close() {} }
+      },
+      createPoseLandmarker: async () => ({ detectForVideo(_, timestamp) {
+        calls.push(['pose', timestamp])
+        return { landmarks: [Array.from({ length: 33 }, () => point(0.5, 0.5))] }
+      }, close() {} }),
+      smoothPoseShoulders: (_previous, fresh) => fresh,
+      buildFrameSample: (timestamp, _hand, pose) => ({ timestamp, pose: pose?.landmarks[0] ?? null }),
+    }
+    if (name.endsWith('/videoHandAssignment')) return { createStreamingHandAssignment: () =>
+      (sample, result, _aspect, usePoseWrists) => {
+        assignmentChecks.push(usePoseWrists)
+        return { ...sample, leftHand: result.landmarks[0] ?? null, rightHand: null }
+      } }
+    return load(path.resolve(root, 'hooks', name + '.ts'))
+  }, () => [{ stridePairedPose: true, reviewHandTracking: true, deferPose: true, handDetectionConfidence: 0.35,
+    trackLiveTiming: true, onFrame: sample => { calls.push(['frame', sample.timestamp]); frames.push(sample) } }], {
+    navigator: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [], getVideoTracks: () => [] }) } },
+    document: { hidden: false, createElement: () => ({ getContext: () => null }) },
+    performance: { now: () => now },
+    requestAnimationFrame: () => 1,
+    setTimeout: fn => timers.push(fn), clearTimeout: id => { timers[id - 1] = null },
+    console: { warn() {} },
+  })
+  const feed = harness.render()
+  feed.canvasRef.current = { getContext: () => null }
+  feed.videoRef.current = {
+    videoWidth: 1280, videoHeight: 720, readyState: 2, play: async () => {},
+    requestVideoFrameCallback(fn) { nextFrame = fn; return 1 }, cancelVideoFrameCallback() {},
+  }
+  const drain = () => new Promise(resolve => setImmediate(resolve))
+  const frame = time => { now = time; nextFrame(time, { mediaTime: time / 1000, presentedFrames: frames.length + 1 }); return frames.at(-1) }
+
+  feed.toggleCamera(); harness.render(); await drain()
+  assert.deepEqual(calls.shift(), ['created', 'GPU', 0.35])
+  assert.equal(frame(1000).pose, null, 'the first frame does not wait for pose')
+  assert.deepEqual(calls, [['hand', 1000], ['frame', 1000]])
+  const second = frame(1050)
+  assert.deepEqual(calls.slice(2), [['pose', 1000], ['hand', 1050], ['frame', 1050]], 'pose runs before the next frame reuses its input')
+  assert.ok(second.pose)
+  frame(1100); frame(1150)
+  runTimers()
+  frame(1200)
+  runTimers()
+  assert.deepEqual(calls.filter(([kind]) => kind === 'pose').map(([, time]) => time), [1000, 1200], 'a scheduled pose also runs on its own')
+  assert.deepEqual(assignmentChecks, [false, true, false, false, false])
+  const report = JSON.parse((feed.startLandmarkBenchmark(), frame(1250), feed.stopLandmarkBenchmark()))
+  assert.equal(report.poseScheduling, 'after hand landmarks')
+  assert.equal(report.handThresholds.minHandDetectionConfidence, 0.35)
+  harness.unmount()
 })

@@ -108,6 +108,21 @@ function handObservation(timestamp, hands, wrists) {
   return { frame, hands }
 }
 
+test('streaming assignment drops a second detection of the same hand but keeps two touching hands', () => {
+  const spread = (x, handedness, score) => ({ handedness, score, landmarks: Array.from({ length: 21 },
+    (_, joint) => ({ x: x + (joint % 5) * .02, y: .4 + Math.floor(joint / 5) * .03, z: 0 })) })
+  const run = hands => createStreamingHandAssignment()(handObservation(0, hands).frame.raw, {
+    landmarks: hands.map(hand => hand.landmarks),
+    handedness: hands.map(hand => [{ categoryName: hand.handedness, score: hand.score }]),
+  }, 16 / 9)
+  const fresh = spread(.5, 'Right', .95), trailing = spread(.503, 'Right', .7)
+  const duplicate = run([trailing, fresh])
+  assert.equal(duplicate.rightHand, fresh.landmarks)
+  assert.equal(duplicate.leftHand, null)
+  const touching = run([spread(.42, 'Left', .9), spread(.5, 'Right', .9)])
+  assert.ok(touching.leftHand && touching.rightHand)
+})
+
 test('streaming assignment keeps both hands through duplicate labels, leaves occlusions missing, and resets after a gap', () => {
   const assign = createStreamingHandAssignment()
   function next(timestamp, hands) {
@@ -128,8 +143,59 @@ test('streaming assignment keeps both hands through duplicate labels, leaves occ
   const lost = next(99, [])
   assert.equal(lost.leftHand, null)
   assert.equal(lost.rightHand, null)
-  assert.equal(next(300, [{ ...right, handedness: 'Left' }]).leftHand, right.landmarks)
+  // A short dropout keeps the side; after the track has expired the label decides again.
+  assert.equal(next(300, [{ ...right, handedness: 'Left' }]).rightHand, right.landmarks)
+  assert.equal(next(900, [{ ...right, handedness: 'Left' }]).leftHand, right.landmarks)
 })
+
+function movingHand(cx, cy, handedness, score = .95) {
+  // A plausible 21-point hand with a palm of about 0.1 frame heights.
+  const offsets = [[0, .06], [-.03, .04], [-.045, .02], [-.055, 0], [-.06, -.02], [-.02, -.01], [-.022, -.04], [-.023, -.06], [-.024, -.08],
+    [0, -.015], [0, -.045], [0, -.07], [0, -.09], [.02, -.01], [.021, -.04], [.022, -.06], [.023, -.08], [.035, 0], [.037, -.025], [.038, -.04], [.039, -.055]]
+  return { handedness, score, landmarks: offsets.map(([dx, dy]) => ({ x: cx + dx, y: cy + dy, z: 0 })) }
+}
+function liveResult(hands) {
+  return { landmarks: hands.map(hand => hand.landmarks), handedness: hands.map(hand => [{ categoryName: hand.handedness, score: hand.score }]) }
+}
+function livePose(leftWrist, rightWrist) {
+  const point = (x, y, visibility = .99) => ({ x, y, z: 0, visibility })
+  return { nose: point(.5, .2), leftShoulder: point(.62, .45), rightShoulder: point(.38, .45), leftElbow: point(.68, .65), rightElbow: point(.32, .65),
+    leftWrist: leftWrist ? point(...leftWrist) : point(.7, .9, .1), rightWrist: rightWrist ? point(...rightWrist) : point(.3, .9, .1),
+    leftHip: point(.6, .95), rightHip: point(.4, .95) }
+}
+
+test('streaming assignment keeps one fast-moving hand on its side through flickering labels and dropouts', () => {
+  const assign = createStreamingHandAssignment()
+  const flips = new Set([3, 4, 7, 9, 10, 14, 15, 16])
+  const dropped = new Set([5, 6, 11, 12])
+  let sides = []
+  for (let index = 0; index < 20; index++) {
+    // Sweeps 0.04 of the frame width per 33 ms frame (the full width in under a second).
+    const hand = movingHand(.1 + .04 * index, .5, flips.has(index) ? 'Left' : 'Right', .9)
+    const sample = { timestamp: index * 33, leftHand: null, rightHand: null, pose: null }
+    const result = assign(sample, liveResult(dropped.has(index) ? [] : [hand]), 16 / 9, false)
+    if (!dropped.has(index)) sides.push(result.rightHand ? 'Right' : result.leftHand ? 'Left' : 'none')
+  }
+  assert.deepEqual([...new Set(sides)], ['Right'])
+})
+
+test('streaming assignment follows a consistent label and pose evidence instead of a wrong initial side', () => {
+  const assign = createStreamingHandAssignment()
+  const sides = []
+  for (let index = 0; index < 16; index++) {
+    // Starts with a confident wrong label and no pose, then the label and pose agree on Left.
+    const hand = movingHand(.7, .5, index < 2 ? 'Right' : 'Left', .95)
+    const fresh = index % 4 === 3
+    const pose = livePose([.7, .56], null)
+    const result = assign({ timestamp: index * 33, leftHand: null, rightHand: null, pose }, liveResult([hand]), 16 / 9, fresh)
+    sides.push(result.leftHand ? 'Left' : 'Right')
+  }
+  assert.equal(sides[0], 'Right')
+  assert.equal(sides.at(-1), 'Left')
+  // Once corrected it stays corrected.
+  assert.deepEqual([...new Set(sides.slice(sides.indexOf('Left')))], ['Left'])
+})
+
 
 test('video hand assignment corrects a brief label flip without filling missing frames', () => {
   const observations = [

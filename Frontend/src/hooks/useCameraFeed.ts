@@ -1,12 +1,14 @@
 import {
   WASM_BASE_URL, UPPER_BODY_POSE_INDEX, createHandLandmarker, createPoseLandmarker,
-  buildFrameSample, smoothPoseShoulders, type PoseLandmarks,
+  buildFrameSample, smoothPoseShoulders, HAND_LANDMARKER_THRESHOLDS,
+  type HandDelegatePreference, type PoseLandmarks,
 } from '../services/landmarks/visionRuntime';
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { createCameraProfile, createRecentCameraTiming, type DetectionTiming } from "../services/cameraProfile";
 import { createDetectionInput, type DetectionInputWidth } from "../services/detectionInput";
 import { HAND_OVERLAY_COLORS } from "../services/landmarks/handOverlayColors";
 import { createStreamingHandAssignment } from "../services/dataset/videoHandAssignment";
+import { createLowLightAssist } from "../services/landmarks/lowLightAssist";
 import {
   FilesetResolver,
   HandLandmarker,
@@ -91,6 +93,8 @@ export interface CameraFeedState {
   // but a hand briefly occluded, or vice versa.
   poseDetected: boolean;
   lightLevel: "ready" | "warning";
+  // True while the detectors receive a brightened copy of dark frames.
+  lowLightAssistActive: boolean;
   error: string | null;
   modelError: string | null;
   enabled: boolean;
@@ -116,12 +120,29 @@ export type LiveCameraTiming = NonNullable<ReturnType<ReturnType<typeof createRe
   poseDelegate: string | null;
   inputWidth?: number;
   inputHeight?: number;
+  // Exposure lift applied to the detection input (1 means unchanged).
+  lowLightGain: number;
 };
 
 export type LandmarkMode = "hands" | "pose" | "both";
 const PAIRED_POSE_STRIDE = 4;
 const POSE_CACHE_MAX_AGE_MS = 350;
 const HAND_OVERLAY_HOLD_MS = 150;
+// A held overlay hand follows its last measured palm motion for at most
+// this long, so a short dropout during fast motion does not leave a frozen
+// skeleton behind the moving hand. Display only.
+const HAND_OVERLAY_EXTRAPOLATE_MS = 80;
+const HAND_OVERLAY_PALM_JOINTS = [0, 5, 9, 13, 17] as const;
+// Normalized frame units; keeps one noisy step from throwing the overlay.
+const HAND_OVERLAY_MAX_SHIFT = 0.12;
+
+// "fast" asks for 640x360, which many laptop webcams deliver at a full
+// 30 fps when 720p is limited to 15-20 fps. Detection then needs no resize.
+export type CaptureProfile = "720p" | "fast";
+const CAPTURE_CONSTRAINTS: Record<CaptureProfile, MediaTrackConstraints> = {
+  "720p": { width: 1280, height: 720, frameRate: { ideal: 30 } },
+  fast: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 30 } },
+};
 
 export interface UseCameraFeedOptions {
   detectionInputWidth?: DetectionInputWidth;
@@ -133,6 +154,22 @@ export interface UseCameraFeedOptions {
   showHandLandmarks?: boolean;
   showPoseLandmarks?: boolean;
   reviewHandTracking?: boolean;
+  // Brightens dark hand regions in the detection input only. On by default;
+  // it leaves frames unchanged unless the hands or wrists are dark.
+  lowLightAssist?: boolean;
+  // Processor for the hand model. GPU falls back to CPU when unavailable.
+  handDelegate?: HandDelegatePreference;
+  captureProfile?: CaptureProfile;
+  // Palm detector threshold. The palm detector re-finds a hand each frame
+  // while fewer than two hands are tracked; curled fingers and motion blur
+  // score lower than open palms. The landmark model's presence check (0.5)
+  // still rejects crops without a hand.
+  handDetectionConfidence?: number;
+  // With paired pose striding, run pose after the frame's hand landmarks are
+  // delivered instead of before. Hands no longer wait for pose; the pose in
+  // each sample is the cached one, at most one processed frame older than
+  // in the default order.
+  deferPose?: boolean;
   // Delivers every processed frame, including cached pose when striding is enabled.
   onFrame?: (sample: LandmarkFrameSample) => void;
 }
@@ -164,12 +201,20 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
   const useHands = landmarkMode !== "pose";
   const usePose = landmarkMode !== "hands";
   const poseStride = options?.stridePairedPose && useHands && usePose ? PAIRED_POSE_STRIDE : 1;
+  const requestedHandDelegate = options?.handDelegate ?? "GPU";
+  const captureProfile = options?.captureProfile ?? "720p";
+  const handDetectionConfidence = options?.handDetectionConfidence ?? HAND_LANDMARKER_THRESHOLDS.minHandDetectionConfidence;
+  const deferPose = (options?.deferPose ?? false) && poseStride > 1;
   const profileInfoRef = useRef({
     capture: {} as { width?: number; height?: number; configuredFps?: number },
     detectionInput: {} as { width?: number; height?: number; mode?: string },
     landmarkMode, poseStride, handDelegate: "not initialized", poseDelegate: "not initialized",
+    requestedHandDelegate: requestedHandDelegate as string, captureProfile: captureProfile as string,
+    handThresholds: { ...HAND_LANDMARKER_THRESHOLDS, minHandDetectionConfidence: handDetectionConfidence } as Record<string, number>,
+    poseScheduling: (deferPose ? "after hand landmarks" : "with hands") as string,
     dynamicHandCapacity: false,
     handFallback: "", poseFallback: "", scheduling: "not started", inferenceThread: "main",
+    lowLightAssist: "adaptive" as "adaptive" | "off", lowLightAssistFrames: 0, lowLightMaxGain: 1,
   });
   const recordedProfileInfoRef = useRef<typeof profileInfoRef.current | null>(null);
   const benchmarkInfoRef = useRef<typeof profileInfoRef.current | null>(null);
@@ -203,6 +248,9 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
         "Fresh hand FPS counts distinct video timestamps with at least one detected hand.",
         "Latency starts at the video callback. Overlay paint opportunity is estimated with animation callbacks.",
         "Compare foreground-only runs with matched delegates and actual capture settings.",
+        ...(info.poseScheduling === "after hand landmarks" ? [
+          "Pose ran after each frame's hand landmarks were delivered. poseMs is attributed to the next frame and is not part of totalMs or callbackToLandmarksMs.",
+        ] : []),
       ],
     });
   }, [reportMode]);
@@ -225,13 +273,16 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
   // loading the MediaPipe models takes a second or two - only closed on
   // full component unmount, see the effect below.
   const landmarkerRef = useRef<HandLandmarker | null>(null);
+  // Delegate the live hand landmarker was created for, so a change recreates it.
+  const landmarkerPreferenceRef = useRef<string | null>(null);
   const poseLandmarkerRef = useRef<PoseLandmarker | null>(null);
   const getLiveTiming = useCallback(() => {
     const timing = recentTimingRef.current.snapshot(performance.now());
     return timing && { ...timing,
       handDelegate: useHands && landmarkerRef.current ? profileInfoRef.current.handDelegate : null,
       poseDelegate: usePose && poseLandmarkerRef.current ? profileInfoRef.current.poseDelegate : null,
-      inputWidth: profileInfoRef.current.detectionInput.width, inputHeight: profileInfoRef.current.detectionInput.height };
+      inputWidth: profileInfoRef.current.detectionInput.width, inputHeight: profileInfoRef.current.detectionInput.height,
+      lowLightGain: lowLightGainRef.current };
   }, [useHands, usePose]);
   // MediaPipe requires each call to detectForVideo() on a given landmarker
   // to use a strictly increasing timestamp. video.currentTime resets to 0
@@ -260,12 +311,15 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
   const detectionInputWidthRef = useRef(options?.detectionInputWidth ?? null);
   detectionInputWidthRef.current = options?.detectionInputWidth ?? null;
   const prepareDetectionInputRef = useRef(createDetectionInput());
+  const lowLightAssist = options?.lowLightAssist ?? true;
+  const lowLightGainRef = useRef(1);
 
   const [enabled, setEnabled] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [handsDetected, setHandsDetected] = useState(false);
   const [poseDetected, setPoseDetected] = useState(false);
   const [lightLevel, setLightLevel] = useState<"ready" | "warning">("ready");
+  const [lowLightAssistActive, setLowLightAssistActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
 
@@ -279,6 +333,8 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       setHandsDetected(false);
       setPoseDetected(false);
       setLightLevel("ready");
+      setLowLightAssistActive(false);
+      lowLightGainRef.current = 1;
       setError(null);
       setModelError(null);
       latestFrameRef.current = null;
@@ -300,6 +356,8 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     let cachedPoseAt = -Infinity;
     const lastRenderedHands: [LandmarkPoint[] | null, LandmarkPoint[] | null] = [null, null];
     const lastRenderedHandsAt = [-Infinity, -Infinity];
+    // Palm-centre velocity per slot, normalized units per millisecond.
+    const renderedHandMotion: ({ x: number; y: number } | null)[] = [null, null];
     let latestVideoFrame: {
       bitmap: ImageBitmap;
       metadata: VideoFrameCallbackMetadata;
@@ -308,6 +366,12 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       copyMs: number;
     } | null = null;
     const assignHands = reviewHandTracking ? createStreamingHandAssignment() : null;
+    const lowLight = lowLightAssist && useHands ? createLowLightAssist() : null;
+    let lowLightActive = false;
+    lowLightGainRef.current = 1;
+    profileInfoRef.current.lowLightAssist = lowLight ? "adaptive" : "off";
+    profileInfoRef.current.lowLightAssistFrames = 0;
+    profileInfoRef.current.lowLightMaxGain = 1;
     type FrameTiming = {
       started: number;
       observedAt: number;
@@ -321,6 +385,18 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     };
     profileInfoRef.current.landmarkMode = landmarkMode;
     profileInfoRef.current.poseStride = poseStride;
+    profileInfoRef.current.requestedHandDelegate = requestedHandDelegate;
+    profileInfoRef.current.captureProfile = captureProfile;
+    profileInfoRef.current.handThresholds = { ...HAND_LANDMARKER_THRESHOLDS, minHandDetectionConfidence: handDetectionConfidence };
+    profileInfoRef.current.poseScheduling = deferPose ? "after hand landmarks" : "with hands";
+    const landmarkerKey = requestedHandDelegate + ":" + handDetectionConfidence;
+    // Deferred pose: the job runs in its own task once the hand landmarks
+    // are out, or first thing in the next frame, before that frame reuses
+    // the detection input canvases.
+    let pendingPose: { run: () => void; release: () => void } | null = null;
+    let poseTask: ReturnType<typeof setTimeout> | null = null;
+    let poseFreshForNextFrame = false;
+    let carriedPoseMs = 0;
 
     async function setup() {
       setCameraReady(false);
@@ -334,8 +410,8 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       // to show - hide the video and report it honestly.
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          // Request 720p capture; actual settings depend on the camera.
-          video: { width: 1280, height: 720, frameRate: { ideal: 30 } },
+          // Actual settings depend on the camera; they are reported below.
+          video: CAPTURE_CONSTRAINTS[captureProfile],
         });
         if (cancelled) {
           // Effect was cleaned up (a fast Stop click, or leaving the page)
@@ -388,6 +464,10 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
         }
 
 
+        if (useHands && landmarkerRef.current && landmarkerPreferenceRef.current !== landmarkerKey) {
+          landmarkerRef.current.close();
+          landmarkerRef.current = null;
+        }
         const needsHands = useHands && !landmarkerRef.current;
         const needsPose = usePose && !poseLandmarkerRef.current;
         if (needsHands || needsPose) {
@@ -398,9 +478,10 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
               if (cancelled) return;
               profileInfoRef.current.handDelegate = delegate;
               profileInfoRef.current.handFallback = fallback;
-            });
+            }, requestedHandDelegate, handDetectionConfidence);
             if (cancelled) { hands.close(); return; }
             landmarkerRef.current = hands;
+            landmarkerPreferenceRef.current = landmarkerKey;
           }
           if (needsPose) {
             try {
@@ -485,22 +566,56 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       });
     }
 
+    function stopTracking(err: unknown) {
+      cancelled = true;
+      if (videoFrameId !== null) videoFrameSource?.cancelVideoFrameCallback(videoFrameId);
+      discardPendingPose();
+      console.error("[useCameraFeed] Landmark tracking error:", err);
+      setModelError("Landmark tracking stopped. Restart the camera to try again.");
+    }
+
     function processLatestVideoFrame() {
       inferenceTask = null;
       const pending = latestVideoFrame;
       latestVideoFrame = null;
       if (!pending) return;
+      let deferred: (() => void) | null = null;
       try {
-        if (!cancelled) detectFrame(pending.bitmap, pending.observedAt, pending.metadata.mediaTime,
+        if (!cancelled) deferred = detectFrame(pending.bitmap, pending.observedAt, pending.metadata.mediaTime,
           pending.hidden, pending.metadata.presentedFrames, pending.copyMs);
       } catch (err) {
-        cancelled = true;
-        if (videoFrameId !== null) videoFrameSource?.cancelVideoFrameCallback(videoFrameId);
-        console.error("[useCameraFeed] Landmark tracking error:", err);
-        setModelError("Landmark tracking stopped. Restart the camera to try again.");
+        stopTracking(err);
       } finally {
-        pending.bitmap.close();
+        if (deferred && !cancelled) schedulePose(deferred, () => pending.bitmap.close());
+        else pending.bitmap.close();
       }
+    }
+
+    function schedulePose(run: () => void, release: () => void) {
+      pendingPose = { run, release };
+      poseTask = setTimeout(() => {
+        try { runPendingPose(); } catch (err) { stopTracking(err); }
+      }, 0);
+    }
+
+    function runPendingPose() {
+      if (poseTask !== null) clearTimeout(poseTask);
+      poseTask = null;
+      const job = pendingPose;
+      pendingPose = null;
+      if (!job) return;
+      try {
+        if (!cancelled) job.run();
+      } finally {
+        job.release();
+      }
+    }
+
+    function discardPendingPose() {
+      if (poseTask !== null) clearTimeout(poseTask);
+      poseTask = null;
+      pendingPose?.release();
+      pendingPose = null;
     }
 
     function detectLoop(_now: number, metadata?: VideoFrameCallbackMetadata) {
@@ -508,20 +623,37 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       if (cancelled || !video) return;
       if (video.readyState >= 2) {
         const timestamp = Math.max(performance.now(), lastTimestampRef.current + 1);
-        detectFrame(video, timestamp, metadata?.mediaTime ?? video.currentTime, document.hidden, metadata?.presentedFrames);
+        const deferred = detectFrame(video, timestamp, metadata?.mediaTime ?? video.currentTime, document.hidden, metadata?.presentedFrames);
+        if (deferred) schedulePose(deferred, () => {});
       }
       scheduleNextFrame();
     }
 
     function detectFrame(source: HTMLVideoElement | ImageBitmap, timestamp: number, mediaTime: number,
-      hidden: boolean, presentedFrames?: number, copyMs?: number) {
-      if (timestamp <= lastTimestampRef.current) return;
+      hidden: boolean, presentedFrames?: number, copyMs?: number): (() => void) | null {
+      if (timestamp <= lastTimestampRef.current) return null;
+      // A deferred pose still reads the previous frame's detection input.
+      runPendingPose();
       lastTimestampRef.current = timestamp;
       const started = performance.now();
       const sourceWidth = "videoWidth" in source ? source.videoWidth : source.width;
       const sourceHeight = "videoHeight" in source ? source.videoHeight : source.height;
       const input = prepareDetectionInputRef.current(source, detectionInputWidthRef.current);
+      // Both models see the same (possibly brightened) frame. Its size and
+      // normalized coordinates match `input`, so the reported input mode,
+      // overlay and landmarks are unaffected.
+      const detectionInput = lowLight ? lowLight.apply(input, latestFrameRef.current, timestamp) : input;
       const resizeMs = performance.now() - started;
+      const gain = lowLight?.gain() ?? 1;
+      lowLightGainRef.current = gain;
+      if (gain > 1) {
+        profileInfoRef.current.lowLightAssistFrames++;
+        profileInfoRef.current.lowLightMaxGain = Math.max(profileInfoRef.current.lowLightMaxGain, Number(gain.toFixed(2)));
+      }
+      if ((gain > 1) !== lowLightActive) {
+        lowLightActive = gain > 1;
+        setLowLightAssistActive(lowLightActive);
+      }
       const width = "videoWidth" in input ? input.videoWidth : input.width;
       const height = "videoHeight" in input ? input.videoHeight : input.height;
       const mode = input === source ? "original" : "reduced";
@@ -540,9 +672,24 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       const stridedPose = poseStride > 1;
       if (stridedPose && timestamp - cachedPoseAt > POSE_CACHE_MAX_AGE_MS) cachedPose = null;
       const handStart = performance.now();
-      const handResult = useHands ? landmarkerRef.current?.detectForVideo(input, timestamp) ?? null : null;
+      const handResult = useHands ? landmarkerRef.current?.detectForVideo(detectionInput, timestamp) ?? null : null;
       const handEnd = performance.now();
-      const poseDetection = runPose ? detectPose(input, timestamp) : null;
+      if (deferPose) {
+        const poseFresh = poseFreshForNextFrame;
+        const poseMs = carriedPoseMs;
+        poseFreshForNextFrame = false;
+        carriedPoseMs = 0;
+        completeFrame(frame, handResult, cachedPose, poseFresh, handResult ? handEnd - handStart : 0, poseMs, true);
+        if (!runPose) return null;
+        return () => {
+          const deferred = detectPose(detectionInput, timestamp);
+          cachedPose = smoothPoseShoulders(cachedPose, deferred.result);
+          cachedPoseAt = timestamp;
+          carriedPoseMs = deferred.ms;
+          poseFreshForNextFrame = !!deferred.result;
+        };
+      }
+      const poseDetection = runPose ? detectPose(detectionInput, timestamp) : null;
       const freshPose = poseDetection?.result ?? null;
       if (stridedPose && runPose) {
         cachedPose = smoothPoseShoulders(cachedPose, freshPose);
@@ -550,6 +697,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       }
       completeFrame(frame, handResult, stridedPose ? cachedPose : freshPose, !!freshPose,
         handResult ? handEnd - handStart : 0, poseDetection?.ms ?? 0);
+      return null;
     }
 
     function detectPose(input: TexImageSource, timestamp: number) {
@@ -565,6 +713,8 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       hasFreshPose: boolean,
       handMs: number,
       poseMs: number,
+      // Deferred pose ran before this frame started; it is reported but not in totalMs.
+      poseOutsideTotal = false,
     ) {
       const video = videoRef.current;
       if (!video) return;
@@ -596,7 +746,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       }
       const timing: DetectionTiming = {
         handMs, poseMs, overlayMs, resizeMs: frame.resizeMs, totalMs, completedAt,
-        otherMs: totalMs - handMs - poseMs - overlayMs - frame.resizeMs,
+        otherMs: totalMs - handMs - (poseOutsideTotal ? 0 : poseMs) - overlayMs - frame.resizeMs,
         presentedFrames: frame.presentedFrames,
         frameCopyMs: frame.copyMs,
         callbackToLandmarksMs: completedAt - frame.observedAt,
@@ -719,12 +869,32 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     // Display continuity only. The observer and timing report use this frame's real detections.
     function holdRenderedHand(slot: 0 | 1, hand: LandmarkPoint[] | null, renderedAt: number) {
       if (hand) {
+        const previous = lastRenderedHands[slot];
+        const gap = renderedAt - lastRenderedHandsAt[slot];
+        if (previous && gap > 0 && gap <= HAND_OVERLAY_HOLD_MS) {
+          const from = overlayPalmCenter(previous), to = overlayPalmCenter(hand);
+          renderedHandMotion[slot] = { x: (to.x - from.x) / gap, y: (to.y - from.y) / gap };
+        } else {
+          renderedHandMotion[slot] = null;
+        }
         lastRenderedHands[slot] = hand;
         lastRenderedHandsAt[slot] = renderedAt;
-      } else if (renderedAt - lastRenderedHandsAt[slot] > HAND_OVERLAY_HOLD_MS) {
-        lastRenderedHands[slot] = null;
+        return hand;
       }
-      return lastRenderedHands[slot];
+      const held = lastRenderedHands[slot];
+      const elapsed = renderedAt - lastRenderedHandsAt[slot];
+      if (!held || elapsed > HAND_OVERLAY_HOLD_MS) {
+        lastRenderedHands[slot] = null;
+        renderedHandMotion[slot] = null;
+        return null;
+      }
+      const motion = renderedHandMotion[slot];
+      if (!motion) return held;
+      const step = Math.min(elapsed, HAND_OVERLAY_EXTRAPOLATE_MS);
+      let dx = motion.x * step, dy = motion.y * step;
+      const shift = Math.hypot(dx, dy);
+      if (shift > HAND_OVERLAY_MAX_SHIFT) { dx *= HAND_OVERLAY_MAX_SHIFT / shift; dy *= HAND_OVERLAY_MAX_SHIFT / shift; }
+      return held.map(point => ({ ...point, x: point.x + dx, y: point.y + dy }));
     }
 
     function updateLightLevel(video: HTMLVideoElement) {
@@ -768,6 +938,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       benchmarkRef.current.stop();
       recentTimingRef.current.clear();
       discardPendingVideoFrame();
+      discardPendingPose();
       if (rafId) cancelAnimationFrame(rafId);
       if (videoFrameId !== null) videoFrameSource?.cancelVideoFrameCallback(videoFrameId);
       stream?.getTracks().forEach((track) => track.stop());
@@ -775,7 +946,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       const canvas = canvasRef.current;
       if (canvas) canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
     };
-  }, [enabled, trackLiveTiming, trackOverlayPaint, decoupleVideoFrames, landmarkMode, poseStride, useHands, usePose, reviewHandTracking]);
+  }, [enabled, trackLiveTiming, trackOverlayPaint, decoupleVideoFrames, landmarkMode, poseStride, useHands, usePose, reviewHandTracking, lowLightAssist, requestedHandDelegate, captureProfile, handDetectionConfidence, deferPose]);
 
   // Full-unmount-only cleanup: release both MediaPipe models.
   useEffect(() => {
@@ -794,6 +965,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     handsDetected,
     poseDetected,
     lightLevel,
+    lowLightAssistActive,
     error,
     modelError,
     enabled,
@@ -813,4 +985,10 @@ function displayHandSide(category: string | undefined) {
   if (category === "Left") return "Right";
   if (category === "Right") return "Left";
   return undefined;
+}
+
+function overlayPalmCenter(hand: LandmarkPoint[]) {
+  let x = 0, y = 0;
+  for (const joint of HAND_OVERLAY_PALM_JOINTS) { x += hand[joint].x; y += hand[joint].y; }
+  return { x: x / HAND_OVERLAY_PALM_JOINTS.length, y: y / HAND_OVERLAY_PALM_JOINTS.length };
 }

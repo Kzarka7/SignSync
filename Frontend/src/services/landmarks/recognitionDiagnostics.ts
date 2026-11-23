@@ -2,8 +2,9 @@ import type { LandmarkFrameSample } from '../../types/landmarks'
 import type { SignPrediction, SignRequest } from '../../types/message'
 import { FEATURE_ORDER, toFeatureVector } from './normalize'
 import { assessNumberHold, holdMotion, NUMBER_HOLD_SETTINGS, type NumberHoldEvidence } from './numberHold'
-import { assessSignMotion, SIGN_MOTION_SETTINGS } from './signMotionEvidence'
+import { resolveSignByMotion, SIGN_MOTION_SETTINGS, type SignMotionEvidence } from './signMotionEvidence'
 import { createContinuousSignCapture } from './continuousSignCapture'
+import { appendComposed, type ComposableEntry } from './composedSigns'
 import { LIVE_WINDOW_GRID, resampleLiveWindow } from './windowResampling'
 import { createGestureSegmentation, findVisibleSignTransition, FAST_PREVIEW_BOUNDARIES, GESTURE_SETTINGS,
   PREVIEW_GESTURE_SETTINGS, SIGN_TRANSITION_SETTINGS, type GestureEvent, type GestureWindow } from './gestureSegmentation'
@@ -18,11 +19,13 @@ export type DiagnosticRow = Omit<RecognitionWindow, 'frames'> & ActivityDecision
   modelInputFrameCount?: number | null
   tracking: ObservationTracking
   numberHold?: NumberHoldEvidence | null
-  signMotion?: ReturnType<typeof assessSignMotion>
+  signMotion?: SignMotionEvidence | null
   completionValidation?: SignPrediction | null; segmentId?: number; complete?: boolean; decisionMs?: number
   evidence?: GestureWindow['evidence']; earlyPreview?: true
 }
-export type LabTranscriptEntry = { label: string; score: number; decisionMs: number; requestId: string }
+export type LabTranscriptEntry = ComposableEntry
+// Models without a PARENTS output: FATHER + MOTHER confirmations become PARENTS.
+export const COMPOSING_MODELS = new Set(['lab-signs74-combined'])
 export const EXAMPLE_ANNOTATIONS = [
   { startMs: 6000, endMs: 8000, label: 'THANK_YOU', source: 'user approximate interval' },
   { startMs: 11000, endMs: 13000, label: 'YES', source: 'user approximate interval' },
@@ -88,6 +91,7 @@ export function createDiagnosticSession(options: {
   const recognitionMode = options.recognitionMode ?? 'rolling'
   const segmentAcceptance = options.segmentAcceptance ?? 'completion'
   const stage2 = options.modelMode === 'lab-stage2'
+  const composeSigns = COMPOSING_MODELS.has(options.modelMode ?? '')
   const preview = recognitionMode === 'segmented' && segmentAcceptance === 'preview'
   const shortPreview = preview && options.shortPreview === true
   const adaptivePreview = preview && options.adaptivePreview === true
@@ -97,6 +101,7 @@ export function createDiagnosticSession(options: {
       || options.modelMode === 'lab-signs43-similarity' || options.modelMode === 'lab-signs43-similarity-v2'
       || options.modelMode === 'lab-signs75-candidate' || options.modelMode === 'lab-signs75-multi-batch'
       || options.modelMode === 'lab-signs32-standalone' || options.modelMode === 'lab-signs32-similarity'
+      || options.modelMode === 'lab-signs74-combined'
       || options.modelMode === 'lab-alphabet')
   const waitForConfirmation = recognitionMode === 'segmented' && segmentAcceptance === 'confirmation'
     && options.waitForConfirmation === true
@@ -181,7 +186,10 @@ export function createDiagnosticSession(options: {
     if (!blocked && (bodyRevision !== expectedBodyRevision || !window.complete && tracking?.revision !== windowTracking.revision)) blocked = 'tracking_changed_during_inference'
     if (window.segmentId !== undefined && discarded.has(window.segmentId)) blocked = 'gesture_discarded'
     const numberHold = options.numberHoldExperiment ? assessNumberHold(window.frames, prediction) : null
-    const signMotion = options.staticMotionCheck && prediction ? assessSignMotion(window.frames,prediction.label) : null
+    // Motion picks between a static number and its paired moving word, and may relabel the prediction.
+    const resolved = options.staticMotionCheck && prediction ? resolveSignByMotion(window.frames,prediction) : null
+    if (resolved) prediction = resolved.prediction
+    const signMotion = resolved?.signMotion ?? null
     const motionBlocked = signMotion?.reason ?? undefined
     if (!blocked && numberHold?.blocked) blocked = numberHold.reason
     if (!blocked && !signMotion && preview && window.evidence === 'hold' && prediction && PREVIEW_MOTION_REQUIRED.has(prediction.label))
@@ -321,8 +329,11 @@ export function createDiagnosticSession(options: {
       ...(wallClockWindows && { modelInputFrameCount: requestId ? modelFrames.length : null }),
       tracking: { ...tracking! }, completionValidation, numberHold, signMotion }
     rows.push(row)
-    if (decision.emit && prediction && requestId) transcript.push({ label: prediction.label, score: prediction.score,
-      decisionMs: decisionMs + resultAgeMs, requestId })
+    if (decision.emit && prediction && requestId) {
+      const entry = { label: prediction.label, score: prediction.score, decisionMs: decisionMs + resultAgeMs, requestId }
+      if (composeSigns) appendComposed(transcript, entry)
+      else transcript.push(entry)
+    }
     status = failure ? 'Inference error — stop and reconnect' : decision.activity
     options.onChange()
     if (failure) { stopped = true; pending = null; completedQueue.length = 0 }

@@ -33,7 +33,8 @@ test('lab selections verify their own checkpoint identity and reject the other m
     ['lab-signs43-similarity', 'lab-signs43-similarity-seed42-graph-diagnostics', 'lab-signs43-shape-motion-seed42-graph-diagnostics'],
     ['lab-signs43-similarity-v2', 'lab-signs43-similarity-v2-seed42-graph-diagnostics', 'lab-signs43-similarity-seed42-graph-diagnostics'],
     ['lab-signs75-multi-batch', 'lab-signs75-multi-batch-seed42-graph-diagnostics', 'lab-signs43-similarity-seed42-graph-diagnostics'],
-    ['lab-signs32-standalone', 'lab-signs32-standalone-seed42-graph-diagnostics', 'lab-signs75-multi-batch-seed42-graph-diagnostics'],
+    ['lab-signs32-standalone', 'lab-signs32-standalone-v3-seed42-graph-diagnostics', 'lab-signs32-standalone-v2-seed42-graph-diagnostics'],
+    ['lab-signs74-combined', 'lab-signs74-combined-v3-seed42-graph-diagnostics', 'lab-signs74-combined-v1-seed42-graph-diagnostics'],
     ['lab-alphabet', 'lab-alphabet-j460-v2-seed43-graph-diagnostics', model],
     ['lab-stage2', 'lab-stage2-rerun-20261109-seeds42-43-44-no-hold-graph-diagnostics',
       'lab-stage2-rerun-20261109-seeds42-43-44-graph-diagnostics'],
@@ -88,13 +89,14 @@ test('load failures and inference timeouts reject work and close the connection'
 })
 
 test('old or mismatched backends fail before any prediction can be requested', async () => {
-  for (const payload of [
-    { state: 'ready' },
-    { ...readyStatus.payload, recognizerId: 'p4-sign-rest-idle-nine-run-ensemble' },
-    { ...readyStatus.payload, diagnosticsProtocol: 0 },
-    { ...readyStatus.payload, execution: 'eager' },
+  for (const [mode, payload] of [
+    ['p4-candidate', { state: 'ready' }],
+    ['p4-candidate', { ...readyStatus.payload, recognizerId: 'p4-sign-rest-idle-nine-run-ensemble' }],
+    ['p4-candidate', { ...readyStatus.payload, diagnosticsProtocol: 0 }],
+    ['p4-candidate', { ...readyStatus.payload, execution: 'eager' }],
+    ['lab-signs32-standalone', { ...readyStatus.payload, recognizerId: 'lab-signs32-standalone-v2-seed42-graph-diagnostics' }],
   ]) {
-    const { client, socket, timers } = setup(), loading = client.connect()
+    const { client, socket, timers } = setup(mode), loading = client.connect()
     const rejected = assert.rejects(loading, /Backend mismatch.*Restart/)
     socket.emit({ type: 'status', payload }); await rejected
     assert.equal(socket.disconnects, 1)

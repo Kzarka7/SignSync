@@ -5,7 +5,7 @@ const load = require('../scripts/loadTypeScript.cjs')
 const { createRecognitionWindows, createActivityPolicy, createObservationTracking, CONTINUOUS_SETTINGS } = load(path.resolve('src/services/landmarks/continuousRecognition.ts'))
 const { createDiagnosticSession } = load(path.resolve('src/services/landmarks/recognitionDiagnostics.ts'))
 const { resampleLiveWindow } = load(path.resolve('src/services/landmarks/windowResampling.ts'))
-const { assessSignMotion } = load(path.resolve('src/services/landmarks/signMotionEvidence.ts'))
+const { assessSignMotion, resolveSignByMotion } = load(path.resolve('src/services/landmarks/signMotionEvidence.ts'))
 
 function feature(t, valid = true, hands = true) {
   const features = Array(164).fill(0); features[36] = hands ? 1 : 0; features[7] = features[11] = 1
@@ -197,6 +197,50 @@ test('sideways reversals and finger opening/closing separate the moving labels f
   assert.equal(assessSignMotion([...sparseTurn,...settledTail],'WHAT').reason,null)
 })
 
+test('a twitch delays a held number instead of blocking it for the whole segment',()=>{
+  // ONE held, one sideways index twitch at 400–600 ms, then held still again.
+  const twitch=Array.from({length:81},(_,i)=>{
+    const t=i*25
+    return signFeature(t,{index:t>=400&&t<=600?.2*Math.sin((t-400)/200*2*Math.PI):0})
+  })
+  const upTo=ms=>twitch.filter(f=>f.timestamp<=ms)
+  // Until the 800 ms settle window no longer reaches back to the twitch.
+  assert.equal(assessSignMotion(upTo(900),'ONE').reason,'motion_conflicts_with_number')
+  assert.equal(assessSignMotion(upTo(1300),'ONE').reason,'motion_conflicts_with_number')
+  const settled=assessSignMotion(upTo(1500),'ONE')
+  assert.ok(settled.turn>=settled.threshold,'the twitch is still in the window')
+  assert.equal(settled.reason,null)
+})
+
+test('circling the hand blocks static numbers and hands the pair to WEDNESDAY',()=>{
+  const lift=(f,dy)=>{for(let j=0;j<21;j++) f.features[38+j*3]+=dy; return f}
+  const circle=Array.from({length:61},(_,i)=>{const t=i*25; return lift(signFeature(t,{shift:.2*Math.cos(t/150)}),.2*Math.sin(t/150))})
+  const held=Array.from({length:41},(_,i)=>signFeature(i*25))
+  for(const label of ['SIX','FOUR','NINE']) {
+    assert.equal(assessSignMotion(circle,label).reason,'motion_conflicts_with_number',label)
+    assert.equal(assessSignMotion(held,label).reason,null,label)
+  }
+  assert.equal(assessSignMotion(circle,'WEDNESDAY').reason,null)
+  assert.equal(assessSignMotion(held,'WEDNESDAY').reason,'awaiting_hand_motion')
+  assert.equal(assessSignMotion(held,'TEN'),null)
+  const scored=(label,top3,accepted=true)=>({...prediction(label),score:top3[0].score,accepted,top3})
+  const six=resolveSignByMotion(circle,scored('SIX',[{label:'SIX',score:.72},{label:'WEDNESDAY',score:.27}],false))
+  assert.equal(six.prediction.label,'WEDNESDAY')
+  assert.equal(six.prediction.accepted,true)
+  assert.ok(Math.abs(six.prediction.score-.99)<1e-9)
+  assert.equal(six.signMotion.resolvedFrom,'SIX')
+  // Too little model support for the word: the number stays blocked.
+  const weak=resolveSignByMotion(circle,scored('SIX',[{label:'SIX',score:.95},{label:'WEDNESDAY',score:.05}]))
+  assert.equal(weak.prediction.label,'SIX')
+  assert.equal(weak.signMotion.reason,'motion_conflicts_with_number')
+  // Never the other way: a still WEDNESDAY waits for its motion rather than becoming SIX.
+  const still=resolveSignByMotion(held,scored('WEDNESDAY',[{label:'WEDNESDAY',score:.6},{label:'SIX',score:.4}]))
+  assert.equal(still.prediction.label,'WEDNESDAY')
+  assert.equal(still.signMotion.reason,'awaiting_hand_motion')
+  // A held number keeps the model's own score.
+  assert.equal(resolveSignByMotion(held,scored('SIX',[{label:'SIX',score:.6},{label:'WEDNESDAY',score:.4}])).prediction.score,.6)
+})
+
 test('finger motion can start a fresh NO after TWO or THREE with a stationary wrist',async()=>{
   for(const label of ['TWO','THREE']) {
     const session=createDiagnosticSession({source:'video',name:'finger transition',modelMode:'lab-signs43-similarity',
@@ -212,6 +256,22 @@ test('finger motion can start a fresh NO after TWO or THREE with a stationary wr
     assert.deepEqual(Array.from(accepted,row=>row.prediction.label),[label,'NO'])
     assert.equal(accepted[0].segmentId,accepted[1].segmentId)
     assert.equal(accepted[1].signMotion.cue,'thumb_finger_turn')
+  }
+})
+
+test('FATHER and MOTHER compose into PARENTS in either order through a live session',async()=>{
+  for(const [first,second] of [['FATHER','MOTHER'],['MOTHER','FATHER']]) {
+    const session=createDiagnosticSession({source:'video',name:'parents',modelMode:'lab-signs74-combined',
+      recognitionMode:'segmented',segmentAcceptance:'confirmation',staticMotionCheck:true,minimumConfidence:.75,
+      settings:{strideMs:150,confirmationWindows:5,confirmationHistory:7,confirmationMs:650},
+      onChange(){},now:()=>0,id:()=> 'parents',predict:async ({frames})=>prediction(frames.at(-1).timestamp>1350?second:first)})
+    // Rise into the first sign and hold, then move the hand to the second sign's place and hold.
+    for(let t=0;t<=3100;t+=25)
+      await session.observeFeatures(signFeature(t,{shift:.12*Math.min(1,t/150)+(t<1200?0:.25*Math.min(1,(t-1200)/150))}))
+    const accepted=session.state.rows.filter(row=>row.emit)
+    assert.deepEqual(Array.from(accepted,row=>row.prediction.label),[first,second],`${first} then ${second}`)
+    assert.deepEqual(Array.from(session.state.transcript,entry=>entry.label),['PARENTS'],`${first} then ${second}`)
+    assert.deepEqual(Array.from(session.state.transcript[0].composedFrom,part=>part.label),[first,second])
   }
 })
 

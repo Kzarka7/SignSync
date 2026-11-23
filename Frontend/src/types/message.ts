@@ -8,6 +8,7 @@ export type LabRecognitionMode =
   | 'lab-signs43-numbers' | 'lab-signs43-shape-motion' | 'lab-signs43-similarity' | 'lab-signs43-similarity-v2'
   | 'lab-signs75-multi-batch'
   | 'lab-signs32-standalone' | 'lab-signs32-similarity'
+  | 'lab-signs74-combined'
 
 // One score per recognition/translation pipeline stage. Which keys show
 // up depends on the message's source - a 'sign' message never carries

@@ -28,6 +28,9 @@ test('Lab keeps the pinned v1 run and caption rules alongside the v2 experiment'
   const noop = () => {}
   const jsx = (type, props) => ({ type, props })
   const harness = hookHarness('src/pages/RecognitionLabPage.tsx', 'default', name => {
+    if (name.endsWith('/continuousRecognition')) return { CONTINUOUS_SETTINGS: {}, displayActivity: label => label }
+    if (name.endsWith('/queueReview')) return load('src/services/landmarks/queueReview.ts')
+    if (name.endsWith('/collectorShortcuts')) return load('src/services/dataset/collectorShortcuts.ts')
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: Symbol() }
     if (name.endsWith('/useCameraFeed')) return { useCameraFeed: () => ({
       enabled: true, cameraReady: true, poseDetected: true, handsDetected: true,
@@ -179,3 +182,139 @@ test('Lab keeps the pinned v1 run and caption rules alongside the v2 experiment'
   assert.equal(glossTrack().annotations.length, 0)
   harness.unmount()
 })
+
+test('Lab replays multiple videos in order, keeps each result, and stops before the next item', async () => {
+  const processed = [], opened = [], closed = [], downloads = []
+  const listeners = new Map()
+  let announceReplay, finishReplay
+  const model = 'lab-signs43-similarity'
+  const noop = () => {}
+  const jsx = (type, props) => ({ type, props })
+  const harness = hookHarness('src/pages/RecognitionLabPage.tsx', 'default', name => {
+    if (name.endsWith('/continuousRecognition')) return { CONTINUOUS_SETTINGS: {}, displayActivity: label => label }
+    if (name.endsWith('/queueReview')) return load('src/services/landmarks/queueReview.ts')
+    if (name.endsWith('/collectorShortcuts')) return load('src/services/dataset/collectorShortcuts.ts')
+    if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: Symbol() }
+    if (name.endsWith('/useCameraFeed')) return { useCameraFeed: () => ({ stopPerformanceProfile: noop }) }
+    if (name.endsWith('/liveRecognitionPolicy')) return {
+      LIVE_SIGNS_MODEL: model, LIVE_RECOGNITION_POLICY: {}, getRecognitionConfirmation: () => ({}),
+    }
+    if (name.endsWith('/labGlosses')) return glosses
+    if (name.endsWith('/diagnosticPredictor')) return { createDiagnosticPredictor: () => {
+      const id = opened.length
+      opened.push(id)
+      return { connect: async () => ({ recognizerId: model }), close: () => closed.push(id) }
+    } }
+    if (name.endsWith('/recognitionDiagnostics')) return { createDiagnosticSession: options => ({
+      active: true, state: { rows: [], frames: 0, latestMs: 500, transcript: [], status: 'Ready' },
+      async observe() { this.state.frames++; options.onChange() },
+      stop(status) { this.active = false; this.state.status = status; options.onChange() },
+      async finish() { this.stop('Complete') },
+      report() { return { name: options.name } },
+    }) }
+    if (name.endsWith('/videoReplay')) return { MAX_REPLAY_SECONDS: 120, async replayVideo(file, options) {
+      processed.push(file.name)
+      if (announceReplay) {
+        announceReplay(options.signal)
+        await new Promise((resolve, reject) => { finishReplay = resolve; options.signal.addEventListener('abort', () => reject(options.signal.reason)) })
+      }
+      if (file.name === 'broken.mp4') throw Error('Cannot decode video')
+      await options.onFrame({ timestamp: 0 })
+      return { durationSeconds: 1, playbackRate: 1, decodeMethod: 'playback' }
+    } }
+    return { default: name }
+  }, undefined, {
+    AbortController, Blob, performance,
+    window: { addEventListener: (type, callback) => listeners.set(type, callback), removeEventListener: (type, callback) => { if (listeners.get(type) === callback) listeners.delete(type) } },
+    URL: { createObjectURL: value => {
+      if (value instanceof Blob) downloads.push(value)
+      return 'blob:' + (value.name || 'report')
+    }, revokeObjectURL: noop },
+    document: { createElement: () => ({ click: noop }) },
+  })
+
+  const get = predicate => {
+    const node = find(harness.render(), predicate)
+    assert.ok(node)
+    return node.props
+  }
+  const action = text => get(node => node.type === '../components/shared/Button' &&
+    [node.props.children].flat().some(child => typeof child === 'string' && child.trim() === text))
+  const queueEntry = name => get(node => node.type === 'button' &&
+    find(node, child => child.type === 'span' && child.props.title === name))
+  const selectFiles = names => {
+    const input = get(node => node.props.id === 'lab-video-file')
+    assert.equal(input.multiple, true)
+    input.onChange({ target: { files: names.map(name => ({ name, size: 200, lastModified: 1 })) } })
+  }
+  selectFiles(['first.mp4', 'broken.mp4'])
+  selectFiles(['last.webm'])
+  queueEntry('first.mp4').onClick()
+  const press = key => { harness.render(); listeners.get('keydown')({ key, preventDefault() {} }) }
+  press('e')
+  assert.equal(queueEntry('broken.mp4')['aria-current'], 'true')
+  press('q')
+  assert.equal(queueEntry('first.mp4')['aria-current'], 'true')
+  press('q')
+  assert.equal(queueEntry('first.mp4')['aria-current'], 'true')
+  await action('Replay queue').onClick()
+  assert.deepEqual(processed, ['first.mp4', 'broken.mp4', 'last.webm'])
+  assert.deepEqual(closed, opened)
+  assert.equal(queueEntry('first.mp4').children[3].props.children, 'Complete')
+  assert.equal(queueEntry('broken.mp4').children[3].props.children, 'Failed')
+  assert.equal(queueEntry('last.webm')['aria-current'], 'true')
+  queueEntry('first.mp4').onClick()
+  action('Export recognition results').onClick()
+  const report = JSON.parse(await downloads.at(-1).text())
+  assert.equal(report.inputFile.name, 'first.mp4')
+  assert.equal(report.name, 'first.mp4')
+  assert.equal(report.replay.playbackRate, 1)
+  assert.ok(action('Replay again'))
+  queueEntry('first.mp4').onClick()
+  await action('Replay').onClick()
+  assert.deepEqual(processed, ['first.mp4', 'broken.mp4', 'last.webm', 'first.mp4'])
+  get(node => node.props['aria-label'] === 'Remove broken.mp4 from queue').onClick()
+  const replayStarted = new Promise(resolve => { announceReplay = resolve })
+  const pending = action('Replay again').onClick()
+  const signalInReplay = await replayStarted
+  action('Stop replay').onClick()
+  await pending
+  assert.equal(signalInReplay.aborted, true)
+  assert.equal(action('Replay').disabled, false)
+  assert.equal(get(node => node.props.id === 'lab-video-file').disabled, false)
+  assert.equal(get(node => node.type === 'select' && node.props.value === model).disabled, false)
+  assert.equal(queueEntry('last.webm').disabled, false)
+  assert.ok(action('Continue replay'))
+  announceReplay = undefined
+  queueEntry('last.webm').onClick()
+  await action('Replay').onClick()
+  assert.equal(processed.at(-1), 'last.webm')
+  const beforeContinue = processed.length
+  await action('Continue replay').onClick()
+  assert.deepEqual(processed.slice(beforeContinue), ['first.mp4'])
+  assert.ok(action('Replay again'))
+  selectFiles(['added.webm'])
+  assert.ok(queueEntry('added.webm'))
+  action('Export results').onClick()
+  const queueReport = JSON.parse(await downloads.at(-1).text())
+  assert.equal(queueReport.format, 'signsync-video-queue-results')
+  assert.equal(queueReport.model.id, model)
+  assert.equal(queueReport.clipCount, 3)
+  assert.deepEqual(queueReport.clips.map(clip => clip.file.name), ['first.mp4', 'last.webm', 'added.webm'])
+  assert.deepEqual(queueReport.clips.map(clip => clip.status), ['Complete', 'Complete', 'Queued'])
+  assert.equal(queueReport.clips[2].displayedText, '—')
+  assert.equal(queueReport.clips[2].confirmed, false)
+  assert.equal(queueReport.clips[2].source, 'none')
+  get(node => node.props['aria-label'] === 'Delete all videos').onClick()
+  assert.equal(find(harness.render(), node => node.props.title === 'first.mp4'), undefined)
+  assert.equal(action('Replay').disabled, true)
+  harness.unmount()
+})
+
+
+
+
+
+
+
+

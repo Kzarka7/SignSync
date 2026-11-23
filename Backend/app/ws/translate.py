@@ -29,8 +29,9 @@ async def translate_socket(websocket: WebSocket):
                 'lab-signs43-similarity-v2': '43 Similar Signs v2',
                 'lab-signs75-candidate': '75-sign held-out batch experiment',
                 'lab-signs75-multi-batch': '75-sign multi-batch candidate',
-                'lab-signs32-standalone': '32-sign standalone candidate',
-                'lab-signs32-similarity': '32-sign similarity recipe'}[mode]
+                'lab-signs32-standalone': '32-sign standalone v3',
+                'lab-signs32-similarity': '32-sign similarity recipe',
+                'lab-signs74-combined': '74-sign combined v3'}[mode]
         diagnostics = websocket.query_params.get('diagnostics', '0')
         if (diagnostics not in ('0', '1') or (diagnostics == '1' and mode == 'v5') or
                 (mode in LAB_EXPERIMENTS and diagnostics != '1')):

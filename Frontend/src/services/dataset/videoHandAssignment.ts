@@ -23,19 +23,22 @@ function wristDistance(a: LandmarkPoint, b: LandmarkPoint) {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
+function poseWristMatch(pose: LandmarkFrameSample['pose'], side: Handedness, hand: VideoHandDetection) {
+  const wrist = side === 'Left' ? pose?.leftWrist : pose?.rightWrist
+  const visibility = wrist?.visibility ?? 0
+  return wrist && visibility >= .65 && Number.isFinite(wrist.x) && Number.isFinite(wrist.y)
+    ? 2.1 * visibility * Math.max(0, 1 - wristDistance(wrist, hand.landmarks[0]) / .14)
+    : 0
+}
+
 function observationCost(pose: LandmarkFrameSample['pose'], assignment: Assignment, contact?: HandContact) {
   return sides.reduce((cost, side, index) => {
     const hand = assignment[index]
     if (!hand) return cost
     const labelPenalty = hand.handedness && hand.handedness !== side ? Math.max(0, 2 * hand.score - 1) : 0
-    const wrist = side === 'Left' ? pose?.leftWrist : pose?.rightWrist
-    const visibility = wrist?.visibility ?? 0
-    const poseMatch = wrist && visibility >= .65 && Number.isFinite(wrist.x) && Number.isFinite(wrist.y)
-      ? 2.1 * visibility * Math.max(0, 1 - wristDistance(wrist, hand.landmarks[0]) / .14)
-      : 0
     // Handedness can flicker when fingers are covered. Let visible pose
     // wrists and observations outside the contact carry more weight here.
-    return cost + labelPenalty * (contact ? .35 : 1) - poseMatch
+    return cost + labelPenalty * (contact ? .35 : 1) - poseWristMatch(pose, side, hand)
   }, 0)
 }
 
@@ -48,34 +51,151 @@ export function readHandDetections(result: HandLandmarkerResult | null): VideoHa
   }) ?? []
 }
 
-// Live observations have no lookahead. Match wrist motion to the previous
-// observed frame and let the existing pose and handedness scores break ties.
+// Live tracking state for one anatomical side. Positions use
+// aspect-corrected units (x scaled by width / height).
+interface SideTrack {
+  center: { x: number; y: number }
+  // Palm-centre velocity in units per millisecond.
+  velocity: { x: number; y: number }
+  palm: number
+  at: number
+  // Smoothed handedness vote: +1 means "Left", -1 means "Right".
+  label: number
+}
+
+// A side keeps full continuity through short dropouts and fades out after
+// TRACK_HOLD_MS, after which the per-frame evidence decides alone.
+const TRACK_HOLD_MS = 500
+const FULL_CONTINUITY_MS = 150
+const CONTINUITY_WEIGHT = 2.8
+const LABEL_RATE = .35
+const PALM_JOINTS = [0, 5, 9, 13, 17] as const
+
+function palmCenter(hand: LandmarkPoint[], aspect: number) {
+  let x = 0, y = 0
+  for (const joint of PALM_JOINTS) { x += hand[joint].x; y += hand[joint].y }
+  return { x: x * aspect / PALM_JOINTS.length, y: y / PALM_JOINTS.length }
+}
+
+function palmSize(hand: LandmarkPoint[], aspect: number) {
+  const span = (a: number, b: number) => Math.hypot((hand[a].x - hand[b].x) * aspect, hand[a].y - hand[b].y)
+  return Math.max(.02, span(0, 9), span(5, 17))
+}
+
+function frameLabel(hand: VideoHandDetection) {
+  return hand.handedness ? (hand.handedness === 'Left' ? 1 : -1) * Math.max(0, 2 * hand.score - 1) : undefined
+}
+
+// How well a detection continues a side's track (0 to 1). The previous palm
+// centre is extrapolated along its recent velocity, so a fast sign still
+// matches its own track instead of falling back to a single label.
+function trackMatch(track: SideTrack | undefined, hand: VideoHandDetection, now: number, aspect: number) {
+  if (!track) return 0
+  const elapsed = now - track.at
+  if (elapsed <= 0 || elapsed > TRACK_HOLD_MS) return 0
+  const step = Math.min(elapsed, 120)
+  let dx = track.velocity.x * step, dy = track.velocity.y * step
+  const shift = Math.hypot(dx, dy), limit = Math.max(.3, 3 * track.palm)
+  if (shift > limit) { dx *= limit / shift; dy *= limit / shift }
+  const center = palmCenter(hand.landmarks, aspect)
+  const reach = Math.max(.08, 1.2 * track.palm) + .0004 * elapsed
+  return Math.max(0, 1 - Math.hypot(center.x - track.center.x - dx, center.y - track.center.y - dy) / reach)
+}
+
+// Two detections of the same hand: during fast motion the previous frame's
+// crop and a fresh palm detection can both report the hand, one trailing
+// the other. Two real hands never share all 21 points this closely, even
+// when touching.
+const DUPLICATE_HAND_SPREAD = .35
+
+export function isDuplicateHand(a: LandmarkPoint[], b: LandmarkPoint[], aspect: number) {
+  let total = 0
+  for (let joint = 0; joint < a.length; joint++) {
+    total += Math.hypot((a[joint].x - b[joint].x) * aspect, a[joint].y - b[joint].y)
+  }
+  return total / a.length < DUPLICATE_HAND_SPREAD * Math.min(palmSize(a, aspect), palmSize(b, aspect))
+}
+
+function continuityWeight(elapsed: number) {
+  if (elapsed <= FULL_CONTINUITY_MS) return CONTINUITY_WEIGHT
+  return CONTINUITY_WEIGHT * Math.max(0, (TRACK_HOLD_MS - elapsed) / (TRACK_HOLD_MS - FULL_CONTINUITY_MS))
+}
+
+// Live observations have no lookahead. Each side keeps a short track, and
+// predicted palm motion, a smoothed handedness vote and pose wrists decide
+// the sides. One hand moving quickly in poor light then keeps its side
+// through brief label flips and dropouts. Landmarks are passed through
+// unchanged; only their left/right slot is decided here.
 export function createStreamingHandAssignment() {
-  let previous: Assignment = [undefined, undefined]
+  let tracks: [SideTrack | undefined, SideTrack | undefined] = [undefined, undefined]
   let lastObserved = -Infinity
   let lastClose = -Infinity
   return (sample: LandmarkFrameSample, result: HandLandmarkerResult | null, aspect: number, usePoseWrists = true): LandmarkFrameSample => {
-    const [first, second] = readHandDetections(result)
+    const now = sample.timestamp
+    const detections = readHandDetections(result)
+    let first: VideoHandDetection | undefined = detections[0]
+    let second: VideoHandDetection | undefined = detections[1]
+    if (first && second && isDuplicateHand(first.landmarks, second.landmarks, aspect)) {
+      if (second.score > first.score) first = second
+      second = undefined
+    }
     if (!first) {
       lastClose = -Infinity
       return { ...sample, leftHand: null, rightHand: null }
     }
-    const elapsed = sample.timestamp - lastObserved
-    if (elapsed <= 0 || elapsed > 120) {
-      previous = [undefined, undefined]
-      lastClose = -Infinity
-    }
+    const elapsed = now - lastObserved
+    if (elapsed <= 0) tracks = [undefined, undefined]
+    if (elapsed <= 0 || elapsed > 120) lastClose = -Infinity
     const proximity = second && handProximity(first.landmarks, second.landmarks, aspect)
     const contact = proximity === 'overlap' ? 'overlap'
-      : !second && sample.timestamp - lastClose <= 200 ? 'possible-occlusion' : undefined
-    if (second) lastClose = proximity ? sample.timestamp : -Infinity
+      : !second && now - lastClose <= 200 ? 'possible-occlusion' : undefined
+    if (second) lastClose = proximity ? now : -Infinity
 
-    const direct: Assignment = [first, second], swapped: Assignment = [second, first]
+    // Each detection inherits the handedness vote of the track it continues
+    // best, so a brief wrong label barely moves the vote.
+    const evidence = new Map([first, second].flatMap(hand => {
+      if (!hand) return []
+      const matches = states.map(side => trackMatch(tracks[side], hand, now, aspect))
+      const source: 0 | 1 = matches[0] >= matches[1] ? 0 : 1
+      const match = matches[source], track = tracks[source], observed = frameLabel(hand)
+      const label = match > 0 && track
+        ? observed === undefined ? track.label : track.label + (observed - track.label) * (1 - (1 - LABEL_RATE) * match)
+        : observed ?? 0
+      return [[hand, { matches, source, label }] as const]
+    }))
     const pose = usePoseWrists ? sample.pose : null
-    const cost = (option: Assignment) => observationCost(pose, option, contact) + transitionCost(previous, option, elapsed)
-    previous = cost(direct) <= cost(swapped) ? direct : swapped
-    lastObserved = sample.timestamp
-    return { ...sample, leftHand: previous[0]?.landmarks ?? null, rightHand: previous[1]?.landmarks ?? null }
+    const cost = (option: Assignment) => states.reduce<number>((total, side) => {
+      const hand = option[side]
+      if (!hand) return total
+      const { matches, label } = evidence.get(hand)!
+      const track = tracks[side]
+      const contradiction = Math.max(0, (side === 0 ? -1 : 1) * label)
+      // A settled vote against this side also releases the track, so a
+      // wrong first label cannot lock the hand on the wrong side.
+      const continuity = track ? continuityWeight(now - track.at) * matches[side] * (1 - contradiction) : 0
+      return total + contradiction * (contact ? .35 : 1) - poseWristMatch(pose, sides[side], hand) - continuity
+    }, 0)
+    const direct: Assignment = [first, second], swapped: Assignment = [second, first]
+    const chosen = cost(direct) <= cost(swapped) ? direct : swapped
+
+    const previous = tracks
+    tracks = [previous[0], previous[1]]
+    for (const side of states) {
+      const hand = chosen[side]
+      if (!hand) continue
+      const { matches, source, label } = evidence.get(hand)!
+      const from = matches[source] > 0 ? previous[source] : undefined
+      // The other side's track moved here, so it no longer marks a hand.
+      if (from && source !== side && !chosen[source]) tracks[source] = undefined
+      const center = palmCenter(hand.landmarks, aspect)
+      const gap = from ? now - from.at : Infinity
+      const velocity = from && gap <= FULL_CONTINUITY_MS
+        ? { x: (from.velocity.x + (center.x - from.center.x) / gap) / 2, y: (from.velocity.y + (center.y - from.center.y) / gap) / 2 }
+        : { x: 0, y: 0 }
+      tracks[side] = { center, velocity, palm: palmSize(hand.landmarks, aspect), at: now, label }
+    }
+    lastObserved = now
+    return { ...sample, leftHand: chosen[0]?.landmarks ?? null, rightHand: chosen[1]?.landmarks ?? null }
   }
 }
 
