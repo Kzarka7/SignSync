@@ -16,3 +16,10 @@ skills-lock.json
 *.keras
 *.h5
 *.npz
+
+# Generated graph output and local Obsidian/Claude state
+/graphify/
+/graphify-out/
+/.claude/
+/.obsidian/workspace.json
+/.obsidian/graph.json
