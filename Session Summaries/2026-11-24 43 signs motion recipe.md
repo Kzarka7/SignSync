@@ -251,3 +251,52 @@ Give FIVE/WAVE_GREETING the same switching behaviour as WHAT/ONE, and fix TEN �
 **Not done / open**
 - User's live test of both pairs, and a FIVE/WAVE_GREETING diagnostics export.
 - Nothing committed; `graphify update .` not run.
+
+# 43 signs: motion → static switching check (E mode)
+
+**What was asked**
+Find which change made switching from a moving word to a static number bad. TEN → TOMORROW was reported good.
+
+**What was done**
+- File dates:
+  - only this session's four Lab files changed after the user's good 22:45 run;
+  - `windowResampling.ts` dates from 2026-11-23 and is not the cause.
+- New `analysis/make_motion_to_static_traces.py`: synthetic sequences of a real WAVE_GREETING/WHAT clip followed by the same hand held still for 2.5 s, camera-like at 30 fps. They were replayed with `replay_camera_e.cjs` before and after the change.
+
+**Findings**
+- Real recordings (WEDNESDAY → SIX, WHAT/ONE/TWO/THREE): identical transcripts before and after, so those pairs are not affected by the change.
+- Test sequences:
+  - WAVE_GREETING → FIVE: 1/12 before, 0/12 after;
+  - WHAT → ONE: 1/8 both.
+- Cause (older than this session):
+  - after a moving word, the Lab either opens the next window mid-motion (E keeps answering the word, which is suppressed as a repeat), or never opens one, because stopping the motion is not a "change";
+  - the new FIVE steady-hold rule removed the rare FIVE answers.
+
+**Not done / open**
+- Proposed fix: start the next sign when the moving word's motion settles (E mode), and verify it by replay.
+- Nothing changed in the app; nothing committed; `graphify update .` not run.
+
+# 43 signs: motion → static fix (E mode)
+
+**What was asked**
+Add the proposed "motion settled" start rule so moving word → static number switches (WAVE_GREETING → FIVE, WHAT → ONE) work.
+
+**What changed** (Frontend, E mode only)
+- `gestureSegmentation.ts`: `SETTLING_WORDS_E` and `WORD_SETTLE`. After WAVE_GREETING/WHAT/NO/WEDNESDAY, the next sign starts on a departure or after 400 ms still.
+- `recognitionDiagnostics.ts`: re-anchors forward while the window still reads as the word, and reports the settings.
+- `signMotionEvidence.ts`: `resolveStillWordAfterWord` (a still WAVE_GREETING right after WAVE_GREETING becomes FIVE).
+- `tests/motionProfileE.test.cjs`: +2 tests.
+- Experiment `analysis/`:
+  - `calibrate_settle_rule.py`;
+  - `make_motion_to_static_traces.py` (live jitter, a reverse-order option);
+  - 3 replay result files;
+  - a `REPORT.md` section.
+
+**Verified**
+- Test sequences: WAVE_GREETING → FIVE 1/12 → 11/12; WHAT → ONE 3/8 → 7/8. Number → word not worse.
+- Real recordings identical; TEN/TOMORROW 5/5.
+- Frontend 374/374, `tsc` clean, backend OK.
+
+**Not done / open**
+- User's live test.
+- Not committed; `graphify update .` not run.

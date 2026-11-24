@@ -2,12 +2,14 @@ import type { LandmarkFrameSample } from '../../types/landmarks'
 import type { SignPrediction, SignRequest } from '../../types/message'
 import { FEATURE_ORDER, toFeatureVector } from './normalize'
 import { assessNumberHold, holdMotion, NUMBER_HOLD_SETTINGS, type NumberHoldEvidence } from './numberHold'
-import { MOTION_E_SETTINGS, resolveSignByMotion, SIGN_MOTION_SETTINGS, type MotionProfile, type SignMotionEvidence } from './signMotionEvidence'
+import { MOTION_E_SETTINGS, resolveSignByMotion, resolveStillWordAfterWord, SIGN_MOTION_SETTINGS, type MotionProfile,
+  type SignMotionEvidence } from './signMotionEvidence'
 import { createContinuousSignCapture } from './continuousSignCapture'
 import { appendComposed, type ComposableEntry } from './composedSigns'
 import { LIVE_WINDOW_GRID, SIGN_WINDOW_GRID, resampleLiveWindow, resampleSignWindow } from './windowResampling'
 import { createGestureSegmentation, findVisibleSignTransition, FAST_PREVIEW_BOUNDARIES, GESTURE_SETTINGS,
-  PREVIEW_GESTURE_SETTINGS, SIGN_TRANSITION_SETTINGS, TEN_DEPARTURE, type GestureEvent, type GestureWindow } from './gestureSegmentation'
+  PREVIEW_GESTURE_SETTINGS, SETTLING_WORDS_E, SIGN_TRANSITION_SETTINGS, TEN_DEPARTURE, WORD_SETTLE,
+  type GestureEvent, type GestureWindow } from './gestureSegmentation'
 import {
   CONTINUOUS_SETTINGS, CONTINUOUS_POLICY_VERSION, STAGE2_FAST_CONFIRMATION, createActivityPolicy, createRecognitionWindows, createObservationTracking,
   type FeatureFrame, type RecognitionWindow, type ActivityDecision, type ObservationTracking, type ContinuousSettings, isNonSign, displayActivity,
@@ -130,7 +132,7 @@ export function createDiagnosticSession(options: {
   const previews = new Map<number, PreviewVote[]>()
   let lastSegmentLabel: string | null = null, repeatArmed = true, bodyRevision = 0
   let lastAcceptedSegment: number | null = null
-  let confirmedFrame: FeatureFrame | null = null, transitionStart: number | null = null
+  let confirmedFrame: FeatureFrame | null = null, transitionStart: number | null = null, reanchorToSettle = false
   let completedBoundary: GestureEvent | null = null
   const repeatBoundaries = new Map<number, GestureEvent>()
   let nonSignSince: number | null = null, previousNonSignMs = -Infinity
@@ -159,10 +161,15 @@ export function createDiagnosticSession(options: {
   async function classify(window: WorkWindow, observedAt: number, windowTracking: ObservationTracking) {
     const followingSign = continuousSignTransitions && confirmedFrame && window.segmentId === lastAcceptedSegment
     if (followingSign && confirmedFrame && !window.quality) {
-      if (transitionStart === null) {
-        transitionStart = findVisibleSignTransition(window.frames,confirmedFrame,options.staticMotionCheck ? lastSegmentLabel ?? undefined : undefined,
+      if (transitionStart === null || reanchorToSettle) {
+        // Re-anchoring (motion-e, after a moving word that still reads as that word) only moves forward.
+        const found = findVisibleSignTransition(window.frames,confirmedFrame,options.staticMotionCheck ? lastSegmentLabel ?? undefined : undefined,
           motionProfile)
-        if (transitionStart !== null) segmenter.collectNextSign(lastAcceptedSegment!,transitionStart)
+        reanchorToSettle = false
+        if (found !== null && (transitionStart === null || found > transitionStart)) {
+          transitionStart = found
+          segmenter.collectNextSign(lastAcceptedSegment!,transitionStart)
+        }
       }
       if (transitionStart === null) window = {...window,quality:'waiting_for_new_sign'}
       else {
@@ -207,7 +214,9 @@ export function createDiagnosticSession(options: {
     if (window.segmentId !== undefined && discarded.has(window.segmentId)) blocked = 'gesture_discarded'
     const numberHold = options.numberHoldExperiment ? assessNumberHold(window.frames, prediction) : null
     // Motion picks between a static number and its paired moving word, and may relabel the prediction.
-    const resolved = options.staticMotionCheck && prediction ? resolveSignByMotion(window.frames,prediction,motionProfile) : null
+    const byMotion = options.staticMotionCheck && prediction ? resolveSignByMotion(window.frames,prediction,motionProfile) : null
+    // motion-e: after an accepted moving word, the same word with none of its motion on a steady hold is its number.
+    const resolved = byMotion && followingSign ? resolveStillWordAfterWord(window.frames,byMotion,lastSegmentLabel,motionProfile) : byMotion
     if (resolved) prediction = resolved.prediction
     const signMotion = resolved?.signMotion ?? null
     const motionBlocked = signMotion?.reason ?? undefined
@@ -299,6 +308,7 @@ export function createDiagnosticSession(options: {
         // A confirmed label can repeat after a physical segment boundary. Within
         // the same capture, fresh landmarks must support a different sign.
         const duplicate = followingSign && prediction?.label === lastSegmentLabel
+        if (duplicate && motionProfile === 'motion-e' && SETTLING_WORDS_E.has(lastSegmentLabel ?? '')) reanchorToSettle = true
         const emit = decision.emit && (!window.complete || stage2 || continuousSignTransitions) && !duplicate
         const waitingForChange = blocked === 'waiting_for_new_sign' || blocked === 'collecting_new_sign'
         decision = { ...decision, emit,
@@ -319,7 +329,7 @@ export function createDiagnosticSession(options: {
           if (continuousSignTransitions || waitForConfirmation) segmenter.markConfirmed(sid)
           if (continuousSignTransitions) {
             confirmedFrame = window.frames[window.frames.length-1]
-            transitionStart = null
+            transitionStart = null; reanchorToSettle = false
           }
           segmentAcceptanceEvents.push({timestampMs:decisionMs,type:'accepted',reason:'gesture_accepted_on_confirmation',label:lastSegmentLabel,source:null,evidenceMs:0})
         }
@@ -497,7 +507,8 @@ export function createDiagnosticSession(options: {
         numberHoldExperiment: options.numberHoldExperiment ? { version: 1, ...NUMBER_HOLD_SETTINGS } : null,
         source: options.source, name: options.name, startedAt, settings, minimumConfidence:minimumConfidence ?? null,
         signMotionSettings:!options.staticMotionCheck ? null : motionProfile === 'v1' ? SIGN_MOTION_SETTINGS
-          : { ...SIGN_MOTION_SETTINGS, profile:motionProfile, ...MOTION_E_SETTINGS, tenDeparture:TEN_DEPARTURE },
+          : { ...SIGN_MOTION_SETTINGS, profile:motionProfile, ...MOTION_E_SETTINGS, tenDeparture:TEN_DEPARTURE,
+            wordSettle:{ ...WORD_SETTLE, words:[...SETTLING_WORDS_E] } },
         stage2Confirmation: stage2 ? { ...STAGE2_FAST_CONFIRMATION, allowsCompletionVote: recognitionMode === 'segmented' } : null,
         policyVersion: CONTINUOUS_POLICY_VERSION,
         recognitionMode, segmentAcceptance, singleConfirmationPerSegment:preview,

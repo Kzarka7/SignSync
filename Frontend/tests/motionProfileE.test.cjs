@@ -2,8 +2,8 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('node:path')
 const load = require('../scripts/loadTypeScript.cjs')
-const { assessSignMotion, resolveSignByMotion, hasConfusableFingerChange, MOTION_E_SETTINGS } = load(path.resolve('src/services/landmarks/signMotionEvidence.ts'))
-const { findVisibleSignTransition, TEN_DEPARTURE } = load(path.resolve('src/services/landmarks/gestureSegmentation.ts'))
+const { assessSignMotion, resolveSignByMotion, resolveStillWordAfterWord, hasConfusableFingerChange, MOTION_E_SETTINGS } = load(path.resolve('src/services/landmarks/signMotionEvidence.ts'))
+const { findVisibleSignTransition, TEN_DEPARTURE, WORD_SETTLE } = load(path.resolve('src/services/landmarks/gestureSegmentation.ts'))
 
 function feature(t) {
   const features = Array(164).fill(0); features[36] = 1; features[7] = features[11] = 1
@@ -103,4 +103,49 @@ test('motion E: a one-frame tracking glitch in TEN neither triggers nor anchors 
   assert.equal(findVisibleSignTransition(trace, confirmed, 'TEN', 'motion-e'), null)
   const later = trace.find(f => f.timestamp === 900)
   assert.equal(findVisibleSignTransition(trace, later, 'TEN', 'motion-e'), null)
+})
+
+// Seeded jitter like a live held hand (whole-hand shift sd ~.01 is too large for a 25 ms grid; .004 here).
+function jittered(f, i) {
+  const n = k => .004 * Math.sin(i * 12.9898 + k * 78.233)
+  for (let j = 0; j < 21; j++) { f.features[37 + j * 3] += n(j); f.features[38 + j * 3] += n(j + 21) }
+  return f
+}
+
+test('motion E: after WAVE_GREETING the next sign starts once the hand has settled, not during the waving', () => {
+  // Waving until 1000 ms (confirmed at 600 ms), then the open hand held still.
+  const trace = Array.from({ length: 101 }, (_, i) => {
+    const t = i * 25
+    return jittered(openHand(t, t < 1000 ? .25 * Math.sin(t / 100) : .25 * Math.sin(10)), i)
+  })
+  const confirmed = trace.find(f => f.timestamp === 600)
+  const upTo = ms => trace.filter(f => f.timestamp <= ms)
+  assert.equal(findVisibleSignTransition(upTo(1000), confirmed, 'WAVE_GREETING', 'motion-e'), null, 'waving is not a new sign')
+  assert.equal(findVisibleSignTransition(upTo(1000 + WORD_SETTLE.stillMs - 50), confirmed, 'WAVE_GREETING', 'motion-e'), null)
+  const start = findVisibleSignTransition(upTo(2000), confirmed, 'WAVE_GREETING', 'motion-e')
+  assert.ok(start !== null && start >= 950 && start <= 1100, `starts at ${start}`)
+  // A clear departure (the hand moves far away) still starts a new sign.
+  const away = Array.from({ length: 61 }, (_, i) => {
+    const t = i * 25, f = openHand(t, t < 1000 ? .25 * Math.sin(t / 100) : 0)
+    if (t >= 1000) for (let j = 0; j < 21; j++) f.features[37 + j * 3] += Math.min(.6, (t - 1000) / 200 * .6)
+    return f
+  })
+  const departure = findVisibleSignTransition(away, away.find(f => f.timestamp === 600), 'WAVE_GREETING', 'motion-e')
+  assert.ok(departure !== null && departure >= 1000 && departure <= 1200, `departure at ${departure}`)
+})
+
+test('motion E: right after WAVE_GREETING, a still open hand read as WAVE_GREETING is FIVE', () => {
+  const held = frames(t => openHand(t))
+  const wave = frames(t => openHand(t, .25 * Math.sin(t / 100)))
+  const read = (framesIn, top3) => resolveSignByMotion(framesIn, scored(top3[0].label, top3), 'motion-e')
+  const waveRead = [{ label: 'WAVE_GREETING', score: .95 }, { label: 'FIVE', score: .04 }, { label: 'HELLO', score: .01 }]
+  const still = resolveStillWordAfterWord(held, read(held, waveRead), 'WAVE_GREETING', 'motion-e')
+  assert.equal(still.prediction.label, 'FIVE')
+  assert.equal(still.prediction.accepted, true)
+  assert.ok(Math.abs(still.prediction.score - .99) < 1e-9)
+  assert.equal(still.signMotion.resolvedFrom, 'WAVE_GREETING')
+  // Still waving: stays WAVE_GREETING. Not right after WAVE_GREETING, or another profile: unchanged.
+  assert.equal(resolveStillWordAfterWord(wave, read(wave, waveRead), 'WAVE_GREETING', 'motion-e').prediction.label, 'WAVE_GREETING')
+  assert.equal(resolveStillWordAfterWord(held, read(held, waveRead), 'FIVE', 'motion-e').prediction.label, 'WAVE_GREETING')
+  assert.equal(resolveStillWordAfterWord(held, read(held, waveRead), 'WAVE_GREETING', 'v1').prediction.label, 'WAVE_GREETING')
 })

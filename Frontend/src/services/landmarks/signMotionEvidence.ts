@@ -208,3 +208,26 @@ export function resolveSignByMotion(frames: FeatureFrame[], prediction: SignPred
   }
   return { prediction,signMotion:own }
 }
+
+/**
+ * 'motion-e' only: right after a moving word was accepted, a window that still reads as that word but
+ * shows none of its motion, on a steady hold that passes the paired number's check, is the number
+ * (e.g. WAVE_GREETING, then the open hand held still = FIVE). E's scores for the pair mostly measure the
+ * shared handshape, so the number takes the pair's combined score. resolveSignByMotion never goes from
+ * word to number because a pause before a word's motion is not a number; that does not apply here,
+ * since the word has already been signed and accepted.
+ */
+export function resolveStillWordAfterWord(frames: FeatureFrame[], resolved: { prediction: SignPrediction; signMotion: SignMotionEvidence | null },
+  lastAcceptedLabel: string | null, profile: MotionProfile) {
+  const { prediction, signMotion } = resolved
+  if (profile !== 'motion-e' || prediction.label !== lastAcceptedLabel || !signMotion?.reason?.startsWith('awaiting_')) return resolved
+  const pairsOf = PROFILE_PAIRS[profile]
+  for (const number of pairsOf[prediction.label] ?? []) {
+    const hold = assessSignMotion(frames,number,profile)
+    if (hold?.reason !== null) continue
+    const score = prediction.top3.filter(item => item.label === number || item.label === prediction.label).reduce((sum,item) => sum+item.score,0)
+    return { prediction:{...prediction,label:number,score,accepted:prediction.accepted || score >= SIGN_MOTION_SETTINGS.pairAcceptScore},
+      signMotion:{...hold,resolvedFrom:prediction.label,pairScore:score} }
+  }
+  return resolved
+}
