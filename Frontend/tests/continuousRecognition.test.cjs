@@ -4,7 +4,7 @@ const path = require('node:path')
 const load = require('../scripts/loadTypeScript.cjs')
 const { createRecognitionWindows, createActivityPolicy, createObservationTracking, CONTINUOUS_SETTINGS } = load(path.resolve('src/services/landmarks/continuousRecognition.ts'))
 const { createDiagnosticSession } = load(path.resolve('src/services/landmarks/recognitionDiagnostics.ts'))
-const { resampleLiveWindow } = load(path.resolve('src/services/landmarks/windowResampling.ts'))
+const { resampleLiveWindow, resampleSignWindow } = load(path.resolve('src/services/landmarks/windowResampling.ts'))
 const { assessSignMotion, resolveSignByMotion } = load(path.resolve('src/services/landmarks/signMotionEvidence.ts'))
 
 function feature(t, valid = true, hands = true) {
@@ -460,7 +460,7 @@ test('full Lab Camera gesture windows send 40 samples and retain real observatio
   const requests = []
   const session = createDiagnosticSession({ source: 'camera', name: 'wall clock', wallClockWindows: true,
     recognitionMode: 'segmented', segmentAcceptance: 'confirmation',
-    onChange() {}, now: () => 0, id: () => 'grid',
+    onChange() {}, now: () => 0, id: (() => { let n = 0; return () => `grid-${n++}` })(),
     predict: async request => { requests.push(request); return prediction('UNKNOWN', false) },
   })
   for (let t = 0; t <= 2300; t += 62) {
@@ -470,14 +470,43 @@ test('full Lab Camera gesture windows send 40 samples and retain real observatio
     await new Promise(resolve => setImmediate(resolve))
   }
   const report = session.report()
-  assert.equal(report.windowSampling.windowMs, 1333)
-  assert.equal(requests[0].frames[1].timestamp - requests[0].frames[0].timestamp, 62,
-    'short gesture windows retain their native observation span')
-  const input = requests.find(({ frames }) => frames.length === 40)
-  assert.ok(input)
-  assert.equal(input.frames.at(-1).timestamp - input.frames[0].timestamp, 1300)
+  assert.equal(report.windowSampling.mode, 'whole-sign')
+  assert.ok(requests.length > 0 && requests.every(({ frames }) => frames.length === 40),
+    'every segmented camera request is a 40-step grid')
+  const rows = report.rows.filter(row => row.requestId)
+  for (const [i, request] of requests.entries()) {
+    const row = rows.find(candidate => candidate.requestId === request.requestId)
+    assert.ok(row)
+    assert.equal(request.frames[0].timestamp, row.startMs, 'the grid starts at the start of the detected sign')
+    assert.equal(request.frames.at(-1).timestamp, row.endMs, 'and ends at the newest observation')
+    const step = (row.endMs - row.startMs) / 39
+    assert.ok(request.frames.slice(1).every((frame, j) => Math.abs(frame.timestamp - request.frames[j].timestamp - step) < 1e-6), `uniform steps in request ${i}`)
+  }
+  assert.ok(requests.some(({ frames }) => frames.at(-1).timestamp - frames[0].timestamp > 1333),
+    'long signs are no longer cut to a 1,333 ms tail')
   assert.ok(report.rows.some(row => row.modelInputFrameCount === 40 && row.frameCount !== 40))
   assert.ok(report.frames.every(frame => frame.timestamp % 62 === 0))
+})
+
+test('whole-sign grid spans the full gesture without filling missing hands or long gaps', () => {
+  const frames = [0, 72, 134, 201, 275, 340, 405, 470, 535, 600, 850, 915, 981, 1045, 1110, 1175, 1240, 1305, 1400, 1950]
+    .map(time => {
+      const frame = feature(time, true, time < 275 || time >= 340)
+      frame.features[37] = frame.features[36] ? time / 1000 : 0
+      return frame
+    })
+  assert.equal(resampleSignWindow(frames.slice(0, 1)), null, 'one observation has no span')
+  const result = resampleSignWindow(frames)
+  assert.equal(result.length, 40)
+  assert.equal(result[0].timestamp, 0)
+  assert.equal(result.at(-1).timestamp, 1950)
+  assert.ok(result.slice(1).every((frame, i) => Math.abs(frame.timestamp - result[i].timestamp - 50) < 1e-7))
+  const at = ms => result.find(frame => Math.abs(frame.timestamp - ms) < 1e-7)
+  assert.ok(Math.abs(at(100).features[37] - .1) < 1e-9, 'tracked hand interpolates linearly')
+  assert.equal(at(300).features[36], 0, 'a hand missing at either neighbour is not invented')
+  assert.equal(at(700).valid, false, 'no interpolation across a 250 ms source gap')
+  assert.equal(at(1500).valid, false, 'no interpolation across the final 550 ms gap')
+  assert.equal(result.at(-1).features[36], 1)
 })
 
 test('two-of-three cannot bridge invalid tracking, stale predictions, or long evidence gaps', () => {
@@ -687,4 +716,40 @@ test('pose loss shows tracking lost rather than IDLE even when a model sign woul
   assert.equal(session.state.tracking.state, 'pose-lost')
   assert.ok(session.state.rows.every(row => row.activity === 'TRACKING LOST' && !row.emit))
   assert.equal(session.state.transcript.length, 0)
+})
+
+test('segmented Lab runs export the exact model input of every prediction; rolling runs do not', async () => {
+  for (const recognitionMode of ['segmented', 'rolling']) {
+    const sent = []
+    const session = createDiagnosticSession({ source: 'video', name: 'model input export', modelMode: 'lab-signs32-standalone-v5-motion',
+      recognitionMode, segmentAcceptance: 'confirmation',
+      settings: { strideMs: 150, confirmationWindows: 2, confirmationHistory: 3, confirmationMs: 150 },
+      onChange() {}, now: () => 0, id: () => `input-${sent.length}`,
+      predict: async ({ frames }) => { sent.push(frames); return prediction('STUDENT') } })
+    for (let t = 0; t <= 2400; t += 50) {
+      const frame = feature(t)
+      for (let j = 0; j < 21; j++) frame.features[37 + j * 3] = Math.min(t, 1600) / 1000 + 1 / 3
+      await session.observeFeatures(frame)
+    }
+    const report = session.report()
+    const stored = report.rows.filter(row => row.modelInputFrames)
+    if (recognitionMode === 'rolling') {
+      assert.equal(report.modelInputExport, null)
+      assert.equal(stored.length, 0)
+      continue
+    }
+    assert.ok(sent.length > 0)
+    assert.equal(stored.length, report.rows.filter(row => row.requestId && row.prediction).length)
+    assert.deepEqual({ ...report.modelInputExport, note: undefined },
+      { field: 'rows[].modelInputFrames', maxRows: 600, decimals: 5, storedRows: stored.length, omittedRows: 0, note: undefined })
+    stored.forEach((row, i) => {
+      assert.equal(row.modelInputFrames.length, sent[i].length)
+      row.modelInputFrames.forEach((frame, k) => {
+        assert.equal(frame.timestamp, sent[i][k].timestamp)
+        assert.equal(frame.valid, sent[i][k].valid)
+        frame.features.forEach((value, c) => assert.ok(Math.abs(value - sent[i][k].features[c]) <= 5e-6))
+      })
+    })
+    assert.equal(stored[0].modelInputFrames[0].features[37], 0.33333)
+  }
 })

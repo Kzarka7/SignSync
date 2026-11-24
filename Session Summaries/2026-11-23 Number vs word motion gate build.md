@@ -31,6 +31,6 @@ Build steps 1–3 of [[2026-11-22 Number vs word motion gate plan]], then make M
 **Not done / open**
 - No live camera trial of the new gate or of MOTHER→FATHER.
 - Step 4 (velocity input and retraining) not started. Nothing committed.
-- `graphify update .` was started, then stopped at the user's request after running over 10 minutes. The graph does not include these changes.
+- `graphify update .` was stopped once at the user's request, then rerun and completed (exit code 0). The graph includes these changes.
 
 Related: [[Project Home]]

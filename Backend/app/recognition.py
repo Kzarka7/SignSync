@@ -198,14 +198,28 @@ LAB_EXPERIMENTS = {
     'lab-signs43-numbers': 'samples_43_signs_days_numbers_clip_70_15_15_v1',
     'lab-signs43-shape-motion': 'samples_43_signs_shape_motion_v1',
     'lab-signs43-similarity': SIMILAR_SIGNS,
+    # Same 43 signs and clips as v1, recipe E: sign-motion-cues-v1 features + BiGRU
+    # (see app/sign_motion_e_recognition.py). Live hand-slot order, no swap.
+    'lab-signs43-motion-e': 'samples_43_signs_motion_e_v1',
     'lab-signs43-similarity-v2': 'samples_43_signs_similarity_v2',
     'lab-signs75-candidate': 'samples_75_signs_batch_expansion_v1',
     'lab-signs75-multi-batch': 'samples_75_signs_multi_batch_dev_v1',
     'lab-signs32-standalone': 'samples_32_signs_standalone_v3',
+    # Same 32 signs and features, all 60 clips per sign (adds a 1280x720 recording
+    # setup), trained by train_gru.py without augmentation.
+    'lab-signs32-standalone-v4': 'samples_32_signs_standalone_v4',
+    # v4 plus participant P4's .MOV batches for 12 signs (2,142 clips), same recipe.
+    'lab-signs32-standalone-v5': 'samples_32_signs_standalone_v5',
+    # Same v5 clips and split on sign-motion-v1 features + augmentation (see app/sign_motion_recognition.py).
+    'lab-signs32-standalone-v5-motion': 'samples_32_signs_standalone_v5_motion',
     # 43 Similar Signs v1 + standalone v3 signs (PARENTS composed in the Lab from
     # FATHER + MOTHER). Training clips were rebuilt in the live hand-slot order.
     'lab-signs74-combined': 'samples_74_signs_combined_v3',
     'lab-signs32-similarity': 'samples_32_signs_similarity_v1',
+    # Indexing + possessives pilot (IX-1..IX-3pl, POSS-1..POSS-3pl); no REST/IDLE.
+    'lab-ix-poss-pilot': 'samples_12_signs_ix_poss_batch_holdout_v1',
+    # Same 12 labels on ix-poss-motion-v1 features (see app/ix_poss_recognition.py).
+    'lab-ix-poss-motion': 'samples_12_signs_ix_poss_motion_v1',
     'lab-alphabet': 'alphabet_26_j460_v2',
     'lab-stage2': 'alphabet_numbers_36_joint_v1_rerun_20261109',
 }
@@ -214,9 +228,12 @@ _lab_recognizers = {}
 # Collector video import saves samples with swapHandSides: true (swapVideoHands),
 # so these models learned the opposite hand-slot order from what Lab replay and
 # the live camera send. Measured share of swapped training samples: standalone
-# v3 ~90%, 32-sign similarity ~79%. The 75-sign sets are mixed (~26%) and stay
-# unswapped. Swapping at inference restores the training convention.
-HAND_SWAPPED_TRAINING = frozenset({'lab-signs32-standalone', 'lab-signs32-similarity'})
+# v3 ~90%, standalone v4 ~81%, standalone v5 ~68%, 32-sign similarity ~79%,
+# IX/POSS pilot 100%. The 75-sign sets are mixed (~26%) and stay unswapped.
+# Swapping at inference restores the training convention.
+HAND_SWAPPED_TRAINING = frozenset({'lab-signs32-standalone', 'lab-signs32-standalone-v4', 'lab-signs32-standalone-v5',
+                                   'lab-signs32-similarity', 'lab-ix-poss-pilot'})
+STANDALONE_MODES = frozenset({'lab-signs32-standalone', 'lab-signs32-standalone-v4', 'lab-signs32-standalone-v5'})
 HAND_BLOCK = slice(36, 100), slice(100, 164)
 
 
@@ -245,9 +262,13 @@ class SampleDiagnosticRecognizer(P4CandidateRecognizer):
         metadata_bytes = (prepared / 'metadata.json').read_bytes()
         metadata = json.loads(metadata_bytes)
         config = validate_candidate(prepared, metadata)
-        standalone = mode == 'lab-signs32-standalone'
+        standalone = mode in STANDALONE_MODES
         combined = mode == 'lab-signs74-combined'
-        self.idle_without_hands = standalone or combined
+        # Trained by train_gru.py, which leaves evaluation.json's checkpoint
+        # unset; checkpoint_verification.json pins the reproduced checkpoint.
+        ix_poss = mode == 'lab-ix-poss-pilot'
+        train_gru_run = ix_poss or mode in ('lab-signs32-standalone-v4', 'lab-signs32-standalone-v5')
+        self.idle_without_hands = standalone or combined or ix_poss
         self.swap_hand_slots = mode in HAND_SWAPPED_TRAINING
         shape_motion_background_classes = {
             'lab-signs75-candidate': 77, 'lab-signs75-multi-batch': 77,
@@ -255,7 +276,7 @@ class SampleDiagnosticRecognizer(P4CandidateRecognizer):
         }
         shape_motion_background = mode in shape_motion_background_classes
         shape_motion = (preparation == SIMILAR_SIGNS or mode in ('lab-signs43-shape-motion', 'lab-signs32-similarity')
-                        or shape_motion_background or standalone)
+                        or shape_motion_background or standalone or ix_poss)
         self.supports_short_preview = shape_motion
         expected_variant = SHAPE_MOTION_V1 if shape_motion else GEOMETRY_V3
         if metadata.get('featureVariant', GEOMETRY_V3) != expected_variant:
@@ -267,7 +288,9 @@ class SampleDiagnosticRecognizer(P4CandidateRecognizer):
         sign_only_classes = {'lab-signs38': 38, 'lab-signs38-clip': 38, 'lab-signs33': 33,
                              'lab-signs43-numbers': 43, 'lab-signs43-shape-motion': 43,
                              'lab-signs43-similarity': 43, 'lab-signs43-similarity-v2': 43,
-                             'lab-signs32-similarity': 32, 'lab-signs32-standalone': 32}
+                             'lab-signs32-similarity': 32, 'lab-signs32-standalone': 32,
+                             'lab-signs32-standalone-v4': 32, 'lab-signs32-standalone-v5': 32,
+                             'lab-ix-poss-pilot': 12}
         sign_only = mode in sign_only_classes
         class_count = shape_motion_background_classes.get(mode, sign_only_classes.get(mode, 57))
         background = {'REST', 'IDLE_MOVEMENT'}
@@ -294,11 +317,13 @@ class SampleDiagnosticRecognizer(P4CandidateRecognizer):
             raise ValueError('Invalid pilot acceptance threshold.')
         with np.load(prepared / 'gru_data.npz', allow_pickle=False) as arrays:
             mean, std = arrays['feature_mean'].copy(), arrays['feature_std'].copy()
-        checkpoint = folder / ('best_model.h5' if sign_only and not (similar_signs_v2 or standalone) else 'best_model.keras')
+        checkpoint = folder / ('best_model.h5' if sign_only and not (similar_signs_v2 or standalone or ix_poss)
+                               else 'best_model.keras')
         if sign_only or shape_motion_background:
             verified = json.loads((folder / 'checkpoint_verification.json').read_text(encoding='utf-8'))
+            recorded_checkpoint = evaluation.get('checkpoint') or (checkpoint.name if train_gru_run else None)
             if (verified['experiment'] != experiment or verified['seed'] != 42 or verified['labels'] != self.labels or
-                    verified['checkpoint'] != checkpoint.name or evaluation['checkpoint'] != checkpoint.name or
+                    verified['checkpoint'] != checkpoint.name or recorded_checkpoint != checkpoint.name or
                     verified['metadataSha256'] != digest(metadata_bytes) or
                     verified['checkpointSha256'] != digest(checkpoint.read_bytes())):
                 raise ValueError(f'{class_count}-sign checkpoint verification mismatch.')
@@ -307,7 +332,9 @@ class SampleDiagnosticRecognizer(P4CandidateRecognizer):
             raise ValueError('Pilot checkpoint shape mismatch.')
         standardize_for_model(np.zeros((1, 40, 238)), mean, std)
         identity = mode
-        if standalone or combined:
+        if standalone:
+            identity = f"lab-signs32-standalone-{experiment.rsplit('_', 1)[-1]}"
+        elif combined:
             identity = f"{mode}-{experiment.rsplit('_', 1)[-1]}"
         self.model_id = identity + '-seed42-graph-diagnostics'
         self.lock = Lock()
@@ -370,6 +397,15 @@ def get_diagnostic_recognizer(mode: str = 'p4-candidate'):
                 elif mode == 'lab-stage2':
                     from app.stage2_recognition import Stage2DiagnosticRecognizer
                     _lab_recognizers[mode] = Stage2DiagnosticRecognizer(root)
+                elif mode == 'lab-ix-poss-motion':
+                    from app.ix_poss_recognition import IxPossMotionRecognizer
+                    _lab_recognizers[mode] = IxPossMotionRecognizer(root)
+                elif mode == 'lab-signs32-standalone-v5-motion':
+                    from app.sign_motion_recognition import SignMotionV5Recognizer
+                    _lab_recognizers[mode] = SignMotionV5Recognizer(root)
+                elif mode == 'lab-signs43-motion-e':
+                    from app.sign_motion_e_recognition import SignMotionERecognizer
+                    _lab_recognizers[mode] = SignMotionERecognizer(root)
                 else:
                     _lab_recognizers[mode] = GraphP4DiagnosticRecognizer(SampleDiagnosticRecognizer(root, mode))
             return _lab_recognizers[mode]

@@ -38,20 +38,24 @@ const V2_MODEL = 'lab-signs43-similarity-v2'
 const EXPANDED_MODEL = 'lab-signs75-multi-batch'
 const STANDALONE_MODEL = 'lab-signs32-standalone'
 const COMBINED_MODEL = 'lab-signs74-combined'
+// Recipe E candidate: same 43 signs as v1 (sign-motion-cues-v1 features, bidirectional GRU).
+const MOTION_E_MODEL = 'lab-signs43-motion-e'
 const LAB_MODES = [
   { value: LIVE_SIGNS_MODEL, label: BASELINE_LABEL },
-  { value: V2_MODEL, label: '43 Similar Signs (v2 experiment)' },
-  { value: EXPANDED_MODEL, label: '75 Signs (multi-batch candidate)' },
+  { value: MOTION_E_MODEL, label: '43 Similar Signs (motion E candidate)' },
+  // Archived 2026-11-24 (see SignSync Dataset/documentation/candidates-archive-20261124.md):
+  // 43 v2, 75 multi-batch, 32 similarity, IX/POSS first pilot, 33 signs, 43 numbers, 43 shape-motion.
   { value: STANDALONE_MODEL, label: '32 Signs (standalone v3)' },
+  { value: 'lab-signs32-standalone-v4', label: '32 Signs (standalone v4, 60 clips per sign)' },
+  { value: 'lab-signs32-standalone-v5', label: '32 Signs (standalone v5, adds P4 clips)' },
+  { value: 'lab-signs32-standalone-v5-motion', label: '32 Signs (standalone v5, motion + augmentation)' },
   { value: COMBINED_MODEL, label: '74 Signs + PARENTS (combined v3)' },
-  { value: 'lab-signs32-similarity', label: '32 Signs (similarity recipe)' },
+  { value: 'lab-ix-poss-motion', label: 'Indexing + Possessives (motion v1)' },
   { value: 'p4-candidate', label: 'P4 experimental' },
-  { value: 'lab-signs33', label: '33 signs · days of the week' },
-  { value: 'lab-signs43-numbers', label: '43 signs · days and numbers' },
-  { value: 'lab-signs43-shape-motion', label: '43 signs · handshape and motion' },
   { value: 'lab-alphabet', label: 'Alphabet A–Z' },
 ] as const satisfies readonly { value: LabRecognitionMode | 'p4-candidate'; label: string }[]
-type VisibleLabMode = (typeof LAB_MODES)[number]['value']
+// Wider than LAB_MODES so the branches for archived models still typecheck if they are restored.
+type VisibleLabMode = LabRecognitionMode | 'p4-candidate'
 type PinnedBaseline = {
   modelMode: typeof LIVE_SIGNS_MODEL | typeof STANDALONE_MODEL
   recognizerId: string
@@ -423,7 +427,9 @@ export default function RecognitionLabPage() {
       const current = createDiagnosticSession({
         source, ...LIVE_RECOGNITION_POLICY, ...confirmation, modelMode, name,
         wallClockWindows: source === 'camera', poseGuidedOcclusion: source === 'camera',
-        staticMotionCheck: supportsMotionEvidence,
+        // Motion E: only the FIVE/WAVE_GREETING pair and the TEN -> next-sign rule (see signMotionEvidence.ts).
+        staticMotionCheck: supportsMotionEvidence || modelMode === MOTION_E_MODEL,
+        ...(modelMode === MOTION_E_MODEL ? { motionProfile: 'motion-e' as const } : {}),
         predict: request => client.predict(request),
         onWordBoundary: modelMode === 'lab-alphabet' ? () => {
           if (!isCurrent() || !spelling.draft && !spelling.recognized) return
@@ -570,8 +576,10 @@ export default function RecognitionLabPage() {
   while (lastPrediction >= 0 && !rows[lastPrediction].prediction) lastPrediction--
   const signTiming = rows[lastPrediction]
   const transcript = snapshot?.transcript ?? []
-  const supportsGloss = modelMode === LIVE_SIGNS_MODEL || modelMode === V2_MODEL || modelMode === 'lab-alphabet'
-  const glossSuggestions = modelMode === LIVE_SIGNS_MODEL || modelMode === V2_MODEL ? suggestLabGlosses(transcript, rows) : []
+  const supportsGloss = modelMode === LIVE_SIGNS_MODEL || modelMode === V2_MODEL || modelMode === MOTION_E_MODEL
+    || modelMode === 'lab-alphabet'
+  const glossSuggestions = modelMode === LIVE_SIGNS_MODEL || modelMode === V2_MODEL || modelMode === MOTION_E_MODEL
+    ? suggestLabGlosses(transcript, rows) : []
   const glossDurationMs = Math.floor(source === 'video'
     ? replayInfo.current ? replayInfo.current.durationSeconds * 1000 : videoDurationMs
     : snapshot?.latestMs ?? 0)

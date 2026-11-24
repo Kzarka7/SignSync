@@ -2,12 +2,12 @@ import type { LandmarkFrameSample } from '../../types/landmarks'
 import type { SignPrediction, SignRequest } from '../../types/message'
 import { FEATURE_ORDER, toFeatureVector } from './normalize'
 import { assessNumberHold, holdMotion, NUMBER_HOLD_SETTINGS, type NumberHoldEvidence } from './numberHold'
-import { resolveSignByMotion, SIGN_MOTION_SETTINGS, type SignMotionEvidence } from './signMotionEvidence'
+import { MOTION_E_SETTINGS, resolveSignByMotion, SIGN_MOTION_SETTINGS, type MotionProfile, type SignMotionEvidence } from './signMotionEvidence'
 import { createContinuousSignCapture } from './continuousSignCapture'
 import { appendComposed, type ComposableEntry } from './composedSigns'
-import { LIVE_WINDOW_GRID, resampleLiveWindow } from './windowResampling'
+import { LIVE_WINDOW_GRID, SIGN_WINDOW_GRID, resampleLiveWindow, resampleSignWindow } from './windowResampling'
 import { createGestureSegmentation, findVisibleSignTransition, FAST_PREVIEW_BOUNDARIES, GESTURE_SETTINGS,
-  PREVIEW_GESTURE_SETTINGS, SIGN_TRANSITION_SETTINGS, type GestureEvent, type GestureWindow } from './gestureSegmentation'
+  PREVIEW_GESTURE_SETTINGS, SIGN_TRANSITION_SETTINGS, TEN_DEPARTURE, type GestureEvent, type GestureWindow } from './gestureSegmentation'
 import {
   CONTINUOUS_SETTINGS, CONTINUOUS_POLICY_VERSION, STAGE2_FAST_CONFIRMATION, createActivityPolicy, createRecognitionWindows, createObservationTracking,
   type FeatureFrame, type RecognitionWindow, type ActivityDecision, type ObservationTracking, type ContinuousSettings, isNonSign, displayActivity,
@@ -22,7 +22,15 @@ export type DiagnosticRow = Omit<RecognitionWindow, 'frames'> & ActivityDecision
   signMotion?: SignMotionEvidence | null
   completionValidation?: SignPrediction | null; segmentId?: number; complete?: boolean; decisionMs?: number
   evidence?: GestureWindow['evidence']; earlyPreview?: true
+  // Exact frames sent to the model for this prediction (segmented mode only; see MODEL_INPUT_EXPORT).
+  modelInputFrames?: FeatureFrame[]
 }
+// Segmented runs keep each prediction's model input so exports can be compared with training clips.
+// Rolling windows predict every stride, so they are not stored. Values are rounded to keep exports small.
+export const MODEL_INPUT_EXPORT = { maxRows: 600, decimals: 5 } as const
+const roundFeature = (value: number) => Math.round(value * 1e5) / 1e5
+export const compactModelInput = (frames: readonly FeatureFrame[]): FeatureFrame[] =>
+  frames.map(({ timestamp, valid, features }) => ({ timestamp, valid, features: features.map(roundFeature) }))
 export type LabTranscriptEntry = ComposableEntry
 // Models without a PARENTS output: FATHER + MOTHER confirmations become PARENTS.
 export const COMPOSING_MODELS = new Set(['lab-signs74-combined'])
@@ -76,6 +84,8 @@ export function createDiagnosticSession(options: {
   waitForConfirmation?: boolean
   settleConfirmedHold?: boolean
   staticMotionCheck?: boolean
+  // Which number/word pairs and sign-transition rules the motion check uses (default 'v1').
+  motionProfile?: MotionProfile
   wallClockWindows?: boolean
   poseGuidedOcclusion?: boolean
 }) {
@@ -91,6 +101,7 @@ export function createDiagnosticSession(options: {
   const recognitionMode = options.recognitionMode ?? 'rolling'
   const segmentAcceptance = options.segmentAcceptance ?? 'completion'
   const stage2 = options.modelMode === 'lab-stage2'
+  const motionProfile: MotionProfile = options.motionProfile ?? 'v1'
   const composeSigns = COMPOSING_MODELS.has(options.modelMode ?? '')
   const preview = recognitionMode === 'segmented' && segmentAcceptance === 'preview'
   const shortPreview = preview && options.shortPreview === true
@@ -99,9 +110,13 @@ export function createDiagnosticSession(options: {
   const continuousSignTransitions = recognitionMode === 'segmented' && segmentAcceptance === 'confirmation'
     && (options.modelMode === 'lab-signs43-numbers' || options.modelMode === 'lab-signs43-shape-motion'
       || options.modelMode === 'lab-signs43-similarity' || options.modelMode === 'lab-signs43-similarity-v2'
+      || options.modelMode === 'lab-signs43-motion-e'
       || options.modelMode === 'lab-signs75-candidate' || options.modelMode === 'lab-signs75-multi-batch'
-      || options.modelMode === 'lab-signs32-standalone' || options.modelMode === 'lab-signs32-similarity'
-      || options.modelMode === 'lab-signs74-combined'
+      || options.modelMode === 'lab-signs32-standalone' || options.modelMode === 'lab-signs32-standalone-v4'
+      || options.modelMode === 'lab-signs32-standalone-v5' || options.modelMode === 'lab-signs32-standalone-v5-motion'
+      || options.modelMode === 'lab-signs32-similarity'
+      || options.modelMode === 'lab-signs74-combined' || options.modelMode === 'lab-ix-poss-pilot'
+      || options.modelMode === 'lab-ix-poss-motion'
       || options.modelMode === 'lab-alphabet')
   const waitForConfirmation = recognitionMode === 'segmented' && segmentAcceptance === 'confirmation'
     && options.waitForConfirmation === true
@@ -126,6 +141,8 @@ export function createDiagnosticSession(options: {
     ? { graceMs: POSE_OCCLUSION_GRACE_MS, wristsRaised } : undefined)
   const boundaries = createContinuousSignCapture()
   const frames: FeatureFrame[] = [], rows: DiagnosticRow[] = [], transcript: LabTranscriptEntry[] = []
+  const storeModelInput = recognitionMode === 'segmented'
+  let storedModelInputs = 0, omittedModelInputs = 0
   const boundaryEvents: unknown[] = []
   const trackingEvents: ObservationTracking[] = []
   let tracking: ObservationTracking | null = null
@@ -143,7 +160,8 @@ export function createDiagnosticSession(options: {
     const followingSign = continuousSignTransitions && confirmedFrame && window.segmentId === lastAcceptedSegment
     if (followingSign && confirmedFrame && !window.quality) {
       if (transitionStart === null) {
-        transitionStart = findVisibleSignTransition(window.frames,confirmedFrame,options.staticMotionCheck ? lastSegmentLabel ?? undefined : undefined)
+        transitionStart = findVisibleSignTransition(window.frames,confirmedFrame,options.staticMotionCheck ? lastSegmentLabel ?? undefined : undefined,
+          motionProfile)
         if (transitionStart !== null) segmenter.collectNextSign(lastAcceptedSegment!,transitionStart)
       }
       if (transitionStart === null) window = {...window,quality:'waiting_for_new_sign'}
@@ -156,8 +174,10 @@ export function createDiagnosticSession(options: {
           handFraction:fresh.filter(f=>f.valid && (f.features[36] === 1 || f.features[100] === 1)).length/fresh.length}
       }
     }
+    // Segmented camera gestures: whole detected sign on a 40-step grid (as in training).
+    // Rolling windows keep the fixed 1,333 ms lookback.
     const resampled = wallClockWindows && !window.quality && windowTracking.state !== 'pose-lost'
-      ? resampleLiveWindow(window.frames) : null
+      ? recognitionMode === 'segmented' ? resampleSignWindow(window.frames) : resampleLiveWindow(window.frames) : null
     if (resampled && resampled.filter(frame => frame.valid).length / resampled.length < settings.minValidFraction) {
       window = { ...window, quality: 'pose_tracking_unusable' }
     }
@@ -187,7 +207,7 @@ export function createDiagnosticSession(options: {
     if (window.segmentId !== undefined && discarded.has(window.segmentId)) blocked = 'gesture_discarded'
     const numberHold = options.numberHoldExperiment ? assessNumberHold(window.frames, prediction) : null
     // Motion picks between a static number and its paired moving word, and may relabel the prediction.
-    const resolved = options.staticMotionCheck && prediction ? resolveSignByMotion(window.frames,prediction) : null
+    const resolved = options.staticMotionCheck && prediction ? resolveSignByMotion(window.frames,prediction,motionProfile) : null
     if (resolved) prediction = resolved.prediction
     const signMotion = resolved?.signMotion ?? null
     const motionBlocked = signMotion?.reason ?? undefined
@@ -328,6 +348,11 @@ export function createDiagnosticSession(options: {
       roundTripMs: requestId ? now() - started : null, resultAgeMs, frameCount: windowFrames.length,
       ...(wallClockWindows && { modelInputFrameCount: requestId ? modelFrames.length : null }),
       tracking: { ...tracking! }, completionValidation, numberHold, signMotion }
+    if (storeModelInput && requestId && prediction) {
+      if (storedModelInputs < MODEL_INPUT_EXPORT.maxRows) {
+        (row as DiagnosticRow).modelInputFrames = compactModelInput(modelFrames); storedModelInputs++
+      } else omittedModelInputs++
+    }
     rows.push(row)
     if (decision.emit && prediction && requestId) {
       const entry = { label: prediction.label, score: prediction.score, decisionMs: decisionMs + resultAgeMs, requestId }
@@ -471,7 +496,8 @@ export function createDiagnosticSession(options: {
         modelMode: options.modelMode ?? 'p4-candidate',
         numberHoldExperiment: options.numberHoldExperiment ? { version: 1, ...NUMBER_HOLD_SETTINGS } : null,
         source: options.source, name: options.name, startedAt, settings, minimumConfidence:minimumConfidence ?? null,
-        signMotionSettings:options.staticMotionCheck ? SIGN_MOTION_SETTINGS : null,
+        signMotionSettings:!options.staticMotionCheck ? null : motionProfile === 'v1' ? SIGN_MOTION_SETTINGS
+          : { ...SIGN_MOTION_SETTINGS, profile:motionProfile, ...MOTION_E_SETTINGS, tenDeparture:TEN_DEPARTURE },
         stage2Confirmation: stage2 ? { ...STAGE2_FAST_CONFIRMATION, allowsCompletionVote: recognitionMode === 'segmented' } : null,
         policyVersion: CONTINUOUS_POLICY_VERSION,
         recognitionMode, segmentAcceptance, singleConfirmationPerSegment:preview,
@@ -483,7 +509,10 @@ export function createDiagnosticSession(options: {
         gestureSettings:recognitionMode === 'segmented' ? {...GESTURE_SETTINGS,updateMs:settings.strideMs,
           ...(waitForConfirmation ? {confirmationQuietMs} : {})} : null, segmentationEvents,
         featureOrder: FEATURE_ORDER, annotations: [],
-        ...(wallClockWindows && { windowSampling: LIVE_WINDOW_GRID }),
+        modelInputExport: storeModelInput ? { field: 'rows[].modelInputFrames', ...MODEL_INPUT_EXPORT,
+          storedRows: storedModelInputs, omittedRows: omittedModelInputs,
+          note: 'Exact frames sent to the model for each prediction, after sign-transition trimming and resampling.' } : null,
+        ...(wallClockWindows && { windowSampling: recognitionMode === 'segmented' ? SIGN_WINDOW_GRID : LIVE_WINDOW_GRID }),
         ...(poseGuidedOcclusion && { poseOcclusionGraceMs: POSE_OCCLUSION_GRACE_MS }),
         summary: { frameCount: frames.length, durationMs: latestMs, windowCount: rows.length,
           replacedWindows, staleResults, frameGaps, boundaryPhase: boundaries.phase,

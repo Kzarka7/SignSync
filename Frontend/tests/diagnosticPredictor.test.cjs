@@ -32,9 +32,18 @@ test('lab selections verify their own checkpoint identity and reject the other m
     ['lab-signs43-shape-motion', 'lab-signs43-shape-motion-seed42-graph-diagnostics', 'lab-signs43-numbers-seed42-graph-diagnostics'],
     ['lab-signs43-similarity', 'lab-signs43-similarity-seed42-graph-diagnostics', 'lab-signs43-shape-motion-seed42-graph-diagnostics'],
     ['lab-signs43-similarity-v2', 'lab-signs43-similarity-v2-seed42-graph-diagnostics', 'lab-signs43-similarity-seed42-graph-diagnostics'],
+    // The motion E candidate must not accept the v1 baseline checkpoint.
+    ['lab-signs43-motion-e', 'lab-signs43-motion-e-seed42-graph-diagnostics', 'lab-signs43-similarity-seed42-graph-diagnostics'],
     ['lab-signs75-multi-batch', 'lab-signs75-multi-batch-seed42-graph-diagnostics', 'lab-signs43-similarity-seed42-graph-diagnostics'],
     ['lab-signs32-standalone', 'lab-signs32-standalone-v3-seed42-graph-diagnostics', 'lab-signs32-standalone-v2-seed42-graph-diagnostics'],
+    // v4 must not accept the v3 checkpoint (and vice versa above).
+    ['lab-signs32-standalone-v4', 'lab-signs32-standalone-v4-seed42-graph-diagnostics', 'lab-signs32-standalone-v3-seed42-graph-diagnostics'],
+    ['lab-signs32-standalone-v5', 'lab-signs32-standalone-v5-seed42-graph-diagnostics', 'lab-signs32-standalone-v4-seed42-graph-diagnostics'],
+    // The motion retrain must not accept the plain v5 checkpoint.
+    ['lab-signs32-standalone-v5-motion', 'lab-signs32-standalone-v5-motion-seed42-graph-diagnostics', 'lab-signs32-standalone-v5-seed42-graph-diagnostics'],
     ['lab-signs74-combined', 'lab-signs74-combined-v3-seed42-graph-diagnostics', 'lab-signs74-combined-v1-seed42-graph-diagnostics'],
+    ['lab-ix-poss-pilot', 'lab-ix-poss-pilot-seed42-graph-diagnostics', 'lab-signs32-standalone-v3-seed42-graph-diagnostics'],
+    ['lab-ix-poss-motion', 'lab-ix-poss-motion-seed42-graph-diagnostics', 'lab-ix-poss-pilot-seed42-graph-diagnostics'],
     ['lab-alphabet', 'lab-alphabet-j460-v2-seed43-graph-diagnostics', model],
     ['lab-stage2', 'lab-stage2-rerun-20261109-seeds42-43-44-no-hold-graph-diagnostics',
       'lab-stage2-rerun-20261109-seeds42-43-44-graph-diagnostics'],
