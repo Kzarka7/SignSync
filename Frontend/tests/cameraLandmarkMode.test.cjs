@@ -284,8 +284,8 @@ test('paired camera runs hands continuously and holds each overlay hand without 
       buildFrameSample: (timestamp, _hand, pose) => ({ timestamp, pose: pose?.landmarks[0] ?? null }),
     }
     if (name.endsWith('/videoHandAssignment')) return { createStreamingHandAssignment: () =>
-      (sample, result, _aspect, usePoseWrists) => {
-        assignmentChecks.push(usePoseWrists)
+      (sample, result, _aspect, poseAge) => {
+        assignmentChecks.push(poseAge)
         return { ...sample, leftHand: result.landmarks[0] ?? null, rightHand: result.landmarks[1] ?? null }
       } }
     return load(path.resolve(root, 'hooks', name + '.ts'))
@@ -337,7 +337,8 @@ test('paired camera runs hands continuously and holds each overlay hand without 
   assert.equal(frame(1250).pose, refreshed.pose)
   assert.equal(pointsDrawn, 0, 'the hold never refreshes itself')
   assert.equal(feed.getLiveTiming().latest.poseMs, 0)
-  assert.deepEqual(assignmentChecks, [true, false, false, false, true, false])
+  // The cached pose is passed with its age, so pose wrists count on every frame with less weight.
+  assert.deepEqual(assignmentChecks, [0, 50, 100, 150, 0, 50])
   const expired = frame(1600)
   assert.equal(expired.pose, null)
   assert.equal(handCalls.at(-1), expired.timestamp)
@@ -389,8 +390,8 @@ test('deferred pose delivers hands first, runs pose before the next frame, and k
       buildFrameSample: (timestamp, _hand, pose) => ({ timestamp, pose: pose?.landmarks[0] ?? null }),
     }
     if (name.endsWith('/videoHandAssignment')) return { createStreamingHandAssignment: () =>
-      (sample, result, _aspect, usePoseWrists) => {
-        assignmentChecks.push(usePoseWrists)
+      (sample, result, _aspect, poseAge) => {
+        assignmentChecks.push(poseAge)
         return { ...sample, leftHand: result.landmarks[0] ?? null, rightHand: null }
       } }
     return load(path.resolve(root, 'hooks', name + '.ts'))
@@ -424,7 +425,8 @@ test('deferred pose delivers hands first, runs pose before the next frame, and k
   frame(1200)
   runTimers()
   assert.deepEqual(calls.filter(([kind]) => kind === 'pose').map(([, time]) => time), [1000, 1200], 'a scheduled pose also runs on its own')
-  assert.deepEqual(assignmentChecks, [false, true, false, false, false])
+  // No pose before the first deferred run; afterwards the cached pose's age.
+  assert.deepEqual(assignmentChecks, [false, 50, 100, 150, 200])
   const report = JSON.parse((feed.startLandmarkBenchmark(), frame(1250), feed.stopLandmarkBenchmark()))
   assert.equal(report.poseScheduling, 'after hand landmarks')
   assert.equal(report.handThresholds.minHandDetectionConfidence, 0.35)

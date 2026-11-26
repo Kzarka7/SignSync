@@ -233,6 +233,10 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     dynamicHandCapacity: false,
     handFallback: "", poseFallback: "", scheduling: "not started", inferenceThread: "main",
     lowLightAssist: "adaptive" as "adaptive" | "off", lowLightAssistFrames: 0, lowLightMaxGain: 1,
+    lowLightMethod: "not used" as string,
+    // What the camera reports about exposure, so a camera that slows its
+    // frame rate in dim light can be identified from a benchmark.
+    cameraExposure: null as Record<string, unknown> | null,
   });
   const recordedProfileInfoRef = useRef<typeof profileInfoRef.current | null>(null);
   const benchmarkInfoRef = useRef<typeof profileInfoRef.current | null>(null);
@@ -395,6 +399,8 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     profileInfoRef.current.lowLightAssist = lowLight ? "adaptive" : "off";
     profileInfoRef.current.lowLightAssistFrames = 0;
     profileInfoRef.current.lowLightMaxGain = 1;
+    profileInfoRef.current.lowLightMethod = "not used";
+    profileInfoRef.current.cameraExposure = null;
     type FrameTiming = {
       started: number;
       observedAt: number;
@@ -448,8 +454,10 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
           return;
         }
 
-        const settings = stream.getVideoTracks()[0]?.getSettings();
+        const track = stream.getVideoTracks()[0];
+        const settings = track?.getSettings();
         profileInfoRef.current.capture = { width: settings?.width, height: settings?.height, configuredFps: settings?.frameRate };
+        profileInfoRef.current.cameraExposure = readCameraExposure(track);
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
@@ -691,6 +699,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       if (gain > 1) {
         profileInfoRef.current.lowLightAssistFrames++;
         profileInfoRef.current.lowLightMaxGain = Math.max(profileInfoRef.current.lowLightMaxGain, Number(gain.toFixed(2)));
+        profileInfoRef.current.lowLightMethod = lowLight!.method();
       }
       if ((gain > 1) !== lowLightActive) {
         lowLightActive = gain > 1;
@@ -783,8 +792,11 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     ) {
       const video = videoRef.current;
       if (!video) return;
+      // With striding, the pose in this sample is cached from the frame it ran
+      // on; its age lets the assignment use it on every frame, with less weight.
+      const poseAge = poseStride > 1 && Number.isFinite(cachedPoseAt) ? Math.max(0, frame.timestamp - cachedPoseAt) : hasFreshPose;
       const sample = assignHands
-        ? assignHands(buildFrameSample(frame.timestamp, null, poseResult), handResult, frame.aspectRatio, hasFreshPose)
+        ? assignHands(buildFrameSample(frame.timestamp, null, poseResult), handResult, frame.aspectRatio, poseAge)
         : buildFrameSample(frame.timestamp, handResult, poseResult);
       const handCount = assignHands ? Number(!!sample.leftHand) + Number(!!sample.rightHand) : handResult?.landmarks.length ?? 0;
       const handsDetected = handCount > 0;
@@ -1046,6 +1058,24 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
     getLiveTiming,
   };
 }
+// Exposure controls and current exposure as the browser reports them. These
+// are optional track capabilities (Image Capture), so any of them may be absent.
+function readCameraExposure(track: MediaStreamTrack | undefined): Record<string, unknown> | null {
+  if (!track) return null;
+  try {
+    const capabilities = (track.getCapabilities?.() ?? {}) as Record<string, unknown>;
+    const settings = track.getSettings() as Record<string, unknown>;
+    const pick = (source: Record<string, unknown>, keys: string[]) =>
+      Object.fromEntries(keys.filter(key => source[key] !== undefined).map(key => [key, source[key]]));
+    return {
+      capabilities: pick(capabilities, ["frameRate", "exposureMode", "exposureTime", "exposureCompensation", "brightness"]),
+      settings: pick(settings, ["frameRate", "exposureMode", "exposureTime", "exposureCompensation", "brightness"]),
+    };
+  } catch {
+    return null;
+  }
+}
+
 // The preview uses the unmirrored camera image. Correct the detector's
 // reported side for display only, leaving recognition features untouched.
 function displayHandSide(category: string | undefined) {

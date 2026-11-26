@@ -11,17 +11,34 @@ import type { LandmarkFrameSample, LandmarkPoint } from '../../types/landmarks'
 //
 // In normal light the measured level stays above the threshold and the
 // detectors receive the original frame unchanged.
+//
+// The lift is a tone curve where the browser supports SVG filters on canvas:
+// shadows are raised by up to CURVE_MAX_SLOPE while highlights are compressed
+// instead of clipped, so a bright background, face or window keeps its
+// detail and the hand's own pixels are amplified less than a flat
+// multiplication would. Without that support a flat brightness() gain is used.
 
 export interface LightingRegion { x: number; y: number; width: number; height: number }
 export type LightingSource = 'hands' | 'wrists' | 'frame'
+export type LowLightMethod = 'tone curve' | 'brightness'
 
 export const LOW_LIGHT_TARGET_LEVEL = 110
 // The lift starts below this level and stops again above the release level.
 export const LOW_LIGHT_ACTIVATE_LEVEL = 80
 export const LOW_LIGHT_RELEASE_LEVEL = 95
+// Flat brightness() clips everything above 255 / gain, so it stays modest.
 export const LOW_LIGHT_MAX_GAIN = 2.4
 // Without hands or wrists to aim at, only a dark frame overall gets a smaller lift.
 const FRAME_MAX_GAIN = 1.6
+// The tone curve never clips, so it can lift further. Hands are lost most
+// often in the dark and the palm detector has to find them again on the
+// whole frame, so a dark frame without a tracked hand gets most of that lift.
+export const CURVE_MAX_GAIN = 3
+const CURVE_FRAME_MAX_GAIN = 2.4
+// Deep-shadow amplification (the curve's slope at black), which bounds how
+// much sensor noise is raised along with the hand.
+export const CURVE_MAX_SLOPE = 4.5
+const CURVE_SLOPE_STEP = .1
 const MIN_GAIN = 1.03
 const PROBE_INTERVAL_MS = 100
 const PROBE_SIZE = 24
@@ -71,9 +88,84 @@ export function measureLevel(pixels: ArrayLike<number>, source: LightingSource) 
   return luma[Math.min(count - 1, Math.floor(REGION_PERCENTILE * count))]
 }
 
-export function targetGain(level: number, source: LightingSource, active: boolean) {
+// Gain is the lift at the measured level (output level / measured level), for
+// both methods, so it reads the same in the timing report either way.
+export function targetGain(level: number, source: LightingSource, active: boolean, method: LowLightMethod = 'brightness') {
   if (level >= (active ? LOW_LIGHT_RELEASE_LEVEL : LOW_LIGHT_ACTIVATE_LEVEL)) return 1
-  return clamp(LOW_LIGHT_TARGET_LEVEL / Math.max(1, level), 1, source === 'frame' ? FRAME_MAX_GAIN : LOW_LIGHT_MAX_GAIN)
+  const max = method === 'tone curve'
+    ? source === 'frame' ? CURVE_FRAME_MAX_GAIN : CURVE_MAX_GAIN
+    : source === 'frame' ? FRAME_MAX_GAIN : LOW_LIGHT_MAX_GAIN
+  return clamp(LOW_LIGHT_TARGET_LEVEL / Math.max(1, level), 1, max)
+}
+
+// Shadow-lifting curve on 0-1 values: slope `slope` at black, 1 / slope at
+// white, f(0) = 0 and f(1) = 1, so nothing clips.
+export function toneCurve(value: number, slope: number) {
+  return value * slope / (1 + (slope - 1) * value)
+}
+
+// The curve that lifts `level` (0-255) by `gain`, bounded by CURVE_MAX_SLOPE.
+export function curveSlopeFor(gain: number, level: number) {
+  const x = clamp(level / 255, .005, .95)
+  const lifted = Math.min(.95, gain * x)
+  return clamp(lifted * (1 - x) / (x * (1 - lifted)), 1, CURVE_MAX_SLOPE)
+}
+
+// Canvas filter strings for the tone curve, one SVG filter per slope step,
+// or null when this browser does not apply SVG filters to canvas drawing.
+export type CurveFilter = (slope: number) => string
+const SVG_NS = 'http://www.w3.org/2000/svg'
+const CURVE_TABLE_SIZE = 33
+let documentCurves: { doc: Document; filter: CurveFilter | null } | null = null
+
+export function createDocumentCurveFilter(createCanvas: () => CanvasLike = () => document.createElement('canvas'),
+  doc: Document | undefined = typeof document === 'undefined' ? undefined : document): CurveFilter | null {
+  if (!doc?.body || typeof doc.createElementNS !== 'function') return null
+  if (documentCurves?.doc === doc) return documentCurves.filter
+  const svg = doc.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('width', '0'); svg.setAttribute('height', '0'); svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('style', 'position:absolute;width:0;height:0;overflow:hidden;pointer-events:none')
+  doc.body.appendChild(svg)
+  const made = new Set<string>()
+  const filter: CurveFilter = slope => {
+    const step = Math.round(clamp(slope, 1, CURVE_MAX_SLOPE) / CURVE_SLOPE_STEP)
+    const id = 'signsync-low-light-' + step
+    if (!made.has(id)) {
+      const element = doc.createElementNS(SVG_NS, 'filter')
+      element.setAttribute('id', id)
+      // Apply the table to the stored sRGB values, as brightness() does.
+      element.setAttribute('color-interpolation-filters', 'sRGB')
+      const transfer = doc.createElementNS(SVG_NS, 'feComponentTransfer')
+      const table = Array.from({ length: CURVE_TABLE_SIZE }, (_, i) =>
+        toneCurve(i / (CURVE_TABLE_SIZE - 1), step * CURVE_SLOPE_STEP).toFixed(4)).join(' ')
+      for (const channel of ['feFuncR', 'feFuncG', 'feFuncB']) {
+        const func = doc.createElementNS(SVG_NS, channel)
+        func.setAttribute('type', 'table'); func.setAttribute('tableValues', table)
+        transfer.appendChild(func)
+      }
+      element.appendChild(transfer); svg.appendChild(element); made.add(id)
+    }
+    return `url(#${id})`
+  }
+  // Check once that the browser really applies it: mid-dark grey through the
+  // slope-2 curve should come out near toneCurve(0.2, 2) * 255 = 85.
+  let works = false
+  try {
+    const canvas = createCanvas(); canvas.width = 2; canvas.height = 2
+    const context = canvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D | null
+    if (context && typeof context.filter === 'string') {
+      context.filter = filter(2)
+      context.fillStyle = 'rgb(51, 51, 51)'
+      context.fillRect(0, 0, 2, 2)
+      const [red] = context.getImageData(0, 0, 1, 1).data
+      works = Math.abs(red - 255 * toneCurve(.2, 2)) <= 8
+    }
+  } catch {
+    works = false
+  }
+  if (!works) svg.remove()
+  documentCurves = { doc, filter: works ? filter : null }
+  return documentCurves.filter
 }
 
 type DrawSource = HTMLVideoElement | ImageBitmap | HTMLCanvasElement
@@ -83,12 +175,16 @@ const sizeOf = (source: DrawSource) => 'videoWidth' in source
   ? { width: source.videoWidth, height: source.videoHeight }
   : { width: source.width, height: source.height }
 
-export function createLowLightAssist(createCanvas: () => CanvasLike = () => document.createElement('canvas')) {
+export function createLowLightAssist(createCanvas: () => CanvasLike = () => document.createElement('canvas'),
+  // Tone-curve filters; null keeps the flat brightness() lift.
+  createCurveFilter: () => CurveFilter | null = () => createDocumentCurveFilter(createCanvas)) {
   let probe: CanvasLike | null = null, output: CanvasLike | null = null
   let probeContext: CanvasRenderingContext2D | null = null, outputContext: CanvasRenderingContext2D | null = null
   let unsupported = false
+  let curve: CurveFilter | null = null
   let gain = 1, goal = 1, lastProbe = -Infinity
   let lastLevel: number | null = null, lastSource: LightingSource | null = null
+  const method = (): LowLightMethod => curve ? 'tone curve' : 'brightness'
 
   function contexts() {
     if (unsupported) return false
@@ -104,6 +200,9 @@ export function createLowLightAssist(createCanvas: () => CanvasLike = () => docu
       probeContext = outputContext = null
     }
     unsupported = !probeContext || !outputContext || typeof outputContext.filter !== 'string'
+    if (!unsupported) {
+      try { curve = createCurveFilter() } catch { curve = null }
+    }
     return !unsupported
   }
 
@@ -117,7 +216,7 @@ export function createLowLightAssist(createCanvas: () => CanvasLike = () => docu
         probeContext!.drawImage(input, region.x * width, region.y * height,
           Math.max(1, region.width * width), Math.max(1, region.height * height), 0, 0, PROBE_SIZE, PROBE_SIZE)
         const level = measureLevel(probeContext!.getImageData(0, 0, PROBE_SIZE, PROBE_SIZE).data, source)
-        goal = targetGain(level, source, gain >= MIN_GAIN)
+        goal = targetGain(level, source, gain >= MIN_GAIN, method())
         lastLevel = level; lastSource = source
       } catch {
         goal = 1
@@ -130,7 +229,9 @@ export function createLowLightAssist(createCanvas: () => CanvasLike = () => docu
     try {
       if (output!.width !== width) output!.width = width
       if (output!.height !== height) output!.height = height
-      outputContext!.filter = `brightness(${gain.toFixed(3)})`
+      outputContext!.filter = curve
+        ? curve(curveSlopeFor(gain, lastLevel ?? LOW_LIGHT_TARGET_LEVEL / gain))
+        : `brightness(${gain.toFixed(3)})`
       outputContext!.drawImage(input, 0, 0, width, height)
       outputContext!.filter = 'none'
       return output as HTMLCanvasElement
@@ -145,6 +246,8 @@ export function createLowLightAssist(createCanvas: () => CanvasLike = () => docu
     apply,
     // Gain applied to the most recent frame (1 means the original frame).
     gain: () => gain < MIN_GAIN ? 1 : gain,
-    state: () => ({ gain: gain < MIN_GAIN ? 1 : gain, level: lastLevel, source: lastSource }),
+    // Lift method, known once the first frame has been processed.
+    method,
+    state: () => ({ gain: gain < MIN_GAIN ? 1 : gain, level: lastLevel, source: lastSource, method: method() }),
   }
 }

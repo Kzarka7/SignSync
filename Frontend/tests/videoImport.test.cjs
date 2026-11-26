@@ -179,21 +179,94 @@ test('streaming assignment keeps one fast-moving hand on its side through flicke
   assert.deepEqual([...new Set(sides)], ['Right'])
 })
 
-test('streaming assignment follows a consistent label and pose evidence instead of a wrong initial side', () => {
+test('streaming assignment starts a new hand on its body side despite a confident wrong label', () => {
   const assign = createStreamingHandAssignment()
   const sides = []
   for (let index = 0; index < 16; index++) {
-    // Starts with a confident wrong label and no pose, then the label and pose agree on Left.
+    // Starts with a confident wrong label and no fresh pose, then the label and pose agree on Left.
+    // The hand is well off the midline on the pose left shoulder's side, so it never takes the Right slot.
     const hand = movingHand(.7, .5, index < 2 ? 'Right' : 'Left', .95)
     const fresh = index % 4 === 3
     const pose = livePose([.7, .56], null)
     const result = assign({ timestamp: index * 33, leftHand: null, rightHand: null, pose }, liveResult([hand]), 16 / 9, fresh)
     sides.push(result.leftHand ? 'Left' : 'Right')
   }
-  assert.equal(sides[0], 'Right')
-  assert.equal(sides.at(-1), 'Left')
-  // Once corrected it stays corrected.
-  assert.deepEqual([...new Set(sides.slice(sides.indexOf('Left')))], ['Left'])
+  assert.deepEqual([...new Set(sides)], ['Left'])
+})
+
+test('streaming assignment uses the body side only for new hands and leaves the midline to the label', () => {
+  const frame = (timestamp, pose = livePose(null, null)) => ({ timestamp, leftHand: null, rightHand: null, pose })
+  // Pose wrists are not visible, as in dim light; the shoulders still are.
+  const offSide = createStreamingHandAssignment()(frame(0), liveResult([movingHand(.75, .5, 'Right', .97)]), 16 / 9)
+  assert.ok(offSide.leftHand && !offSide.rightHand)
+  const midline = createStreamingHandAssignment()(frame(0), liveResult([movingHand(.52, .5, 'Right', .97)]), 16 / 9)
+  assert.ok(midline.rightHand && !midline.leftHand)
+  const noShoulders = livePose(null, null)
+  noShoulders.leftShoulder.visibility = noShoulders.rightShoulder.visibility = .1
+  const withoutBody = createStreamingHandAssignment()(frame(0, noShoulders), liveResult([movingHand(.75, .5, 'Right', .97)]), 16 / 9)
+  assert.ok(withoutBody.rightHand && !withoutBody.leftHand)
+
+  // A tracked hand keeps its slot while it crosses the midline during a sign.
+  const assign = createStreamingHandAssignment()
+  const sides = []
+  for (let index = 0; index < 12; index++) {
+    const result = assign(frame(index * 50), liveResult([movingHand(.6 - .03 * index, .5, 'Left', .9)]), 16 / 9)
+    sides.push(result.leftHand ? 'Left' : 'Right')
+  }
+  assert.deepEqual([...new Set(sides)], ['Left'])
+})
+
+test('streaming assignment uses dim and cached pose wrists against a wrong label near the midline', () => {
+  // Near the midline the body side gives no evidence; the wrists are dim (0.3) and the pose is 200 ms old.
+  const dimPose = livePose([.53, .56], [.3, .85])
+  dimPose.leftWrist.visibility = dimPose.rightWrist.visibility = .3
+  const hand = movingHand(.53, .5, 'Right', .95)
+  const frame = { timestamp: 0, leftHand: null, rightHand: null, pose: dimPose }
+  const withAge = createStreamingHandAssignment()(frame, liveResult([hand]), 16 / 9, 200)
+  assert.ok(withAge.leftHand && !withAge.rightHand)
+  // Ignoring pose wrists, the label decides.
+  const withoutPose = createStreamingHandAssignment()(frame, liveResult([hand]), 16 / 9, false)
+  assert.ok(withoutPose.rightHand && !withoutPose.leftHand)
+  // A hand far from both pose wrists is not one the pose located, so the label decides.
+  const lostPose = livePose([.9, .1], [.95, .15])
+  lostPose.leftWrist.visibility = lostPose.rightWrist.visibility = .9
+  const unrelated = createStreamingHandAssignment()({ ...frame, pose: lostPose }, liveResult([movingHand(.5, .6, 'Right', .95)]), 16 / 9, 0)
+  assert.ok(unrelated.rightHand && !unrelated.leftHand)
+})
+
+test('video hand assignment starts a hand on its body side and follows dim pose wrists', () => {
+  const frame = (timestamp, wrists, visibility) => {
+    const item = sample(timestamp)
+    item.raw.leftHand = null
+    item.raw.pose.leftWrist.x = wrists[0]; item.raw.pose.rightWrist.x = wrists[1]
+    item.raw.pose.leftWrist.visibility = item.raw.pose.rightWrist.visibility = visibility
+    return item
+  }
+  // This fixture's left shoulder is at x 0.35. A hand appearing at 0.2 with a confident
+  // Right label and no usable wrists goes to the Left slot.
+  const start = assignVideoHands([0, 33].map(time => ({ frame: frame(time, [.5, .5], .05), hands: [hand(.2, 'Right')] })))
+  assert.ok(start.every(item => item.raw.leftHand && !item.raw.rightHand))
+  // Dim wrists (0.4) next to the hand keep it on the wrist's side through a whole clip of wrong labels.
+  const dim = assignVideoHands([0, 33, 66, 99, 132, 165].map(time => ({ frame: frame(time, [.47, .7], .4), hands: [hand(.47, 'Right')] })))
+  assert.ok(dim.every(item => item.raw.leftHand && !item.raw.rightHand))
+})
+
+test('streaming assignment drops a misshapen second copy of one hand at the same pose wrist', () => {
+  const run = (hands, pose) => createStreamingHandAssignment()({ timestamp: 0, leftHand: null, rightHand: null, pose }, liveResult(hands), 16 / 9)
+  const real = movingHand(.7, .5, 'Left', .95)
+  // A trailing copy: offset and partly curled, so the all-joint duplicate check does not match it.
+  const trailing = movingHand(.73, .53, 'Left', .7)
+  trailing.landmarks = trailing.landmarks.map((point, joint) => joint > 4 && joint % 4 === 0 ? { ...point, y: point.y + .05 } : point)
+  const ghost = run([trailing, real], livePose([.7, .56], [.3, .8]))
+  assert.equal(ghost.leftHand, real.landmarks)
+  assert.equal(ghost.rightHand, null)
+
+  // Two real hands meeting bring both pose wrists along, so both are kept.
+  const touching = run([movingHand(.53, .5, 'Left', .9), movingHand(.47, .5, 'Right', .9)], livePose([.53, .56], [.47, .56]))
+  assert.ok(touching.leftHand && touching.rightHand)
+  // Without a confident far wrist the check does not apply.
+  const unsure = run([trailing, real], livePose([.7, .56], null))
+  assert.ok(unsure.leftHand && unsure.rightHand)
 })
 
 
