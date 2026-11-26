@@ -908,6 +908,7 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
       // anatomical slots expected by the current checkpoints.
       const leftColor = assigned ? HAND_OVERLAY_COLORS.left : "#1F77B4";
       const rightColor = assigned ? HAND_OVERLAY_COLORS.right : "#FF7F0E";
+      if (assigned) dropHeldCopies([assigned.rightHand, assigned.leftHand], video.videoWidth / video.videoHeight);
       const displayHands = assigned
         ? [[holdRenderedHand(0, assigned.rightHand, renderedAt), "Left"],
           [holdRenderedHand(1, assigned.leftHand, renderedAt), "Right"]] as const
@@ -939,6 +940,23 @@ export function useCameraFeed(options?: UseCameraFeedOptions): CameraFeedState {
           ctx.arc(x, y, 7, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
+        }
+      }
+    }
+
+    // When one hand moves to the other side's slot, the side it left would be
+    // held and extrapolated for HAND_OVERLAY_HOLD_MS, so one hand showed both
+    // side colours. A held hand at the same place as the other side's fresh
+    // hand is that same hand, and is cleared. Display only.
+    function dropHeldCopies(fresh: [LandmarkPoint[] | null, LandmarkPoint[] | null], aspect: number) {
+      for (const slot of [0, 1] as const) {
+        const other = slot === 0 ? 1 : 0;
+        const hand = fresh[slot], held = lastRenderedHands[other];
+        if (!hand || fresh[other] || !held) continue;
+        const a = overlayPalmCenter(hand), b = overlayPalmCenter(held);
+        if (Math.hypot((a.x - b.x) * aspect, a.y - b.y) < 1.2 * overlayPalmSize(hand, aspect)) {
+          lastRenderedHands[other] = null;
+          renderedHandMotion[other] = null;
         }
       }
     }
@@ -1082,6 +1100,11 @@ function displayHandSide(category: string | undefined) {
   if (category === "Left") return "Right";
   if (category === "Right") return "Left";
   return undefined;
+}
+
+// Wrist to middle-finger base, in frame-height units; at least 0.02.
+function overlayPalmSize(hand: LandmarkPoint[], aspect: number) {
+  return Math.max(.02, Math.hypot((hand[0].x - hand[9].x) * aspect, hand[0].y - hand[9].y));
 }
 
 function overlayPalmCenter(hand: LandmarkPoint[]) {

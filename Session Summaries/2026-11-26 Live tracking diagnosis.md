@@ -74,4 +74,20 @@ Changes:
 - Tests: `tests/cameraLandmarkMode.test.cjs` now expects pose ages (`[0,50,100,150,0,50]` and `[false,50,100,150,200]`) instead of fresh/stale flags. 2 tests were added in `tests/videoImport.test.cjs`. Results: 381/381 pass, `npx tsc -b` clean, `graphify update .` run.
 - Caveat: wrist accuracy near the midline could not be checked independently, since the exports have no raw handedness labels. Not live-tested.
 
+## Update: commit, then one-hand assignment
+
+- Committed this session's work as `8778776` on `NF` and pushed to origin.
+  - Only this session's hunks were staged. The pre-existing `LIVE_RECOGNITION_CAMERA_OPTIONS` block in `useCameraFeed.ts` and the other users' uncommitted files were left out.
+  - The staged snapshot passed 381/381 and `tsc -b` in a copy in the scratchpad.
+  - Side effect: a mistyped `npx tsc` in that copy downloaded an unrelated npm package named `tsc` into the npx cache. It only printed an error and was not used.
+- User report: two-hand assignment much better in a one-minute live test; one-hand misassignment still noticeable. The two benchmarks (06-36, 06-37) only hold totals (21.6-21.8 fps, tone curve active, camera at 30 fps with continuous and manual exposure available), so they had no per-frame assignment data.
+- Measured in the 2026-11-25 one-hand frames:
+  - The resting wrist was below visibility 0.65 in 68% of frames, which disabled the duplicate check while one-hand mode's periodic two-hand search can add a stale copy.
+  - The wrist comparison was active in 99% of frames, so it was not the cause.
+- Changes:
+  - The duplicate check now needs only the hand's own wrist at visibility 0.5 or above and the other wrist's position, with a pose up to 250 ms old (`videoHandAssignment.ts`).
+  - The overlay clears a held copy on the side a hand just left (`dropHeldCopies` in `useCameraFeed.ts`); previously one hand changing slot showed both colours for 150 ms.
+  - Benchmarks now include `handSides` (`oneHandSideSwitches`, `briefSecondHands`, `secondHandOnSearch`; `summarizeHandSides` in `cameraProfile.ts`).
+- Tests: 382/382 pass and `tsc -b` is clean. The overlay assertion fails with the fix disabled. Not committed yet, not live-tested.
+
 Related: [[Project Home]]

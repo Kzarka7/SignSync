@@ -243,13 +243,14 @@ test('decoupled camera inference uses the latest bitmap and releases every frame
 })
 
 test('paired camera runs hands continuously and holds each overlay hand without changing raw samples', async () => {
-  let nextFrame, now = 1000, shoulderX = 0.25, tracked = true, detectedHands = 2
+  let nextFrame, now = 1000, shoulderX = 0.25, tracked = true, detectedHands = 2, swapSlots = false
   let loaded = 0, closed = 0, pointsDrawn = 0
   const frames = [], poseCalls = [], handCalls = [], assignmentChecks = []
   const root = path.join(__dirname, '../src')
   const stream = { getTracks: () => [], getVideoTracks: () => [] }
   const posePoint = (x, y) => ({ x, y, z: 0, visibility: 1 })
   const hand = Array.from({ length: 21 }, () => posePoint(0.4, 0.2))
+  const otherHand = Array.from({ length: 21 }, () => posePoint(0.6, 0.2))
   function visionHelper(name) {
     let args
     const environment = hookHarness(path.join(root, 'services/landmarks/visionRuntime.ts'), name, name =>
@@ -266,7 +267,7 @@ test('paired camera runs hands continuously and holds each overlay hand without 
         report('GPU')
         return { detectForVideo(_, timestamp) {
           handCalls.push(timestamp)
-          return { landmarks: Array(detectedHands).fill(hand) }
+          return { landmarks: [hand, otherHand].slice(0, detectedHands) }
         }, close() { closed++ } }
       },
       createPoseLandmarker: async () => ({ detectForVideo(_, timestamp) {
@@ -286,7 +287,8 @@ test('paired camera runs hands continuously and holds each overlay hand without 
     if (name.endsWith('/videoHandAssignment')) return { createStreamingHandAssignment: () =>
       (sample, result, _aspect, poseAge) => {
         assignmentChecks.push(poseAge)
-        return { ...sample, leftHand: result.landmarks[0] ?? null, rightHand: result.landmarks[1] ?? null }
+        return swapSlots ? { ...sample, leftHand: result.landmarks[1] ?? null, rightHand: result.landmarks[0] ?? null }
+          : { ...sample, leftHand: result.landmarks[0] ?? null, rightHand: result.landmarks[1] ?? null }
       } }
     return load(path.resolve(root, 'hooks', name + '.ts'))
   }, () => [{ stridePairedPose: true, reviewHandTracking: true, showPoseLandmarks: false,
@@ -348,6 +350,11 @@ test('paired camera runs hands continuously and holds each overlay hand without 
   detectedHands = 1
   assert.equal(frame(1750).pose, null)
   assert.equal(pointsDrawn, 21)
+  // One hand that moves to the other side's slot does not leave its old side's skeleton held on screen.
+  swapSlots = true
+  frame(1775)
+  assert.equal(pointsDrawn, 21, 'the slot it left is not drawn as a second hand')
+  swapSlots = false
 
   feed.toggleCamera(); harness.render()
   feed.toggleCamera(); harness.render(); await drain()

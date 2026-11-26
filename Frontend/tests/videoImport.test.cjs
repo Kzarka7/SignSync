@@ -264,9 +264,23 @@ test('streaming assignment drops a misshapen second copy of one hand at the same
   // Two real hands meeting bring both pose wrists along, so both are kept.
   const touching = run([movingHand(.53, .5, 'Left', .9), movingHand(.47, .5, 'Right', .9)], livePose([.53, .56], [.47, .56]))
   assert.ok(touching.leftHand && touching.rightHand)
-  // Without a confident far wrist the check does not apply.
-  const unsure = run([trailing, real], livePose([.7, .56], null))
+  // One hand signing: the resting wrist is low and dim (0.1) but far away, so the copy is still dropped.
+  const oneHand = run([trailing, real], livePose([.7, .56], null))
+  assert.equal(oneHand.leftHand, real.landmarks)
+  assert.equal(oneHand.rightHand, null)
+  // An occluded second wrist placed at the hands (a contact sign) keeps both hands.
+  const occludedPose = livePose([.7, .56], [.72, .55])
+  occludedPose.rightWrist.visibility = .1
+  const occluded = run([trailing, real], occludedPose)
+  assert.ok(occluded.leftHand && occluded.rightHand)
+  // Without a confidently placed own wrist, or with an old pose, the check does not apply.
+  const dimOwn = livePose([.7, .56], null)
+  dimOwn.leftWrist.visibility = .3
+  const unsure = run([trailing, real], dimOwn)
   assert.ok(unsure.leftHand && unsure.rightHand)
+  const stale = createStreamingHandAssignment()({ timestamp: 0, leftHand: null, rightHand: null, pose: livePose([.7, .56], [.3, .8]) },
+    liveResult([trailing, real]), 16 / 9, 400)
+  assert.ok(stale.leftHand && stale.rightHand)
 })
 
 

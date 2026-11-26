@@ -159,19 +159,28 @@ function bodySideEvidence(body: BodyFrame | null, center: { x: number; y: number
 
 // One hand reported twice that isDuplicateHand misses: during motion or with a
 // curled hand the trailing copy is offset or misshapen. Both detections then
-// sit at the same pose wrist while the other pose wrist is confidently
-// somewhere else. Two real hands that meet bring both pose wrists with them,
-// so contact signs are unaffected.
+// sit at the same pose wrist while the other pose wrist is somewhere else.
+// Two real hands that meet bring both pose wrists with them (an occluded
+// wrist is still placed at the arm), so contact signs are unaffected.
+//
+// The hand's own wrist must be confidently located; the other wrist only
+// needs a position. With one hand signing, the resting wrist is usually low
+// and dim: it was below visibility 0.65 in 68% of one-hand frames in the
+// 2026-11-25 runs, which kept this check off exactly when the one-hand
+// landmarker's periodic two-hand search adds a stale copy. Its estimated
+// position still left the nearer wrist on the hand's own side in 98-99% of
+// those frames.
 const GHOST_MAX_SPREAD = .6
 const GHOST_CLOSE_SPREAD = .25
 const GHOST_OTHER_WRIST_FAR = .8
-const GHOST_WRIST_VISIBILITY = .65
+const GHOST_WRIST_VISIBILITY = .5
+// A pose older than this may not yet show a second hand that just came up.
+export const GHOST_MAX_POSE_AGE_MS = 250
 
 export function isPoseConfirmedDuplicate(pose: LandmarkFrameSample['pose'], a: VideoHandDetection, b: VideoHandDetection, aspect: number) {
   const body = bodyFrame(pose, aspect)
   const wrists = [pose?.leftWrist, pose?.rightWrist]
-  if (!body || !wrists.every(wrist => wrist && (wrist.visibility ?? 0) >= GHOST_WRIST_VISIBILITY
-    && Number.isFinite(wrist.x) && Number.isFinite(wrist.y))) return false
+  if (!body || !wrists.every(wrist => wrist && Number.isFinite(wrist.x) && Number.isFinite(wrist.y))) return false
   const [leftWrist, rightWrist] = wrists.map(wrist => ({ x: wrist!.x * aspect, y: wrist!.y }))
   const scaled = (point: LandmarkPoint) => ({ x: point.x * aspect, y: point.y })
   const first = scaled(a.landmarks[0]), second = scaled(b.landmarks[0])
@@ -183,6 +192,7 @@ export function isPoseConfirmedDuplicate(pose: LandmarkFrameSample['pose'], a: V
   const nearest = (p: { x: number; y: number }) => gap(p, rightWrist) < gap(p, leftWrist) ? 1 : 0
   const side = nearest(first)
   if (nearest(second) !== side) return false
+  if ((wrists[side]!.visibility ?? 0) < GHOST_WRIST_VISIBILITY) return false
   const other = side === 0 ? rightWrist : leftWrist
   return Math.min(gap(first, other), gap(second, other)) > GHOST_OTHER_WRIST_FAR
 }
@@ -247,7 +257,9 @@ export function createStreamingHandAssignment() {
       if (second.score > first.score) first = second
       second = undefined
     }
-    if (first && second && isPoseConfirmedDuplicate(sample.pose, first, second, aspect)) {
+    const poseAgeMs = poseAge === true ? 0 : poseAge === false ? null : Math.max(0, poseAge)
+    if (first && second && poseAgeMs !== null && poseAgeMs <= GHOST_MAX_POSE_AGE_MS
+      && isPoseConfirmedDuplicate(sample.pose, first, second, aspect)) {
       // Keep the copy that continues a track, else the more confident one.
       const continues = (hand: VideoHandDetection) => Math.max(...states.map(side => trackMatch(tracks[side], hand, now, aspect)))
       const kept = continues(first), other = continues(second)
@@ -280,7 +292,6 @@ export function createStreamingHandAssignment() {
       const bodySide = bodySideEvidence(body, palmCenter(hand.landmarks, aspect))
       return [[hand, { matches, source, label, bodySide, isNew: match === 0 }] as const]
     }))
-    const poseAgeMs = poseAge === true ? 0 : poseAge === false ? null : Math.max(0, poseAge)
     // Without shoulders to scale by, only a fresh, close and confident wrist counts, as before.
     const wristEvidence = (side: 0 | 1, hand: VideoHandDetection) => poseAgeMs === null ? 0
       : body ? poseWristContrast(sample.pose, body, side, hand, aspect, poseAgeMs)
