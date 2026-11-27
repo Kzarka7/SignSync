@@ -25,12 +25,12 @@ export const SIGN_LABEL_GROUPS = [
   ] },
   { title: 'Conversation and feedback', labels: [
     'YES', 'NO', 'MAYBE', 'AGAIN', 'UNDERSTAND', 'DONT_UNDERSTAND', 'CORRECT', 'WRONG', 'FINE',
-    'NOT_FINE', 'KNOW', 'DONT_KNOW', 'COMMUNICATION',
+    'NOT_FINE', 'KNOW', 'DONT_KNOW', 'COMMUNICATION', 'SIGN',
   ] },
   { title: 'Questions', labels: ['WHAT', 'WHY', 'WHERE', 'WHEN', 'WHO', 'WHICH', 'HOW'] },
   { title: 'People and family', labels: [
     'PERSON', 'FRIEND', 'FAMILY', 'MOTHER', 'FATHER', 'PARENTS', 'GRANDMOTHER', 'GRANDFATHER', 'DEAF',
-    'HEARING', 'NAME', 'BOY', 'GIRL', 'MAN', 'WOMAN',
+    'HEARING', 'HARD_OF_HEARING', 'NAME', 'BOY', 'GIRL', 'MAN', 'WOMAN',
   ] },
   { title: 'Indexing', labels: indexingPrompts.map(([label]) => label) },
   { title: 'Possessives', labels: possessivePrompts.map(([label]) => label) },
