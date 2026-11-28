@@ -37,9 +37,9 @@ export const SIGN_LABEL_GROUPS = [
   { title: 'Possessives', labels: possessivePrompts.map(([label]) => label) },
   { title: 'School and places', labels: ['SCHOOL', 'TEACHER', 'STUDENT', 'ROOM'] },
   { title: 'Daily needs and actions', labels: ['HELP', 'STAY', 'WAIT', 'EAT', 'DRINK', 'WATER', 'MONEY', 'FAST', 'SLOW',
-    'GO', 'COME', 'ENTER', 'STOP', 'LEARN',
+    'GO', 'COME', 'WANT', 'NEED', 'STOP', 'LEARN',
   ] },
-  { title: 'Directions', labels: ['LEFT', 'RIGHT', 'UP', 'DOWN', 'DIRECTION', 'EXIT'] },
+  { title: 'Directions', labels: ['LEFT', 'RIGHT', 'UP', 'DOWN', 'DIRECTION'] },
   { title: 'Feelings and health', labels: ['HAPPY', 'SAD', 'TIRED', 'SICK', 'GOOD', 'BAD'] },
   { title: 'Numbers', labels: ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN', 'NUMBER'] },
   { title: 'Days and time', labels: [
@@ -54,7 +54,7 @@ export const DEFAULT_SIGN_LABELS = SIGN_LABEL_GROUPS.flatMap(group => group.labe
 export const RETIRED_SIGN_LABELS = new Set([
   'SLEEP', 'BATHROOM',
   // Dropped from the 2026-11 batch; kept out of the picker even if samples exist.
-  'MAN', 'WOMAN', 'WANT', 'NEED', 'START', 'FINISH', 'OPEN', 'CLOSE', 'NEAR', 'FAR',
+  'MAN', 'WOMAN', 'START', 'FINISH', 'OPEN', 'CLOSE', 'NEAR', 'FAR', 'ENTER', 'EXIT',
 ])
 
 export const MONTH_LABELS = new Set([
