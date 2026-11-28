@@ -29,17 +29,36 @@ function visiblePoint(point: LandmarkPoint | undefined, threshold: number): poin
   return !!point && (point.visibility ?? 0) >= threshold && Number.isFinite(point.x) && Number.isFinite(point.y);
 }
 
+export type HandDelegatePreference = "GPU" | "CPU";
+
+export const HAND_LANDMARKER_THRESHOLDS = {
+  minHandDetectionConfidence: 0.5,
+  minHandPresenceConfidence: 0.5,
+  minTrackingConfidence: 0.5,
+} as const;
+
 export async function createHandLandmarker(
   fileset: VisionFileset,
   report: (delegate: string, fallback?: string) => void,
+  preferred: HandDelegatePreference = "GPU",
+  minHandDetectionConfidence: number = HAND_LANDMARKER_THRESHOLDS.minHandDetectionConfidence,
+  numHands: 1 | 2 = 2,
 ): Promise<HandLandmarker> {
   const options = {
     runningMode: "VIDEO" as const,
-    numHands: 2,
-    minHandDetectionConfidence: 0.5,
-    minHandPresenceConfidence: 0.5,
-    minTrackingConfidence: 0.5,
+    numHands,
+    ...HAND_LANDMARKER_THRESHOLDS,
+    minHandDetectionConfidence,
   };
+  // Integrated GPUs can run this model slower than the CPU (WASM SIMD).
+  if (preferred === "CPU") {
+    const model = await HandLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate: "CPU" },
+      ...options,
+    });
+    report("CPU");
+    return model;
+  }
   try {
     const model = await HandLandmarker.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate: "GPU" },

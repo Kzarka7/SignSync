@@ -29,9 +29,10 @@ function Wait-ProcessLog($name, $process, $stream, $pattern) {
     $deadline = (Get-Date).AddSeconds(60)
     while ((Get-Date) -lt $deadline -and !$process.HasExited) {
         # Vite can colorize parts of the URL even when output goes to a file.
-        $log = (Get-Content -Raw -LiteralPath (Join-Path $logDir "$name.$stream.log")) -replace "\x1b\[[0-9;]*m", ''
-        if ($log -match $pattern) {
-            return $Matches[0]
+        $log = [string](Get-Content -Raw -ErrorAction SilentlyContinue -LiteralPath (Join-Path $logDir "$name.$stream.log")) -replace "\x1b\[[0-9;]*m", ''
+        $found = [regex]::Match($log, $pattern)
+        if ($found.Success) {
+            return $found.Value
         }
         Start-Sleep -Milliseconds 500
     }

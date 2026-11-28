@@ -137,7 +137,7 @@ export default function BoundarySampleCollector({ onLocked }: { onLocked: (locke
               canRecord={!!task && recorder.feed.enabled && recorder.feed.cameraReady}
               countdown={recorder.countdown} countdownSeconds={recorder.countdownSeconds} onChangeCountdownSeconds={recorder.setCountdownSeconds}
               onStart={recorder.startRecording} onCancelCountdown={recorder.cancelCountdown} onStop={recorder.stopRecording} onDiscard={recorder.discardRecording} />
-            <CameraDiagnostics feed={recorder.feed} detectionInputWidth={recorder.detectionInputWidth} onChangeInputWidth={recorder.setDetectionInputWidth} locked={locked} />
+            <CameraDiagnostics feed={recorder.feed} captureProfile={recorder.captureProfile} onChangeCaptureProfile={recorder.setCaptureProfile} locked={locked} />
             {recorder.videoCaptureError && <p role="alert" className="text-sm text-danger">{recorder.videoCaptureError}</p>}
             {recorder.saveError && <p role="alert" className="text-sm text-danger">{recorder.saveError}</p>}
           </>}

@@ -1,6 +1,6 @@
 import { CONTINUOUS_SETTINGS, type FeatureFrame, type RecognitionWindow } from './continuousRecognition'
 import { holdMotion, NUMBER_HOLD_SETTINGS } from './numberHold'
-import { hasConfusableFingerChange } from './signMotionEvidence'
+import { hasConfusableFingerChange, type MotionProfile } from './signMotionEvidence'
 
 // Lab-only heuristic boundaries. No learned label or reference-video annotation
 // participates in segmentation. A missing hand alone never completes a gesture.
@@ -24,6 +24,32 @@ const wrist = (f: FeatureFrame, s: number) => [f.features[s ? 101 : 37], f.featu
 const distance = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1])
 export const STAGE2_SHAPE_TRAVEL = .07
 export const SIGN_TRANSITION_SETTINGS = { stillMs: 120, stillTravel: .035, moveTravel: .10, changeMs: 100, confirmationQuietMs: 950 } as const
+// 'motion-e' only. TEN is a thumbs-up tilted back and forth; the tilt moves the joints and the wrist
+// enough to pass the generic change tests while TEN is still being signed, so the next window used to
+// open mid-TEN and the TEN tail made a following TOMORROW read as TEN. After TEN, the next sign starts
+// when the wrist rises (TOMORROW starts near the face), travels far, or the handshape changes beyond
+// what TEN's tilt produces; the window starts at the last frame within holdBand of TEN's height, so
+// TEN's own last tilt stays out of it. Calibrated on the 43-sign clips (analysis/calibrate_lab_motion_e.py):
+// a rise >= .25 occurs in 4% of TEN holds and 93% of TOMORROW clips; TEN's wrist drift reaches .30 and its
+// handshape travel .26 (95th percentile); TEN's vertical drift is .14 at the 75th percentile, hence
+// holdBand .18. In the 2026-11-24 camera trace every TEN -> TOMORROW rose .6–.9; replaying it
+// (analysis/replay_camera_e.cjs) got 5/5 TEN -> TOMORROW switches with holdBand .18, 4/5 with .06 or .12,
+// and 3/6 before this rule. TEN is measured against its last referenceMs of frames (median height;
+// nearest frame for distance and shape), not the single confirmed frame: in that trace one confirmed
+// frame was a tracking glitch .41 above the hold.
+export const TEN_DEPARTURE = { rise: .25, travel: .40, shapeTravel: .30, holdBand: .18, referenceMs: 300 } as const
+// 'motion-e' only. After a moving word whose number partner is the same handshape held still, stopping
+// the motion is the change: with the generic tests the next window either never opened (WHAT -> ONE)
+// or opened mid-motion and kept reading the word (WAVE_GREETING -> FIVE). After these words their own
+// motion is not a new sign; the next sign starts on a clear departure (TEN_DEPARTURE travel or shape)
+// or once the hand has been still for stillMs, from the start of that stillness. Calibrated on the
+// 43-sign clips at 30 fps (analysis/calibrate_settle_rule.py, band .035): a 400 ms still run occurs
+// inside 5–32% of these words (pauses) and 76–94% of FIVE/ONE/TWO/THREE/SIX holds. A pause can anchor
+// the window too early, so recognitionDiagnostics re-anchors to the latest stillness while the window
+// still reads as the word.
+export const SETTLING_WORDS_E: ReadonlySet<string> = new Set(['WAVE_GREETING', 'WHAT', 'NO', 'WEDNESDAY'])
+export const WORD_SETTLE = { stillMs: 400, stillTravel: .035 } as const
+const median = (values: number[]) => { const s = [...values].sort((a, b) => a - b); return s[Math.floor(s.length / 2)] }
 
 function handshapeTravel(a: FeatureFrame, b: FeatureFrame, side: number) {
   const start = side ? 101 : 37
@@ -36,12 +62,21 @@ function handshapeTravel(a: FeatureFrame, b: FeatureFrame, side: number) {
   return total / 21
 }
 
-export function findVisibleSignTransition(frames: FeatureFrame[], confirmed: FeatureFrame, confirmedLabel?: string): number | null {
+export function findVisibleSignTransition(frames: FeatureFrame[], confirmed: FeatureFrame, confirmedLabel?: string,
+  profile: MotionProfile = 'v1'): number | null {
   const { stillMs, stillTravel, moveTravel, changeMs } = SIGN_TRANSITION_SETTINGS
   const sides = [0, 1].filter(s => present(confirmed,s))
   if (!sides.length) return null
+  const afterTen = profile === 'motion-e' && confirmedLabel === 'TEN'
+  const afterWord = profile === 'motion-e' && !!confirmedLabel && SETTLING_WORDS_E.has(confirmedLabel)
+  // The sign's own recent motion: its last referenceMs of frames before confirmation.
+  const ownMotion = afterTen || afterWord ? frames.filter(f => f.valid && f.timestamp <= confirmed.timestamp
+    && f.timestamp >= confirmed.timestamp-TEN_DEPARTURE.referenceMs && sides.every(s => present(f,s))) : []
+  if ((afterTen || afterWord) && !ownMotion.length) ownMotion.push(confirmed)
+  const tenHeight = sides.map(s => median(ownMotion.map(f => wrist(f,s)[1])))
   let previous: FeatureFrame | undefined, stillFrom: FeatureFrame | undefined, settled: FeatureFrame | undefined
-  let change: { seenMs: number; startMs: number } | undefined
+  let change: { seenMs: number; startMs: number } | undefined, atTenHeightMs: number | undefined
+  let latestSettleMs: number | null = null
   for (const frame of frames) {
     const t = frame.timestamp
     if (t < confirmed.timestamp-stillMs-GESTURE_SETTINGS.preRollMs) continue
@@ -50,9 +85,32 @@ export function findVisibleSignTransition(frames: FeatureFrame[], confirmed: Fea
       previous = stillFrom = settled = undefined; change = undefined
       continue
     }
+    if (afterTen || afterWord) {
+      // Image y grows downward, so a positive rise means the wrist is above where TEN was confirmed.
+      const rise = afterTen ? Math.max(...sides.map((s,i) => tenHeight[i]-wrist(frame,s)[1])) : 0
+      if (afterTen && rise <= TEN_DEPARTURE.holdBand) atTenHeightMs = t
+      const departed = afterTen && rise >= TEN_DEPARTURE.rise || sides.some(s =>
+        Math.min(...ownMotion.map(f => distance(wrist(f,s),wrist(frame,s)))) >= TEN_DEPARTURE.travel
+        || Math.min(...ownMotion.map(f => handshapeTravel(f,frame,s))) >= TEN_DEPARTURE.shapeTravel)
+      if (t > confirmed.timestamp && departed) {
+        change ??= { seenMs:t, startMs:Math.max(confirmed.timestamp,
+          afterTen ? atTenHeightMs ?? t-GESTURE_SETTINGS.preRollMs : t-GESTURE_SETTINGS.preRollMs) }
+        if (t-change.seenMs >= changeMs) return change.startMs
+      } else change = undefined
+      if (afterWord) {
+        // The latest still run of at least WORD_SETTLE.stillMs that ends after confirmation.
+        const origin = stillFrom
+        if (!origin || sides.some(s => distance(wrist(origin,s),wrist(frame,s)) > WORD_SETTLE.stillTravel
+          || handshapeTravel(origin,frame,s) > WORD_SETTLE.stillTravel)) stillFrom = frame
+        else if (t > confirmed.timestamp && t-origin.timestamp >= WORD_SETTLE.stillMs)
+          latestSettleMs = Math.max(confirmed.timestamp, origin.timestamp)
+      }
+      previous = frame
+      continue
+    }
     const resting = settled
     const shapeChanged = sides.some(s => handshapeTravel(confirmed,frame,s) >= STAGE2_SHAPE_TRAVEL
-      || confirmedLabel && hasConfusableFingerChange(confirmed,frame,s,confirmedLabel))
+      || confirmedLabel && hasConfusableFingerChange(confirmed,frame,s,confirmedLabel,profile))
     const movedFromHold = resting && sides.some(s => distance(wrist(resting,s),wrist(frame,s)) >= moveTravel)
     if (t > confirmed.timestamp && (shapeChanged || movedFromHold)) {
       change ??= { seenMs:t, startMs:Math.max(confirmed.timestamp,
@@ -66,7 +124,7 @@ export function findVisibleSignTransition(frames: FeatureFrame[], confirmed: Fea
     else if (t-origin.timestamp >= stillMs) settled = frame
     previous = frame
   }
-  return null
+  return latestSettleMs
 }
 
 export function createGestureSegmentation(updateMs: number = GESTURE_SETTINGS.updateMs, trackHandshape = false,

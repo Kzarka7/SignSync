@@ -6,8 +6,11 @@ export type RecognitionMode = 'v5' | 'p4-candidate'
 export type LabRecognitionMode =
   'lab-grouped' | 'lab-clip' | 'lab-alphabet' | 'lab-stage2' | 'lab-signs38' | 'lab-signs38-clip' | 'lab-signs33'
   | 'lab-signs43-numbers' | 'lab-signs43-shape-motion' | 'lab-signs43-similarity' | 'lab-signs43-similarity-v2'
+  | 'lab-signs43-motion-e'
   | 'lab-signs75-multi-batch'
-  | 'lab-signs32-standalone' | 'lab-signs32-similarity'
+  | 'lab-signs32-standalone' | 'lab-signs32-standalone-v4' | 'lab-signs32-standalone-v5' | 'lab-signs32-standalone-v5-motion' | 'lab-signs32-similarity'
+  | 'lab-signs74-combined' | 'lab-signs74-motion-e' | 'lab-signs74-motion-e-v2' | 'lab-signs74-motion-e-v2-fusion' | 'lab-signs74-motion-e-v4'
+  | 'lab-ix-poss-pilot' | 'lab-ix-poss-motion'
 
 // One score per recognition/translation pipeline stage. Which keys show
 // up depends on the message's source - a 'sign' message never carries

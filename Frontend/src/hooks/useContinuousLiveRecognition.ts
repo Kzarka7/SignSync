@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useCameraFeed } from './useCameraFeed'
+import { LIVE_RECOGNITION_CAMERA_OPTIONS, useCameraFeed } from './useCameraFeed'
+
+// Same UI refresh interval as the Recognition Lab camera (CAMERA_SNAPSHOT_INTERVAL_MS).
+const STATUS_INTERVAL_MS = 125
 import { createDiagnosticSession, type LabTranscriptEntry } from '../services/landmarks/recognitionDiagnostics'
 import { createDiagnosticPredictor } from '../services/ws/diagnosticPredictor'
-import { getRecognitionConfirmation, LIVE_RECOGNITION_POLICY, LIVE_SIGNS_MODEL } from '../services/landmarks/liveRecognitionPolicy'
+import { getRecognitionConfirmation, LIVE_MOTION_PROFILE, LIVE_RECOGNITION_POLICY, LIVE_SIGNS_MODEL } from '../services/landmarks/liveRecognitionPolicy'
 import type { LandmarkFrameSample } from '../types/landmarks'
 
 export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEntry) => void, {
@@ -23,8 +26,14 @@ export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEn
   const countdownTimer = useRef<ReturnType<typeof setInterval>|null>(null)
   const [status,setStatus] = useState('Ready')
   const [error,setError] = useState<string|null>(null)
+  const statusTimer = useRef<ReturnType<typeof setTimeout>|null>(null)
+  const clearStatusTimer = useCallback(() => {
+    if (statusTimer.current) clearTimeout(statusTimer.current)
+    statusTimer.current = null
+  }, [])
   const stop = useCallback(() => {
     generation.current++
+    clearStatusTimer()
     if (countdownTimer.current) clearInterval(countdownTimer.current)
     countdownTimer.current=null; setCountdown(null)
     const current = session.current
@@ -32,20 +41,23 @@ export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEn
     current?.stop()
     predictor.current?.close(); predictor.current = null
     setRunning(false); setLoading(false); setStatus('Stopped')
-  }, [])
+  }, [clearStatusTimer])
   const onFrame = useCallback((sample:LandmarkFrameSample) => {
-    void session.current?.observe(sample).catch(() => { stop(); setError('Recognition interrupted. Start again.') })
+    if (!session.current?.active) return
+    void session.current.observe(sample).catch(() => { stop(); setError('Recognition interrupted. Start again.') })
   }, [stop])
-  const feed = useCameraFeed({ onFrame, trackLiveTiming: true, landmarkMode: 'both', reviewHandTracking: true })
+  // Same camera pipeline as the Recognition Lab's defaults (detection size, pose striding, one-hand mode).
+  const feed = useCameraFeed({ ...LIVE_RECOGNITION_CAMERA_OPTIONS, onFrame })
   useEffect(() => {
     if (!feed.enabled || feed.error || feed.modelError) stop()
   }, [feed.enabled,feed.error,feed.modelError,stop])
   useEffect(() => () => {
     generation.current++
+    clearStatusTimer()
     if (countdownTimer.current) clearInterval(countdownTimer.current)
     const current=session.current; session.current=null; current?.stop()
     predictor.current?.close(); predictor.current=null
-  }, [])
+  }, [clearStatusTimer])
   const start = async () => {
     if (predictor.current || !feed.cameraReady || !feed.poseDetected) return
     const alphabet = mode === 'fingerspelling'
@@ -59,10 +71,21 @@ export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEn
       const begin = () => {
       if (token!==generation.current) return
       setCountdown(null)
-      let delivered=0
+      let delivered=0, lastStatusAt=-Infinity
+      const publishStatus=()=>{
+        clearStatusTimer()
+        if (token!==generation.current || session.current!==current) return
+        lastStatusAt=Date.now()
+        const state=current.state, tracking=state.tracking?.state
+        setStatus(tracking==='no-hands' ? 'IDLE' : tracking && tracking!=='visible' ? 'Tracking interrupted'
+          : state.segmentationPhase==='observing' ? 'Observing' : state.status.replace(/_/g,' '))
+      }
       const current=createDiagnosticSession({source:'camera',name:'Live conversation',...LIVE_RECOGNITION_POLICY,
         modelMode, ...confirmation,
+        // Same camera session settings as the Recognition Lab.
+        wallClockWindows: true, poseGuidedOcclusion: true,
         staticMotionCheck: modelMode === LIVE_SIGNS_MODEL,
+        ...(modelMode === LIVE_SIGNS_MODEL ? { motionProfile: LIVE_MOTION_PROFILE } : {}),
         settleConfirmedHold: alphabet,
         onWordBoundary: alphabet ? () => {
           if (token === generation.current && session.current === current) wordBoundary.current?.()
@@ -71,9 +94,10 @@ export function useContinuousLiveRecognition(onAccepted: (entry: LabTranscriptEn
           if (token!==generation.current || session.current!==current) return
           const state=current.state
           for (;delivered<state.transcript.length;delivered++) accepted.current(state.transcript[delivered])
-          const tracking=state.tracking?.state
-          setStatus(tracking==='no-hands' ? 'IDLE' : tracking && tracking!=='visible' ? 'Tracking interrupted'
-            : state.segmentationPhase==='observing' ? 'Observing' : state.status.replace(/_/g,' '))
+          // Status re-renders at most every 125 ms, as in the Lab; accepted signs above are delivered at once.
+          const wait=STATUS_INTERVAL_MS-(Date.now()-lastStatusAt)
+          if (wait<=0) publishStatus()
+          else statusTimer.current??=setTimeout(publishStatus,wait)
           if (!current.active) { const failure=state.failure; const message=state.status; stop(); setStatus(message); setError(failure) }
         }})
       session.current=current; setLoading(false); setRunning(true); setStatus('Observing')

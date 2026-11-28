@@ -16,11 +16,11 @@ function loadWithImports(relativePath, imports) {
   return exports
 }
 
-const { OPTIMIZED_LIVE_CAMERA_OPTIONS } = loadWithImports('hooks/useCameraFeed.ts', () => ({}))
+const { OPTIMIZED_LIVE_CAMERA_OPTIONS, DEFAULT_LIVE_CAPTURE_PROFILE } = loadWithImports('hooks/useCameraFeed.ts', () => ({}))
 
 function recorderHarness(options = {}, storageOptions = {}, camera = {}) {
   const slots = [], pendingEffects = [], timers = new Map(), saved = [], listeners = new Map()
-  let cursor = 0, nextTimer = 0, cameraOptions, now = 0
+  let cursor = 0, nextTimer = 0, cameraOptions, now = 0, loads = 0
   const react = {
     useState(initial) {
       const index = cursor++
@@ -62,16 +62,17 @@ function recorderHarness(options = {}, storageOptions = {}, camera = {}) {
     require(name) {
       if (name === 'react') return react
       if (name === './useCameraFeed') return {
-        OPTIMIZED_LIVE_CAMERA_OPTIONS,
+        OPTIMIZED_LIVE_CAMERA_OPTIONS, DEFAULT_LIVE_CAPTURE_PROFILE,
         useCameraFeed: settings => { cameraOptions = settings; return feed },
       }
       if (name.endsWith('signLabelSearch')) return load(path.resolve(__dirname, '../src/services/dataset/signLabelSearch.ts'))
+      if (name.endsWith('idleCollection')) return load(path.resolve(__dirname, '../src/services/dataset/idleCollection.ts'))
       if (name.endsWith('cameraClip')) return load(path.resolve(__dirname, '../src/services/dataset/cameraClip.ts'), {
         Blob, MediaRecorder: camera.MediaRecorder,
       })
       if (name.endsWith('datasetStorage')) return {
         storageError: error => 'Could not save: ' + error.message,
-        getSequences: async (scope = 'training') => saved.filter(s => !!s.evaluation === (scope === 'evaluation')),
+        getSequences: async (scope = 'training') => { loads++; return saved.filter(s => !!s.evaluation === (scope === 'evaluation')) },
         saveSequence: async sample => { if (storageOptions.failSave) throw new Error('Storage full'); saved.push(sample) },
         clearSequences: async (scope, ids) => { for (let i = saved.length - 1; i >= 0; i--) if (!!saved[i].evaluation === (scope === 'evaluation') && (!ids || ids.includes(saved[i].id))) saved.splice(i, 1) },
         deleteSequence: async () => {},
@@ -83,6 +84,7 @@ function recorderHarness(options = {}, storageOptions = {}, camera = {}) {
   })
   return {
     saved, timers,
+    get loads() { return loads },
     get cameraOptions() { return cameraOptions },
     render(nextOptions = options) {
       cursor = 0
@@ -109,7 +111,7 @@ test('live video starts after countdown, saves the final chunk, and is discarded
       this.state = 'inactive'
       captures.push(this)
     }
-    start() { this.state = 'recording' }
+    start() { this.state = 'recording'; this.onstart() }
     stop() {
       this.state = 'inactive'
       queueMicrotask(() => {
@@ -164,6 +166,9 @@ test('live collector exports exact samples that produce the same wall-clock grid
   for (const key of ['decoupleVideoFrames', 'stridePairedPose', 'reviewHandTracking']) {
     assert.equal(h.cameraOptions[key], true, key)
   }
+  // Same detection schedule and threshold as Recognition Lab's live camera.
+  assert.equal(h.cameraOptions.deferPose, true)
+  assert.equal(h.cameraOptions.handDetectionConfidence, 0.35)
   assert.equal(h.cameraOptions.gatePreviewHands ?? false, false)
   assert.equal(h.cameraOptions.dynamicHandCapacity ?? false, false)
 
@@ -465,4 +470,119 @@ test('restored sign collector records manually and keeps non-sign samples out of
   await recorder.clearAll()
   assert.equal(h.render(sign).sequences.length, 0)
   assert.equal(h.render(rest).sequences.length, 1)
+})
+
+function delayedStartRecorder(captures) {
+  return class MediaRecorder {
+    static isTypeSupported(type) { return type === 'video/webm;codecs=vp8' }
+    constructor(stream, { videoBitsPerSecond }) { this.state = 'inactive'; this.videoBitsPerSecond = videoBitsPerSecond; captures.push(this) }
+    start() { this.state = 'recording' }
+    stop() {
+      this.state = 'inactive'
+      queueMicrotask(() => { this.ondataavailable({ data: new Blob(['clip'], { type: 'video/webm' }) }); this.onstop() })
+    }
+  }
+}
+
+test('live takes keep frames and start the duration limit only after the clip encoder starts', async () => {
+  const captures = []
+  class MediaStream {}
+  const h = recorderHarness({ durationLimitMs: 2000 }, {}, { stream: new MediaStream(), MediaStream, MediaRecorder: delayedStartRecorder(captures) })
+  h.render(); await new Promise(resolve => setImmediate(resolve))
+  h.setNow(100)
+  h.render().startRecording()
+  assert.equal(captures[0].videoBitsPerSecond, 2500000)
+  assert.ok(![...h.timers.values()].some(timer => timer.ms === 2000), 'duration waits for the encoder')
+  h.frame(150) // during encoder start-up
+  assert.equal(h.render().getRecordedFrameCount(), 0)
+  h.setNow(400)
+  captures[0].onstart()
+  assert.ok(![...h.timers.values()].some(timer => timer.ms === 750), 'start fallback is cleared')
+  h.frame(450); h.frame(500)
+  assert.equal(h.render().getRecordedFrameCount(), 2)
+  h.fire(2000)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(h.saved.length, 1)
+  assert.deepEqual([...h.saved[0].frames].map(frame => frame.timestamp), [450, 500])
+})
+
+test('live takes start keeping frames after the fallback wait if the encoder never reports start', async () => {
+  const captures = []
+  class MediaStream {}
+  const h = recorderHarness({}, {}, { stream: new MediaStream(), MediaStream, MediaRecorder: delayedStartRecorder(captures) })
+  h.render(); await new Promise(resolve => setImmediate(resolve))
+  h.render().startRecording()
+  h.setNow(750)
+  h.fire(750)
+  h.frame(800); h.frame(900)
+  assert.equal(h.render().getRecordedFrameCount(), 2)
+  captures[0].onstart() // late start event must not restart the take
+  h.frame(950)
+  assert.equal(h.render().getRecordedFrameCount(), 3)
+  await h.render().discardRecording()
+  // A stale fallback from the discarded take must not affect the next one.
+  h.render().startRecording()
+  h.frame(1000)
+  assert.equal(h.render().getRecordedFrameCount(), 0)
+})
+
+test('collector uses Recognition Lab camera defaults and can switch to 640x360', async () => {
+  const h = recorderHarness()
+  h.render(); await new Promise(resolve => setImmediate(resolve))
+  // Recognition Lab defaults (RecognitionLabPage useCameraFeed call).
+  assert.equal(h.cameraOptions.captureProfile, '720p')
+  assert.equal(h.cameraOptions.detectionInputWidth, 640)
+  assert.equal(h.cameraOptions.landmarkMode ?? 'both', 'both')
+  assert.equal(h.cameraOptions.showPoseLandmarks ?? true, true)
+  assert.equal(h.cameraOptions.lowLightAssist ?? true, true)
+  assert.equal(h.cameraOptions.handDelegate ?? 'GPU', 'GPU')
+  assert.equal(h.cameraOptions.trackLiveTiming, true)
+  assert.equal(h.cameraOptions.trackOverlayPaint, true)
+  h.render().setCaptureProfile('fast')
+  h.render()
+  assert.equal(h.cameraOptions.captureProfile, 'fast')
+})
+
+test('saving and deleting update the sample list without reloading every stored sample', async () => {
+  const h = recorderHarness()
+  h.render(); await new Promise(resolve => setImmediate(resolve))
+  const initialLoads = h.loads
+  h.render().startRecording()
+  h.frame(100); h.frame(900)
+  await h.render().stopRecording()
+  assert.equal(h.loads, initialLoads)
+  const [sample] = h.render().allSequences
+  assert.equal(sample.id, h.saved[0].id)
+  assert.equal(h.render().lastSavedSequence.id, sample.id)
+  await h.render().removeSequence(sample.id)
+  assert.equal(h.loads, initialLoads)
+  assert.equal(h.render().allSequences.length, 0)
+})
+
+test('live clips prefer H.264 and fall back to VP8; the phone-style recorder keeps VP8', () => {
+  const made = []
+  const recorderFor = supported => class MediaRecorder {
+    static isTypeSupported(type) { return supported.includes(type) }
+    constructor(stream, { mimeType, videoBitsPerSecond }) { this.mimeType = mimeType; this.videoBitsPerSecond = videoBitsPerSecond; this.state = 'inactive'; made.push(this) }
+    start() { this.state = 'recording' }
+    stop() { this.state = 'inactive' }
+  }
+  const clipModule = supported => load(path.resolve(__dirname, '../src/services/dataset/cameraClip.ts'), { Blob, File, MediaRecorder: recorderFor(supported) })
+  const all = ['video/mp4;codecs=avc1.42E01F', 'video/webm;codecs=h264', 'video/webm;codecs=vp8', 'video/mp4', 'video/webm']
+
+  clipModule(all).startCameraClip({})
+  assert.equal(made.at(-1).mimeType, 'video/mp4;codecs=avc1.42E01F')
+  assert.equal(made.at(-1).videoBitsPerSecond, 2500000)
+  clipModule(all.slice(1)).startCameraClip({})
+  assert.equal(made.at(-1).mimeType, 'video/webm;codecs=h264')
+  clipModule(['video/webm;codecs=vp8', 'video/webm']).startCameraClip({})
+  assert.equal(made.at(-1).mimeType, 'video/webm;codecs=vp8')
+  clipModule(all).createCameraMediaRecorder({})
+  assert.equal(made.at(-1).mimeType, 'video/webm;codecs=vp8')
+  assert.equal(made.at(-1).videoBitsPerSecond, 8000000)
+
+  const { cameraClipFile } = clipModule(all)
+  assert.equal(cameraClipFile(new Blob(['v'], { type: 'video/mp4;codecs=avc1.42E01F' }), 'a').name, 'a.mp4')
+  assert.equal(cameraClipFile(new Blob(['v'], { type: 'video/x-matroska;codecs=avc1' }), 'b').name, 'b.mkv')
+  assert.equal(cameraClipFile(new Blob(['v'], { type: 'video/webm;codecs=vp8' }), 'c').name, 'c.webm')
 })

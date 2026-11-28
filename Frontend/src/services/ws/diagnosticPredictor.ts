@@ -12,7 +12,9 @@ export type DiagnosticBackendInfo = {
 export function createDiagnosticPredictor(mode: LabRecognitionMode | 'p4-candidate' = 'p4-candidate') {
   const recognizerId = mode === 'p4-candidate' ? DIAGNOSTIC_RECOGNIZER_ID
     : mode === 'lab-alphabet' ? 'lab-alphabet-j460-v2-seed43-graph-diagnostics'
-    : mode === 'lab-stage2' ? 'lab-stage2-rerun-20261109-seeds42-43-44-no-hold-graph-diagnostics' : `${mode}-seed42-graph-diagnostics`
+    : mode === 'lab-stage2' ? 'lab-stage2-rerun-20261109-seeds42-43-44-no-hold-graph-diagnostics'
+    : mode === 'lab-signs32-standalone' ? 'lab-signs32-standalone-v3-seed42-graph-diagnostics'
+    : mode === 'lab-signs74-combined' ? 'lab-signs74-combined-v3-seed42-graph-diagnostics' : `${mode}-seed42-graph-diagnostics`
   const socket = createTranslationSocket(mode, true)
   let pending: { id: string; resolve: (value: SignPrediction) => void; reject: (error: Error) => void } | null = null
   let ready = false, closed = false

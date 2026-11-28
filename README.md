@@ -7,7 +7,15 @@ Filipino Sign Language conversation assistant. This repository is a monorepo:
 
 ## Run locally
 
-Use two terminals.
+**One command** (from the repository root):
+
+```powershell
+npm run dev
+```
+
+This starts the FastAPI backend (`http://127.0.0.1:8000`, using `.venv-gru`, falling back to `Backend/.venv`) and the Vite frontend (`http://localhost:5173`) together. Press Ctrl+C to stop both. It installs frontend dependencies if they are missing and stops with a message if port 8000 is already in use. Options: `.\scripts\dev.ps1 -BackendPort 8010` or `-NoReload`.
+
+**Or run them separately** in two terminals.
 
 **Backend** (from `Backend/`):
 
@@ -43,15 +51,19 @@ Swagger: http://127.0.0.1:8000/docs
 
 The [FSL test sandbox](scripts/fsl_sandbox/README.md) runs the 43 Similar Signs baseline against fixed clips. The [caption testing guide](scripts/fsl_sandbox/TESTING.md) covers the offline lexicalization and syntax prototype.
 
+In **Recognition Lab → Video**, choose multiple files or add them in batches. **Replay queue** plays them at normal speed in upload order. Recognition samples up to 20 observations per second of video. If recognition is still processing when a clip ends, the Lab finishes its results before playing the next clip. After replay, select a row to review or export that video's results. Decode failures appear on the affected row and the queue advances. **Stop replay** ends the active run and unlocks model selection, uploads, and queue selection. **Continue replay** skips completed clips and restarts unfinished clips from the beginning. When finished, **Replay again** starts the full queue over. Select a row and click **Replay** to run just that video. Use **Q / E** to select the previous / next clip while replay is stopped. Queue labels with **✓** are confirmed; labels without it are the most frequent prediction-window result when nothing was confirmed. **Export results** downloads one JSON for the full queue and selected model, including displayed signs, confirmation status, prediction counts, filenames and run metadata.
+
+> **Archived models (2026-11-24).** These Recognition Lab options are no longer in the menu: 43 Similar Signs (v2 experiment), 75 Signs (multi-batch candidate), 32 Signs (similarity recipe), Indexing + Possessives (first pilot), 33 signs · days of the week, 43 signs · days and numbers, and 43 signs · handshape and motion. Their ZIPs are in the dataset's `models/archive` and `processed/archive`; see the [archive note](obsidian://open?vault=SignSync%20Dataset&file=documentation%2Fcandidates-archive-20261124) to restore them. The comparison steps below that use them apply only after restoring.
+
 In **Recognition Lab**, run **43 Similar Signs (v1 baseline)** with Camera or Video. Stop recognition or let the video replay finish, then click **Pin baseline run**. In **Recognition model**, select **43 Similar Signs (v2 experiment)** and run again. Keep the camera setup and recognition settings the same, or replay the same loaded video. The results show both transcripts, and **Export recognition results** includes the pinned transcript as `comparisonBaseline`.
 
 Sign one phrase per run. Keep **Caption rules** on **v1 demo** for a model-only comparison. Choose **v2 experiment** to try the new caption rules on the current transcript. Try `WAIT → PLEASE` for “Please wait.” or `TOMORROW → WAIT → PLEASE` for the experimental “Please wait tomorrow.” The pinned transcript keeps the caption setting it had when you pinned it.
 
 For the 32-sign expansion, select **75 Signs (multi-batch candidate)** after pinning the v1 baseline. Prefer replaying the same video for both runs. Keep confidence, confirmation time, and landmark settings fixed. Include visible rest, idle hand movement, a repeated sign, and alternating similar signs. The candidate includes REST and IDLE_MOVEMENT as background classes and is available only in Recognition Lab. See the [dataset work note](obsidian://open?vault=SignSync%20Dataset&file=documentation%2F2026-11-15%20New%2032%20Signs%20Recognition%20Lab%20Retraining) for the checkpoints, results, and signer review.
 
-To test the new vocabulary by itself, select **32 Signs (standalone candidate)** in Recognition Lab. Use a fresh recording and mark the intended label for each sign. Include visible rest, incidental hand movement, paired signs such as **MAYBE / AGAIN** and **PERSON / STUDENT**, and two separate performances of **FAST**. Export the recognition results with the same camera or video settings between trials.
+To test the new vocabulary by itself, select **32 Signs (standalone v3)** in Recognition Lab. This version uses the refreshed BAD, GRANDMOTHER, and GRANDFATHER samples and predicts 32 sign classes. The Lab reports **IDLE** from sustained hand absence while pose tracking remains valid. Use a fresh recording and mark the intended label for each sign. Include visible rest, incidental hand movement, paired signs such as **MAYBE / AGAIN** and **PERSON / STUDENT**, and two separate performances of **FAST**. Export the recognition results with the same camera or video settings between trials.
 
-To compare the 43-sign training recipe on the 32-sign vocabulary, replay an existing video with **32 Signs (standalone candidate)** and choose **Pin baseline run**. Select **32 Signs (similarity recipe)** and replay the same loaded video. The Lab shows both transcripts and includes the pinned run in **Export recognition results**. A minimum confidence setting of 90% gives both runs the same score floor for comparison. The similarity recipe uses 32 sign labels and treats background footage as an evaluation probe.
+To compare the 32-sign Lab models, replay an existing video with **32 Signs (standalone v3)** and choose **Pin baseline run**. Select **32 Signs (similarity recipe)** and replay the same loaded video. The Lab shows both transcripts and includes the pinned run in **Export recognition results**. A minimum confidence setting of 90% gives both runs the same score floor for comparison. The models use different training sets. Both treat background footage as an evaluation probe.
 
 ## Sign gloss notation in Recognition Lab
 
@@ -78,3 +90,7 @@ The script starts two Cloudflare tunnels, configures the backend and frontend UR
 Keep your PC awake and the terminal open while people test. Press **Ctrl+C** to stop the test. Each run creates a new link. The test backend is unauthenticated, so use test data.
 
 [Open the SignSync Dataset README](obsidian://open?vault=SignSync%20Dataset&file=README)
+
+
+
+
