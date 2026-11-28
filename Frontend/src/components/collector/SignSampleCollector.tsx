@@ -210,8 +210,8 @@ export default function SignSampleCollector({
                     />
                     <CameraDiagnostics
                       feed={recorder.feed}
-                      detectionInputWidth={recorder.detectionInputWidth}
-                      onChangeInputWidth={recorder.setDetectionInputWidth}
+                      captureProfile={recorder.captureProfile}
+                      onChangeCaptureProfile={recorder.setCaptureProfile}
                       locked={locked}
                     />
                     {!recorder.feed.enabled && (

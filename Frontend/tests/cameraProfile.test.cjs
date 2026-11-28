@@ -74,3 +74,19 @@ test('landmark benchmark counts fresh video frames with hands and reports tail t
   profile.start()
   assert.equal(profile.snapshot().benchmark, undefined)
 })
+
+test('benchmark counts lone-hand side switches and brief second hands on distinct frames', () => {
+  const frame = (at, handCount, side, capacity = 2) => ({ ...sample(at), mediaTime: at / 1000, handCount, singleHandSide: side, handCapacity: capacity })
+  const sides = output.summarizeHandSides([
+    frame(0, 1, 'Left'), frame(50, 1, 'Left', 1),
+    frame(100, 1, 'Right', 1),            // one hand changed side
+    frame(100, 1, 'Left', 1),             // same video frame again: ignored
+    frame(150, 2, undefined, 2),          // search frame adds a second hand for one frame
+    frame(200, 1, 'Right', 1),
+    frame(250, 2, undefined, 2), frame(300, 2, undefined, 2), frame(350, 2, undefined, 2), // a real second hand
+    frame(400, 1, 'Right'),
+    frame(800, 1, 'Left'),                // after a long gap: not a switch
+  ])
+  // Both second hands first appeared on a search frame; only the one-frame one is brief.
+  assert.deepEqual({ ...sides }, { oneHandFrames: 6, twoHandFrames: 4, oneHandSideSwitches: 1, briefSecondHands: 1, secondHandOnSearch: 2 })
+})

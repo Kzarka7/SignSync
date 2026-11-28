@@ -24,3 +24,10 @@ Measure the original and updated playback on the same `AGAIN` takes. Check elaps
 ## Startup defaults
 
 The [short command in the script guide](scripts/README.md#landmark-playback) starts at a 120 FPS playback target with 240 display frames. The source-frame lines show `120 FPS target` when the viewer opens. The default viewer loop takes two seconds. GIF export defaults to 60 FPS.
+
+## Restoration · 2026-11-18
+
+Restore the viewer implementation from `d3d6dce` after the later version dropped maximized startup, cached rendering, clock-based playback, and the batch display order. Preserve the newer STUDENT and FAST command examples. Verify startup, loop timing, and GIF export against the restored script.
+
+- The script matches `d3d6dce` apart from the two preserved examples. The three-panel raw AGAIN comparison opened maximized in TkAgg at 1920 × 1057. Two measured loops took 1.973 and 2.012 seconds, with about 22.8 drawn updates per second while the GIF check ran concurrently.
+- Verified eight-frame GIFs for raw AGAIN, interpolated FAST in P1–P4 order with samples 1–4, and mirrored v5 STAY from Participant 03. The Git whitespace check passed.

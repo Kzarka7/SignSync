@@ -11,7 +11,7 @@ function runRuntime(exportName, args, mediaPipe = {}) {
   () => args, { console: { warn() {} } }).render()
 }
 
-test('both delegates use a fixed two-hand tracker with 0.5 confidence thresholds', async () => {
+test('both delegates use a fixed two-hand tracker with 0.5 confidence thresholds by default', async () => {
   const calls = []
   const backend = { HandLandmarker: { async createFromOptions(_, options) {
     calls.push(options)
@@ -23,4 +23,15 @@ test('both delegates use a fixed two-hand tracker with 0.5 confidence thresholds
     options.baseOptions.delegate, options.minHandPresenceConfidence, options.minTrackingConfidence,
     options.minHandDetectionConfidence, options.numHands,
   ]), [['GPU', 0.5, 0.5, 0.5, 2], ['CPU', 0.5, 0.5, 0.5, 2]])
+})
+
+test('a CPU preference creates the hand tracker on the CPU without trying the GPU', async () => {
+  const delegates = [], reports = []
+  const backend = { HandLandmarker: { async createFromOptions(_, options) {
+    delegates.push(options.baseOptions.delegate)
+    return {}
+  } } }
+  await runRuntime('createHandLandmarker', [{}, delegate => reports.push(delegate), 'CPU'], backend)
+  assert.deepEqual(delegates, ['CPU'])
+  assert.deepEqual(reports, ['CPU'])
 })
