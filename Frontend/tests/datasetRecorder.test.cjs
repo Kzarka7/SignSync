@@ -205,10 +205,17 @@ test('live collector exports exact samples that produce the same wall-clock grid
 
 test('sign collection offers vocabulary, indexing, possessive, and fingerspelling labels', () => {
   const recorder = recorderHarness({ signsOnly: true }).render()
-  assert.equal(recorder.knownLabels.length, 113)
+  // 113 earlier labels + the 26-sign 2026-11 batch.
+  assert.equal(recorder.knownLabels.length, 139)
   assert.equal(new Set(recorder.knownLabels).size, recorder.knownLabels.length)
   assert.equal(recorder.knownLabels.includes('SLEEP'), false)
   assert.equal(recorder.knownLabels.includes('BATHROOM'), false)
+  for (const label of ['DONT_KNOW', 'HARD_OF_HEARING', 'WANT', 'NEED', 'HAVE', 'CANT', 'NUMBER']) {
+    assert.equal(recorder.knownLabels.includes(label), true, label)
+  }
+  for (const label of ['MAN', 'ENTER', 'EXIT', 'DIRECTION', 'NEAR', 'FAR']) {
+    assert.equal(recorder.knownLabels.includes(label), false, label)
+  }
   for (const label of ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN',
     'FAST', 'SLOW',
     'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY',
