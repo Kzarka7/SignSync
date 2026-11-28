@@ -1,4 +1,9 @@
-r"""Compare participant recordings or archived 32-sign batches side by side.
+r"""Compare participant recordings or archived sign batches side by side.
+
+--batches covers every sign in the 74-sign vocabulary (plus PARENTS): it shows each archive in
+SignSync Dataset/raw/processed-samples/<category>/<SIGN>/. Participant names (P1-P4) are inferred
+only for the 32 batch-expansion signs; other signs are labelled by source (Live capture, WEBM,
+MOV, WIN MP4, Named MP4).
 
 Examples (run from the SignSync project folder):
 
@@ -18,6 +23,15 @@ Examples (run from the SignSync project folder):
     python scripts/compare_landmarks.py --batches --label STUDENT --samples 7
     python scripts/compare_landmarks.py --batches --label STUDENT --raw-frames --samples 1 1 1
     .\.venv-gru\Scripts\python.exe scripts/compare_landmarks.py --batches --label FAST
+    python scripts/compare_landmarks.py --batches --label THANK_YOU --samples 3
+    python scripts/compare_landmarks.py --batches --label MONDAY --raw-frames
+
+Review the INDEXING / POSSESSIVES samples (SignSync Dataset/raw/processed-samples):
+    python scripts/compare_landmarks.py --list INDEXING
+    python scripts/compare_landmarks.py --list POSSESSIVES
+    python scripts/compare_landmarks.py --processed-samples --labels IX-1 --samples 1
+    python scripts/compare_landmarks.py --processed-samples --labels IX-1 IX-1pl --recording 1 --samples 3
+    python scripts/compare_landmarks.py --processed-samples --labels POSS-2 --samples 5 12 --raw-frames
 
 Controls:
     Space       pause/resume
@@ -344,13 +358,30 @@ def play_interactive(figure, artists, statuses, draw_frame, frame_count, fps):
     plt.show()
 
 
+BATCH_INTAKE_PARTS = ("experiments", "samples_75_signs_batch_expansion_v1", "intake.json")
+
+
 def batch_folders(dataset_root):
-    intake = dataset_root / "experiments" / "samples_75_signs_batch_expansion_v1" / "intake.json"
-    rows = json.loads(intake.read_text(encoding="utf-8"))["samples"]
+    """Map each sign to its archive folder(s): processed-samples/<category>/<SIGN>/*.zip.
+
+    Covers every sign filed under a category folder (the full 74-sign vocabulary, PARENTS,
+    and the alphabet, number, IX and POSS folders), not only the 32-sign intake list.
+    """
+    root = dataset_root.joinpath(*PROCESSED_SAMPLES_PARTS)
     folders = {}
-    for row in rows:
-        folders.setdefault(row["label"], set()).add(dataset_root / "raw" / Path(row["batch"]).parent)
+    for archive in root.glob("*/*/*.zip"):
+        label = archive.parent.name.strip().upper().replace(" ", "_")
+        folders.setdefault(label, set()).add(archive.parent)
     return folders
+
+
+def intake_labels(dataset_root):
+    """Signs of the 32-sign batch expansion, whose batch sources map to participants P1-P4."""
+    try:
+        rows = json.loads(dataset_root.joinpath(*BATCH_INTAKE_PARTS).read_text(encoding="utf-8"))["samples"]
+    except (OSError, KeyError, ValueError):
+        return set()
+    return {row["label"] for row in rows}
 
 
 def archive_takes(archive, label):
@@ -365,9 +396,17 @@ def archive_takes(archive, label):
 
 def take_source(take):
     filename = Path((take.get("videoImport") or {}).get("filename", ""))
+    if not filename.name:
+        return "Live capture"
     if filename.suffix.lower() == ".mp4":
         return "WIN MP4" if filename.name.upper().startswith("WIN_") else "Named MP4"
     return filename.suffix.lower()
+
+
+def source_description(sources):
+    """Neutral source label for signs outside the 32-sign intake (no participant inference)."""
+    names = {".webm": "WEBM", ".mov": "MOV"}
+    return " + ".join(names.get(source, source) for source in sorted(sources)) or "Unknown source"
 
 
 def batch_participant(archive, sources):
@@ -393,10 +432,13 @@ def batch_participant(archive, sources):
 
 def batch_panels(dataset_root, label, samples):
     label = label.strip().upper().replace(" ", "_")
-    folders = batch_folders(dataset_root).get(label, ())
+    all_folders = batch_folders(dataset_root)
+    folders = all_folders.get(label, ())
     archives = sorted(path for folder in folders for path in folder.glob("*.zip"))
     if not archives:
-        raise ValueError(f"No 32-sign batch archives found for {label!r}; choose a sign with --label")
+        raise ValueError(f"No batch archives found for {label!r} in processed-samples. "
+                         f"Available signs: {' '.join(sorted(all_folders))}")
+    infer_participants = label in intake_labels(dataset_root)
     numbers = samples or [1]
     if len(numbers) == 1:
         numbers = numbers * len(archives)
@@ -410,8 +452,12 @@ def batch_panels(dataset_root, label, samples):
             sequences = archive_takes(archive, label)
         except (KeyError, BadZipFile, OSError, ValueError) as error:
             raise ValueError(f"{archive.name}: {error}") from error
-        source = batch_participant(archive, {take_source(take) for take in sequences})
-        slot = slots.get(source.split()[0], 5)
+        sources = {take_source(take) for take in sequences}
+        if infer_participants:
+            source = batch_participant(archive, sources)
+            slot = slots.get(source.split()[0], 5)
+        else:
+            source, slot = source_description(sources), 0
         batches.append((slot, index, archive, source, sequences))
     batches.sort(key=lambda batch: (batch[0], batch[1]))
 
@@ -427,7 +473,103 @@ def batch_panels(dataset_root, label, samples):
         if source == "Mixed MP4":
             source = ("P3 Almari (inferred, mixed batch)" if take_source(sequence) == "Named MP4"
                       else "Unassigned (mixed batch)")
+        elif not infer_participants and "+" in source:
+            source = f"{source_description({take_source(sequence)})} (mixed batch)"
         heading = f"{source} | Batch {index:02d} | {label} | sample {number}/{len(sequences)}"
+        panels.append((heading, archive.name, sequence))
+    return panels
+
+
+PROCESSED_SAMPLES_PARTS = ("raw", "processed-samples")
+MAX_REVIEW_PANELS = 4
+ARCHIVE_NAME = re.compile(
+    r"signsync-dataset-(?P<label>.+)-\d+x-(?P<date>\d{4}-\d{2}-\d{2})_(?P<time>\d{2}-\d{2}-\d{2})-samples\.zip",
+    re.IGNORECASE,
+)
+
+
+def normalize_sample_label(label: str) -> str:
+    return re.sub(r"[\s_]+", "-", label.strip()).casefold()
+
+
+def processed_sample_archives(dataset_root: Path) -> dict[str, list[Path]]:
+    """Map each label to its sample archives (oldest recording first)."""
+    root = dataset_root.joinpath(*PROCESSED_SAMPLES_PARTS)
+    if not root.is_dir():
+        raise ValueError(f"Processed samples folder was not found: {root}")
+    found: dict[str, list[tuple[str, Path]]] = {}
+    for archive in root.rglob("*-samples.zip"):
+        match = ARCHIVE_NAME.fullmatch(archive.name)
+        if match:
+            stamp = f"{match['date']}_{match['time']}"
+            found.setdefault(normalize_sample_label(match["label"]), []).append((stamp, archive))
+    return {label: [path for _, path in sorted(items)] for label, items in found.items()}
+
+
+def list_processed_samples(dataset_root: Path, folder: str = "") -> None:
+    root = dataset_root.joinpath(*PROCESSED_SAMPLES_PARTS)
+    rows = []
+    for label, archives in processed_sample_archives(dataset_root).items():
+        group = archives[0].relative_to(root).parts[0]
+        if folder.casefold() not in group.casefold():
+            continue
+        for number, archive in enumerate(archives, 1):
+            with ZipFile(archive) as bundle:
+                takes = sum(name.lower().endswith(".json") for name in bundle.namelist())
+            match = ARCHIVE_NAME.fullmatch(archive.name)
+            when = f"{match['date']} {match['time'].replace('-', ':')}" if match else "unknown time"
+            rows.append((group, label, number, len(archives), when, takes))
+    print(f"{'Folder':<28} {'Label':<14} Recording  Recorded             Takes")
+    for group, label, number, total, when, takes in sorted(rows):
+        print(f"{group:<28} {label:<14} {number}/{total:<8} {when:<20} {takes}")
+    print("\nReview with: python scripts/compare_landmarks.py --processed-samples --labels IX-1 IX-1pl --samples 1")
+
+
+def processed_sample_panels(dataset_root, labels, samples, recording):
+    archives_by_label = processed_sample_archives(dataset_root)
+    selected = []
+    for raw_label in labels:
+        key = normalize_sample_label(raw_label)
+        archives = archives_by_label.get(key)
+        if not archives:
+            raise ValueError(f"No processed-sample archives found for {raw_label!r}; run with --list to see the available labels")
+        if recording is not None and not 1 <= recording <= len(archives):
+            raise ValueError(f"{raw_label} has {len(archives)} recordings; choose --recording between 1 and {len(archives)}")
+        for number, archive in enumerate(archives, 1):
+            if recording in (None, number):
+                selected.append((key, number, len(archives), archive))
+    if len(selected) > MAX_REVIEW_PANELS:
+        raise ValueError(
+            f"{len(selected)} panels selected; at most {MAX_REVIEW_PANELS} fit on screen. "
+            "Pick fewer labels or choose one recording with --recording"
+        )
+    numbers = samples or [1]
+    if len(numbers) == 1:
+        numbers = numbers * len(selected)
+    if len(numbers) != len(selected):
+        raise ValueError(f"Provide one --samples number for all panels or one for each of the {len(selected)} panels")
+
+    panels = []
+    for (key, recording_number, total, archive), number in zip(selected, numbers):
+        try:
+            with ZipFile(archive) as bundle:
+                takes = [
+                    sequence
+                    for member in sorted(bundle.namelist()) if member.lower().endswith(".json")
+                    for sequence in json.loads(bundle.read(member))["sequences"]
+                    if normalize_sample_label(sequence["label"]) == key
+                ]
+            if not takes:
+                raise ValueError("no takes with this label")
+            sequence = select_sequence({"sequences": takes}, takes[0]["label"], number)
+            if not any(any((frame.get("raw") or {}).get(group) for group in ("pose", "leftHand", "rightHand"))
+                       for frame in sequence["frames"]):
+                raise ValueError(f"sample {number} contains no raw landmarks")
+        except (KeyError, BadZipFile, OSError, ValueError) as error:
+            raise ValueError(f"{archive.name}: {error}") from error
+        match = ARCHIVE_NAME.fullmatch(archive.name)
+        when = f" {match['date']} {match['time'][:5].replace('-', ':')}" if match else ""
+        heading = f"{takes[0]['label']} | Recording {recording_number}/{total}{when} | sample {number}/{len(takes)}"
         panels.append((heading, archive.name, sequence))
     return panels
 
@@ -472,7 +614,11 @@ def participant_panels(parser, arguments, dataset_folder):
 def main() -> None:
     dataset_root = Path(__file__).resolve().parent.parent.parent / "SignSync Dataset"
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--batches", action="store_true", help="Compare all archives for a sign from the 32-sign vocabulary")
+    parser.add_argument("--batches", action="store_true", help="Compare all batch archives for any sign of the 74-sign vocabulary (processed-samples/<category>/<SIGN>)")
+    parser.add_argument("--processed-samples", action="store_true", help="Review takes from SignSync Dataset/raw/processed-samples (e.g. INDEXING, POSSESSIVES); one panel per recording of each label in --labels")
+    parser.add_argument("--labels", nargs="+", help="Labels to review with --processed-samples, e.g. IX-1 IX-1pl POSS-2")
+    parser.add_argument("--recording", type=int, help="With --processed-samples, show only this recording (1 = oldest) of each label")
+    parser.add_argument("--list", nargs="?", const="", metavar="FOLDER", help="List labels, recordings and take counts in processed-samples (optionally only folders matching FOLDER, e.g. INDEXING), then exit")
     parser.add_argument("--dataset-version", default="baseline", help="Participant dataset version: baseline (default) or a saved suffix such as v2")
     parser.add_argument("--label", default="FRIEND", help="Sign to compare; --label-a/b/c override it in participant mode")
     parser.add_argument("--participants", nargs="+", type=int, choices=(1, 2, 3), default=[1, 2, 3], help="Participants in display order (default: 1 2 3)")
@@ -493,9 +639,24 @@ def main() -> None:
         parser.error("--display-frames must be at least 2")
     if not np.isfinite(arguments.fps) or arguments.fps <= 0:
         parser.error("--fps must be a positive finite number")
+    if arguments.list is not None:
+        try:
+            list_processed_samples(dataset_root, arguments.list)
+        except (OSError, ValueError, BadZipFile) as error:
+            parser.error(str(error))
+        return
+    if arguments.batches and arguments.processed_samples:
+        parser.error("Choose either --batches or --processed-samples, not both")
     if arguments.batches:
         try:
             panels = batch_panels(dataset_root, arguments.label, arguments.samples)
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+    elif arguments.processed_samples:
+        if not arguments.labels:
+            parser.error("--processed-samples needs --labels, e.g. --labels IX-1 IX-1pl (run with --list to see them)")
+        try:
+            panels = processed_sample_panels(dataset_root, arguments.labels, arguments.samples, arguments.recording)
         except (OSError, ValueError) as error:
             parser.error(str(error))
     else:
@@ -520,7 +681,8 @@ def main() -> None:
     axes = grid[0]
     mode = "Recorded frames" if arguments.raw_frames else "Interpolated playback (display only)"
     compared_labels = " / ".join(dict.fromkeys(sequence["label"] for sequence in sequences))
-    source_name = "Batch archives" if arguments.batches else arguments.dataset_version
+    source_name = ("Batch archives" if arguments.batches
+                   else "Processed samples" if arguments.processed_samples else arguments.dataset_version)
     title = f"{compared_labels}: normalized-time comparison | {mode} | {source_name}"
     if not arguments.save_gif:
         title += f" | {MAX_REFRESH_FPS} FPS refresh limit"
@@ -534,7 +696,7 @@ def main() -> None:
         axis.set_ylim(maximum[1], minimum[1])
         axis.set_aspect("equal", adjustable="box")
         title = f"{heading}\nID: {sequence['id']}"
-        if arguments.batches:
+        if arguments.batches or arguments.processed_samples:
             filename = (sequence.get("videoImport") or {}).get("filename") or "Source filename unavailable"
             title = f"{heading}\n{filename}\nID: {sequence['id']}"
         axis.set_title(title, fontsize=9, pad=24)
