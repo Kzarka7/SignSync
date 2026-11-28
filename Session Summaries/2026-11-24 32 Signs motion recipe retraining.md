@@ -230,4 +230,4 @@ Related: [[Project Home]]
 
 - **What changed:** `Frontend/src/services/landmarks/recognitionDiagnostics.ts` stores each segmented prediction's model input (`rows[].modelInputFrames`, capped at 600, 5 decimals) and reports `modelInputExport`. New test in `Frontend/tests/continuousRecognition.test.cjs`. New `scripts/analyze_lab_captures.py`.
 - **Verified:** frontend 367/367, `tsc -b` passes, backend OK; the analysis script ran on a synthetic export (exact and fallback paths).
-- **Open:** real live exports of PERSON/STUDENT/TEACHER still needed. Nothing committed; `graphify update .` not run.
+- **Open:** real live exports of PERSON/STUDENT/TEACHER still needed. Nothing committed. `graphify update .` was run afterwards at the user's request (2,610 nodes, 7,292 edges).
