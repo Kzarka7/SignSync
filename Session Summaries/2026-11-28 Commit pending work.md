@@ -19,4 +19,9 @@ Commit the pending changes in source control and explain where each commit went 
 - Not committed: `mannequin.blend1` (Blender autosave) and two `mannequin_backup_*.blend` files.
 
 **Not done / open**
-- Tests were not run on main, pipeline or ui-ux.
+- Tests were not run on main, pipeline or ui-ux. Their files now match NF, which passed.
+
+## Branch sync (follow-up)
+- NF `aaa46ac`: `.gitignore` now ignores `*.blend1` and `mannequin_backup_*.blend`; added this note.
+- Merged NF into each branch, taking NF's version for every file: main `4af1596`, pipeline `f881216`, ui-ux `399e96d`. All four branches are pushed and have identical files.
+- Before the merge, the only files main had that NF lacked were `.obsidian/graph.json` and `workspace.json` (editor state that NF already ignores).
