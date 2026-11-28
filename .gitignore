@@ -23,3 +23,7 @@ skills-lock.json
 /.claude/
 /.obsidian/workspace.json
 /.obsidian/graph.json
+
+# Blender autosaves and local mannequin backups
+*.blend1
+Frontend/public/models/mannequin_backup_*.blend
