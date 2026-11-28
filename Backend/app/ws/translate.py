@@ -37,7 +37,11 @@ async def translate_socket(websocket: WebSocket):
                 'lab-signs32-similarity': '32-sign similarity recipe',
                 'lab-ix-poss-pilot': 'Indexing and possessives first pilot',
                 'lab-ix-poss-motion': 'Indexing and possessives motion v1',
-                'lab-signs74-combined': '74-sign combined v3'}[mode]
+                'lab-signs74-combined': '74-sign combined v3',
+                'lab-signs74-motion-e': '74-sign combined motion E candidate',
+                'lab-signs74-motion-e-v2': '74-sign combined motion E v2 (live-crop) candidate',
+                'lab-signs74-motion-e-v2-fusion': '74-sign v2 + Motion E fusion candidate',
+                'lab-signs74-motion-e-v4': '74-sign combined motion E v4 (refreshed TUESDAY/THURSDAY) candidate'}[mode]
         diagnostics = websocket.query_params.get('diagnostics', '0')
         if (diagnostics not in ('0', '1') or (diagnostics == '1' and mode == 'v5') or
                 (mode in LAB_EXPERIMENTS and diagnostics != '1')):

@@ -3,13 +3,15 @@ const assert=require('node:assert/strict')
 const {hookHarness}=require('./helpers/hookHarness.cjs')
 const load=require('../scripts/loadTypeScript.cjs'),path=require('node:path')
 
+// Stand-in for the Recognition Lab's default camera options (the real module needs MediaPipe).
+const LAB_CAMERA={landmarkMode:'both',trackLiveTiming:true,reviewHandTracking:true,detectionInputWidth:640,deferPose:true,adaptiveHandCapacity:true}
 function setup(mode = 'signs', globals = {}){
   const entries=[], sessions=[], transports=[], wordBoundaries=[]
   let feedOptions
   const feed={enabled:true,cameraReady:true,poseDetected:true,error:null,modelError:null}
   const h=hookHarness('src/hooks/useContinuousLiveRecognition.ts','useContinuousLiveRecognition',name=>{
     if(name.endsWith('/liveRecognitionPolicy'))return load(path.resolve('src/services/landmarks/liveRecognitionPolicy.ts'), globals)
-    if(name.endsWith('/useCameraFeed'))return {useCameraFeed:options=>{feedOptions=options;return feed}}
+    if(name.endsWith('/useCameraFeed'))return {LIVE_RECOGNITION_CAMERA_OPTIONS:LAB_CAMERA,useCameraFeed:options=>{feedOptions=options;return feed}}
     if(name.endsWith('/diagnosticPredictor'))return {createDiagnosticPredictor:modelMode=>{
       let resolve
       const transport={modelMode,connect:()=>new Promise(done=>{resolve=done}),ready:()=>resolve({}),predict:async()=>{},close(){this.closed=true}}
@@ -25,11 +27,11 @@ function setup(mode = 'signs', globals = {}){
   },()=>[entry=>entries.push(entry), {mode,onWordBoundary:()=>wordBoundaries.push(entries.length)}])
   h.render();return {h,entries,sessions,transports,feed,feedOptions,wordBoundaries}
 }
-test('live camera collects timing for the paired hand and pose status',()=>{
+test('live camera uses the Recognition Lab camera options unchanged',()=>{
   const {h,feedOptions}=setup()
-  assert.equal(feedOptions.landmarkMode,'both')
-  assert.equal(feedOptions.trackLiveTiming,true)
-  assert.equal(feedOptions.reviewHandTracking,true)
+  const {onFrame,...camera}=feedOptions
+  assert.deepEqual(camera,LAB_CAMERA)
+  assert.equal(typeof onFrame,'function')
   h.unmount()
 })
 test('live recognition forwards only confirmed entries once and ignores callbacks after stop',async()=>{
@@ -39,7 +41,7 @@ test('live recognition forwards only confirmed entries once and ignores callback
   assert.equal(h.render().countdownSeconds,0)
   assert.equal(h.render().running,true)
   const s=sessions[0]
-  assert.equal(transports[0].modelMode,'lab-signs43-similarity')
+  assert.equal(transports[0].modelMode,'lab-signs43-motion-e')
   assert.equal(s.options.minimumConfidence,.75)
   assert.equal(s.options.settings.confirmationMs,300)
   assert.equal(s.options.onWordBoundary,undefined)
@@ -52,12 +54,12 @@ test('live recognition forwards only confirmed entries once and ignores callback
   h.unmount()
 })
 
-test('43 Similar Signs uses saved settings and sends confirmed signs to the conversation', async () => {
+test('43 Similar Signs motion E uses saved settings and sends confirmed signs to the conversation', async () => {
   const {h,entries,sessions,transports}=setup()
   const start=h.render().start();transports[0].ready();await start
   const s=sessions[0]
-  assert.equal(transports[0].modelMode,'lab-signs43-similarity')
-  assert.equal(s.options.modelMode,'lab-signs43-similarity')
+  assert.equal(transports[0].modelMode,'lab-signs43-motion-e')
+  assert.equal(s.options.modelMode,'lab-signs43-motion-e')
   assert.equal(s.options.minimumConfidence,.75)
   assert.equal(s.options.settings.confirmationMs,300)
   assert.equal(s.options.settings.strideMs,150)
@@ -65,6 +67,9 @@ test('43 Similar Signs uses saved settings and sends confirmed signs to the conv
   assert.equal(s.options.settings.confirmationHistory,4)
   assert.equal(s.options.waitForConfirmation,true)
   assert.equal(s.options.staticMotionCheck,true)
+  assert.equal(s.options.motionProfile,'motion-e')
+  assert.equal(s.options.wallClockWindows,true)
+  assert.equal(s.options.poseGuidedOcclusion,true)
   assert.equal(s.options.onWordBoundary,undefined)
   s.state.transcript.push({requestId:'similar-one',label:'ONE',score:.92})
   s.notify();s.notify()

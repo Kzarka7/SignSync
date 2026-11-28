@@ -39,42 +39,48 @@ class SignMotionERecognizer(SignMotionV5Recognizer):
     idle_without_hands = True
     margin_threshold = 0.
 
+    # Subclasses (e.g. app/sign_motion_e74_recognition.py) point these at another recipe-E checkpoint.
+    model_location = ('current', MODEL_GROUP, MODEL_NAME)
+    expected_labels = LABELS
+    display_name = '43-sign motion E'
+
     def __init__(self, dataset_root: Path):
         import tensorflow as tf
-        folder = dataset_root / 'models' / 'candidates' / MODEL_GROUP / MODEL_NAME
+        name, labels = self.display_name, self.expected_labels
+        folder = dataset_root.joinpath('models', *self.model_location)
         checksums = json.loads((folder / 'artifact_checksums.json').read_text(encoding='utf-8'))
         for filename in ('best_model.keras', 'scalers.npz', 'metadata.json', 'labels.json'):
             if hashlib.sha256((folder / filename).read_bytes()).hexdigest() != checksums[filename]:
-                raise ValueError('43-sign motion E artifact checksum mismatch: ' + filename)
+                raise ValueError(f'{name} artifact checksum mismatch: ' + filename)
         metadata = json.loads((folder / 'metadata.json').read_text(encoding='utf-8'))
         module_sha = hashlib.sha256(Path(sign_motion_cues_features.__file__).read_bytes()).hexdigest()
         if (metadata['featureVariant'] != CUES_VARIANT or metadata['featureChannels'] != CUES_CHANNELS
-                or metadata['sequenceLength'] != 40 or metadata['labels'] != LABELS
-                or metadata['labelToIndex'] != {label: i for i, label in enumerate(LABELS)}
+                or metadata['sequenceLength'] != 40 or metadata['labels'] != labels
+                or metadata['labelToIndex'] != {label: i for i, label in enumerate(labels)}
                 or json.loads((folder / 'labels.json').read_bytes()) != metadata['labelToIndex']
                 or metadata['featureModuleSha256'] != module_sha):
-            raise ValueError('43-sign motion E metadata or feature code mismatch.')
+            raise ValueError(f'{name} metadata or feature code mismatch.')
         threshold = float(metadata['acceptanceThreshold'])
         if not 0 < threshold < 1:
-            raise ValueError('Invalid 43-sign motion E acceptance threshold.')
+            raise ValueError(f'Invalid {name} acceptance threshold.')
         with np.load(folder / 'scalers.npz', allow_pickle=False) as arrays:
             self.mean, self.std = arrays['feature_mean'].copy(), arrays['feature_std'].copy()
         width = len(CUES_CHANNELS)
         if (self.mean.shape != (width,) or self.std.shape != (width,) or not np.isfinite(self.mean).all()
                 or not np.isfinite(self.std).all() or np.any(self.std <= 0)):
-            raise ValueError('Invalid 43-sign motion E scalers.')
+            raise ValueError(f'Invalid {name} scalers.')
         model = tf.keras.models.load_model(folder / 'best_model.keras', compile=False)
-        if tuple(model.input_shape[1:]) != (40, width) or model.output_shape[-1] != len(LABELS):
-            raise ValueError('43-sign motion E checkpoint shape mismatch.')
+        if tuple(model.input_shape[1:]) != (40, width) or model.output_shape[-1] != len(labels):
+            raise ValueError(f'{name} checkpoint shape mismatch.')
         self.infer = tf.function(lambda features: model(features, training=False),
                                  input_signature=[tf.TensorSpec((1, 40, width), tf.float32)], autograph=False)
         probe = np.zeros((1, 40, width), dtype=np.float32)
         np.testing.assert_allclose(np.asarray(self.infer(probe)), np.asarray(model(probe, training=False)),
                                    rtol=1e-4, atol=1e-5)
-        self.labels = LABELS
+        self.labels = labels
         self.confidence_threshold = threshold
         self.lock = Lock()
-        self.members = [(MODEL_NAME, model, self.mean, self.std)]
+        self.members = [(self.model_location[-1], model, self.mean, self.std)]
 
     def featurize(self, frames: list) -> np.ndarray:
         return cues_features(frames, FEATURE_ORDER)

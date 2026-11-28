@@ -2,7 +2,13 @@
 // model never outputs these labels: PARENTS uses the FATHER and MOTHER gestures,
 // so a PARENTS class would compete with (and add noise to) both single signs.
 // Instead, two confirmed parts in either order become the composed sign.
-export const COMPOSED_SIGNS = [{ label: 'PARENTS', parts: ['FATHER', 'MOTHER'] }] as const
+// GRANDPARENTS works the same way from GRANDFATHER and GRANDMOTHER (no GRANDPARENTS clips are recorded).
+// A sign with `models` composes only for those model modes; GRANDPARENTS starts with the latest 74-sign model.
+type ComposedSign = { label: string; parts: readonly string[]; models?: readonly string[] }
+export const COMPOSED_SIGNS: readonly ComposedSign[] = [
+  { label: 'PARENTS', parts: ['FATHER', 'MOTHER'] },
+  { label: 'GRANDPARENTS', parts: ['GRANDFATHER', 'GRANDMOTHER'], models: ['lab-signs74-motion-e-v4'] },
+]
 
 // Longest time between the two confirmations. The second part's confirmation
 // lands about one sign duration after the first (PARENTS clips: ~2.1 s median,
@@ -18,12 +24,12 @@ export type ComposableEntry = { label: string; score: number; decisionMs: number
  * confirmed parts are no longer shown on their own. Returns true when composed.
  */
 export function appendComposed<T extends ComposableEntry>(transcript: T[], entry: T,
-  maxGapMs = COMPOSITION_MAX_GAP_MS): boolean {
+  maxGapMs = COMPOSITION_MAX_GAP_MS, modelMode?: string): boolean {
   const previous = transcript[transcript.length - 1]
   const composed = previous && !previous.composedFrom && previous.label !== entry.label
     && entry.decisionMs - previous.decisionMs <= maxGapMs
-    && COMPOSED_SIGNS.find(sign => (sign.parts as readonly string[]).includes(previous.label)
-      && (sign.parts as readonly string[]).includes(entry.label))
+    && COMPOSED_SIGNS.find(sign => (!sign.models || (modelMode !== undefined && sign.models.includes(modelMode)))
+      && sign.parts.includes(previous.label) && sign.parts.includes(entry.label))
   if (!composed) {
     transcript.push(entry)
     return false

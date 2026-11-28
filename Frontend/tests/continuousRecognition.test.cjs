@@ -275,6 +275,22 @@ test('FATHER and MOTHER compose into PARENTS in either order through a live sess
   }
 })
 
+test('GRANDFATHER and GRANDMOTHER compose into GRANDPARENTS on v4 through a live session',async()=>{
+  for(const [first,second] of [['GRANDFATHER','GRANDMOTHER'],['GRANDMOTHER','GRANDFATHER']]) {
+    const session=createDiagnosticSession({source:'video',name:'grandparents',modelMode:'lab-signs74-motion-e-v4',
+      recognitionMode:'segmented',segmentAcceptance:'confirmation',staticMotionCheck:true,minimumConfidence:.75,
+      settings:{strideMs:150,confirmationWindows:5,confirmationHistory:7,confirmationMs:650},
+      onChange(){},now:()=>0,id:()=> 'grandparents',predict:async ({frames})=>prediction(frames.at(-1).timestamp>1350?second:first)})
+    // Rise into the first sign and hold, then move the hand to the second sign's place and hold.
+    for(let t=0;t<=3100;t+=25)
+      await session.observeFeatures(signFeature(t,{shift:.12*Math.min(1,t/150)+(t<1200?0:.25*Math.min(1,(t-1200)/150))}))
+    const accepted=session.state.rows.filter(row=>row.emit)
+    assert.deepEqual(Array.from(accepted,row=>row.prediction.label),[first,second],`${first} then ${second}`)
+    assert.deepEqual(Array.from(session.state.transcript,entry=>entry.label),['GRANDPARENTS'],`${first} then ${second}`)
+    assert.deepEqual(Array.from(session.state.transcript[0].composedFrom,part=>part.label),[first,second])
+  }
+})
+
 test('Stage 2 fast confirmation requires two strong handshape votes', () => {
   for (const [label, inputKind, strong, expected] of [
     ['FIVE', 'static', true, true], ['FIVE', 'static', false, false],

@@ -34,8 +34,9 @@ const roundFeature = (value: number) => Math.round(value * 1e5) / 1e5
 export const compactModelInput = (frames: readonly FeatureFrame[]): FeatureFrame[] =>
   frames.map(({ timestamp, valid, features }) => ({ timestamp, valid, features: features.map(roundFeature) }))
 export type LabTranscriptEntry = ComposableEntry
-// Models without a PARENTS output: FATHER + MOTHER confirmations become PARENTS.
-export const COMPOSING_MODELS = new Set(['lab-signs74-combined'])
+// Models without a PARENTS output: FATHER + MOTHER confirmations become PARENTS (either order).
+// GRANDFATHER + GRANDMOTHER become GRANDPARENTS only for the modes listed in COMPOSED_SIGNS (v4 so far).
+export const COMPOSING_MODELS = new Set(['lab-signs74-combined', 'lab-signs74-motion-e', 'lab-signs74-motion-e-v2', 'lab-signs74-motion-e-v2-fusion', 'lab-signs74-motion-e-v4'])
 export const EXAMPLE_ANNOTATIONS = [
   { startMs: 6000, endMs: 8000, label: 'THANK_YOU', source: 'user approximate interval' },
   { startMs: 11000, endMs: 13000, label: 'YES', source: 'user approximate interval' },
@@ -117,7 +118,9 @@ export function createDiagnosticSession(options: {
       || options.modelMode === 'lab-signs32-standalone' || options.modelMode === 'lab-signs32-standalone-v4'
       || options.modelMode === 'lab-signs32-standalone-v5' || options.modelMode === 'lab-signs32-standalone-v5-motion'
       || options.modelMode === 'lab-signs32-similarity'
-      || options.modelMode === 'lab-signs74-combined' || options.modelMode === 'lab-ix-poss-pilot'
+      || options.modelMode === 'lab-signs74-combined' || options.modelMode === 'lab-signs74-motion-e'
+      || options.modelMode === 'lab-signs74-motion-e-v2' || options.modelMode === 'lab-signs74-motion-e-v2-fusion' || options.modelMode === 'lab-signs74-motion-e-v4'
+      || options.modelMode === 'lab-ix-poss-pilot'
       || options.modelMode === 'lab-ix-poss-motion'
       || options.modelMode === 'lab-alphabet')
   const waitForConfirmation = recognitionMode === 'segmented' && segmentAcceptance === 'confirmation'
@@ -366,7 +369,7 @@ export function createDiagnosticSession(options: {
     rows.push(row)
     if (decision.emit && prediction && requestId) {
       const entry = { label: prediction.label, score: prediction.score, decisionMs: decisionMs + resultAgeMs, requestId }
-      if (composeSigns) appendComposed(transcript, entry)
+      if (composeSigns) appendComposed(transcript, entry, undefined, options.modelMode)
       else transcript.push(entry)
     }
     status = failure ? 'Inference error — stop and reconnect' : decision.activity

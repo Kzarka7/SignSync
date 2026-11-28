@@ -9,7 +9,7 @@ export type LabRecognitionMode =
   | 'lab-signs43-motion-e'
   | 'lab-signs75-multi-batch'
   | 'lab-signs32-standalone' | 'lab-signs32-standalone-v4' | 'lab-signs32-standalone-v5' | 'lab-signs32-standalone-v5-motion' | 'lab-signs32-similarity'
-  | 'lab-signs74-combined'
+  | 'lab-signs74-combined' | 'lab-signs74-motion-e' | 'lab-signs74-motion-e-v2' | 'lab-signs74-motion-e-v2-fusion' | 'lab-signs74-motion-e-v4'
   | 'lab-ix-poss-pilot' | 'lab-ix-poss-motion'
 
 // One score per recognition/translation pipeline stage. Which keys show

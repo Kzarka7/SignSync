@@ -32,7 +32,7 @@ test('Lab keeps the pinned v1 run and caption rules alongside the v2 experiment'
     if (name.endsWith('/queueReview')) return load('src/services/landmarks/queueReview.ts')
     if (name.endsWith('/collectorShortcuts')) return load('src/services/dataset/collectorShortcuts.ts')
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: Symbol() }
-    if (name.endsWith('/useCameraFeed')) return { useCameraFeed: () => ({
+    if (name.endsWith('/useCameraFeed')) return { LIVE_RECOGNITION_CAMERA_OPTIONS: { landmarkMode: 'both', showPoseLandmarks: true, detectionInputWidth: 640, lowLightAssist: true, handDelegate: 'GPU', captureProfile: '720p', deferPose: true, adaptiveHandCapacity: true }, useCameraFeed: () => ({
       enabled: true, cameraReady: true, poseDetected: true, handsDetected: true,
       startPerformanceProfile: noop, stopPerformanceProfile: noop, getPerformanceReport: () => '{}',
     }) }
@@ -195,7 +195,7 @@ test('Lab replays multiple videos in order, keeps each result, and stops before 
     if (name.endsWith('/queueReview')) return load('src/services/landmarks/queueReview.ts')
     if (name.endsWith('/collectorShortcuts')) return load('src/services/dataset/collectorShortcuts.ts')
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: Symbol() }
-    if (name.endsWith('/useCameraFeed')) return { useCameraFeed: () => ({ stopPerformanceProfile: noop }) }
+    if (name.endsWith('/useCameraFeed')) return { LIVE_RECOGNITION_CAMERA_OPTIONS: { landmarkMode: 'both', showPoseLandmarks: true, detectionInputWidth: 640, lowLightAssist: true, handDelegate: 'GPU', captureProfile: '720p', deferPose: true, adaptiveHandCapacity: true }, useCameraFeed: () => ({ stopPerformanceProfile: noop }) }
     if (name.endsWith('/liveRecognitionPolicy')) return {
       LIVE_SIGNS_MODEL: model, LIVE_RECOGNITION_POLICY: {}, getRecognitionConfirmation: () => ({}),
     }

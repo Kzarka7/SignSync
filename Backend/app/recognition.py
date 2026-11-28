@@ -215,6 +215,15 @@ LAB_EXPERIMENTS = {
     # 43 Similar Signs v1 + standalone v3 signs (PARENTS composed in the Lab from
     # FATHER + MOTHER). Training clips were rebuilt in the live hand-slot order.
     'lab-signs74-combined': 'samples_74_signs_combined_v3',
+    # Same 74-sign vocabulary on recipe E (Motion E's features and network), 43 signs + 31 standalone v5
+    # signs + REST/IDLE_MOVEMENT; replaceable candidate (see app/sign_motion_e74_recognition.py).
+    'lab-signs74-motion-e': 'samples_74_signs_motion_e_v1',
+    # v1 plus live-crop training views (app/sign_motion_e74_recognition.py, SignMotionE74V2Recognizer).
+    'lab-signs74-motion-e-v2': 'samples_74_signs_motion_e_v2',
+    # v2 decides 43-sign vs other; Motion E picks the sign inside the 43 (app/sign_motion_e74_fusion_recognition.py).
+    'lab-signs74-motion-e-v2-fusion': 'samples_74_signs_motion_e_v2',
+    # v2 recipe + refreshed TUESDAY/THURSDAY, person folds (SignMotionE74V4Recognizer); failed its background gate.
+    'lab-signs74-motion-e-v4': 'samples_74_signs_motion_e_v4',
     'lab-signs32-similarity': 'samples_32_signs_similarity_v1',
     # Indexing + possessives pilot (IX-1..IX-3pl, POSS-1..POSS-3pl); no REST/IDLE.
     'lab-ix-poss-pilot': 'samples_12_signs_ix_poss_batch_holdout_v1',
@@ -406,6 +415,18 @@ def get_diagnostic_recognizer(mode: str = 'p4-candidate'):
                 elif mode == 'lab-signs43-motion-e':
                     from app.sign_motion_e_recognition import SignMotionERecognizer
                     _lab_recognizers[mode] = SignMotionERecognizer(root)
+                elif mode == 'lab-signs74-motion-e':
+                    from app.sign_motion_e74_recognition import SignMotionE74Recognizer
+                    _lab_recognizers[mode] = SignMotionE74Recognizer(root)
+                elif mode == 'lab-signs74-motion-e-v2':
+                    from app.sign_motion_e74_recognition import SignMotionE74V2Recognizer
+                    _lab_recognizers[mode] = SignMotionE74V2Recognizer(root)
+                elif mode == 'lab-signs74-motion-e-v4':
+                    from app.sign_motion_e74_recognition import SignMotionE74V4Recognizer
+                    _lab_recognizers[mode] = SignMotionE74V4Recognizer(root)
+                elif mode == 'lab-signs74-motion-e-v2-fusion':
+                    from app.sign_motion_e74_fusion_recognition import SignMotionE74FusionRecognizer
+                    _lab_recognizers[mode] = SignMotionE74FusionRecognizer(root)
                 else:
                     _lab_recognizers[mode] = GraphP4DiagnosticRecognizer(SampleDiagnosticRecognizer(root, mode))
             return _lab_recognizers[mode]

@@ -49,7 +49,7 @@ class DiagnosticRecognitionTests(unittest.TestCase):
         for mode in ('lab-grouped', 'lab-clip', 'lab-alphabet', 'lab-stage2', 'lab-signs38',
                      'lab-signs38-clip', 'lab-signs33', 'lab-signs43-numbers', 'lab-signs43-shape-motion',
                      'lab-signs43-similarity', 'lab-signs43-similarity-v2', 'lab-signs43-motion-e',
-                     'lab-signs32-similarity',
+                     'lab-signs74-motion-e', 'lab-signs74-motion-e-v2', 'lab-signs74-motion-e-v2-fusion', 'lab-signs74-motion-e-v4', 'lab-signs32-similarity',
                      'lab-signs32-standalone-v4', 'lab-signs32-standalone-v5', 'lab-signs32-standalone-v5-motion',
                      'lab-ix-poss-pilot', 'lab-ix-poss-motion'):
             recognizer_id = {'lab-alphabet': AlphabetDiagnosticRecognizer.model_id,
@@ -57,7 +57,7 @@ class DiagnosticRecognitionTests(unittest.TestCase):
             members = [(f'seed{s}',) for s in (42, 43, 44)] if mode == 'lab-stage2' else [('seed42',)]
             supports_short_preview = mode in ('lab-signs43-shape-motion', 'lab-signs43-similarity',
                                               'lab-signs43-similarity-v2', 'lab-signs43-motion-e',
-                                              'lab-signs32-similarity',
+                                              'lab-signs74-motion-e', 'lab-signs74-motion-e-v2', 'lab-signs74-motion-e-v2-fusion', 'lab-signs74-motion-e-v4', 'lab-signs32-similarity',
                                               'lab-signs32-standalone-v4', 'lab-signs32-standalone-v5',
                                               'lab-signs32-standalone-v5-motion',
                                               'lab-ix-poss-pilot', 'lab-ix-poss-motion')
@@ -325,6 +325,124 @@ class SignMotionERecognizerTests(unittest.TestCase):
     def test_low_hand_visibility_is_not_accepted(self):
         result = self.recognizer({}).predict(self.request(5))
         self.assertEqual((result['accepted'], result['rejectionReason']), (False, 'insufficient_hand_visibility'))
+
+
+class SignMotionE74RecognizerTests(unittest.TestCase):
+    """Combined 74-sign recipe-E candidate: Motion E's loader and rules on a 76-output checkpoint."""
+
+    @staticmethod
+    def recognizer(seen, label='PERSON', top=.9):
+        from app.sign_motion_e74_recognition import LABELS, SignMotionE74Recognizer
+        recognizer = SignMotionE74Recognizer.__new__(SignMotionE74Recognizer)
+        recognizer.labels, recognizer.lock, recognizer.confidence_threshold = LABELS, Lock(), .5
+        recognizer.mean, recognizer.std = np.zeros(205), np.ones(205)
+        def infer(features):
+            seen['features'] = features
+            out = np.full((1, 76), (1 - top) / 75, dtype=np.float32); out[0, LABELS.index(label)] = top
+            return out
+        recognizer.infer = infer
+        return recognizer
+
+    request = staticmethod(IxPossMotionRecognizerTests.request)
+
+    def test_mode_routes_to_its_own_recognizer_and_checkpoint(self):
+        from app.recognition import LAB_EXPERIMENTS
+        from app.sign_motion_e_recognition import LABELS as LABELS_43
+        from app.sign_motion_e74_recognition import LABELS, LABELS_31, MODEL_GROUP, MODEL_NAME, SignMotionE74Recognizer
+        self.assertEqual(LAB_EXPERIMENTS['lab-signs74-motion-e'], MODEL_GROUP)
+        self.assertEqual(SignMotionE74Recognizer.model_id, 'lab-signs74-motion-e-seed42-graph-diagnostics')
+        self.assertEqual(SignMotionE74Recognizer.model_location, ('candidates', MODEL_GROUP, MODEL_NAME))
+        self.assertNotIn('lab-signs74-motion-e', HAND_SWAPPED_TRAINING)
+        self.assertFalse(SignMotionE74Recognizer.swap_hand_slots)
+        self.assertEqual(len(LABELS), 76)
+        self.assertEqual(LABELS[:74], sorted(LABELS_43 + LABELS_31))
+        self.assertEqual(LABELS[74:], ['IDLE_MOVEMENT', 'REST'])
+        self.assertNotIn('PARENTS', LABELS)
+
+    def test_v2_mode_loads_the_live_crop_checkpoint_beside_v1(self):
+        from app.recognition import LAB_EXPERIMENTS
+        from app.sign_motion_e74_recognition import (LABELS, MODEL_GROUP, MODEL_GROUP_V2, MODEL_NAME_V2,
+                                                     SignMotionE74Recognizer, SignMotionE74V2Recognizer)
+        self.assertEqual(LAB_EXPERIMENTS['lab-signs74-motion-e'], MODEL_GROUP)
+        self.assertEqual(LAB_EXPERIMENTS['lab-signs74-motion-e-v2'], MODEL_GROUP_V2)
+        self.assertEqual(SignMotionE74V2Recognizer.model_id, 'lab-signs74-motion-e-v2-seed42-graph-diagnostics')
+        self.assertEqual(SignMotionE74V2Recognizer.model_location, ('candidates', MODEL_GROUP_V2, MODEL_NAME_V2))
+        self.assertNotEqual(SignMotionE74V2Recognizer.model_location, SignMotionE74Recognizer.model_location)
+        self.assertIs(SignMotionE74V2Recognizer.expected_labels, LABELS)
+        self.assertNotIn('lab-signs74-motion-e-v2', HAND_SWAPPED_TRAINING)
+
+    def test_v4_mode_loads_the_refreshed_checkpoint_beside_v2(self):
+        from app.recognition import LAB_EXPERIMENTS
+        from app.sign_motion_e74_recognition import (LABELS, MODEL_GROUP_V4, MODEL_NAME_V4, SignMotionE74V2Recognizer,
+                                                     SignMotionE74V4Recognizer)
+        self.assertEqual(LAB_EXPERIMENTS['lab-signs74-motion-e-v4'], MODEL_GROUP_V4)
+        self.assertEqual(SignMotionE74V4Recognizer.model_id, 'lab-signs74-motion-e-v4-seed42-graph-diagnostics')
+        self.assertEqual(SignMotionE74V4Recognizer.model_location, ('candidates', MODEL_GROUP_V4, MODEL_NAME_V4))
+        self.assertNotEqual(SignMotionE74V4Recognizer.model_location, SignMotionE74V2Recognizer.model_location)
+        self.assertIs(SignMotionE74V4Recognizer.expected_labels, LABELS)
+        self.assertNotIn('lab-signs74-motion-e-v4', HAND_SWAPPED_TRAINING)
+
+    def test_fusion_mode_routes_to_v2_plus_motion_e(self):
+        from app.recognition import LAB_EXPERIMENTS
+        from app.sign_motion_e74_fusion_recognition import SignMotionE74FusionRecognizer
+        from app.sign_motion_e74_recognition import MODEL_GROUP_V2, SignMotionE74V2Recognizer
+        self.assertEqual(LAB_EXPERIMENTS['lab-signs74-motion-e-v2-fusion'], MODEL_GROUP_V2)
+        self.assertEqual(SignMotionE74FusionRecognizer.model_id, 'lab-signs74-motion-e-v2-fusion-seed42-graph-diagnostics')
+        self.assertEqual(SignMotionE74FusionRecognizer.model_location, SignMotionE74V2Recognizer.model_location)
+        self.assertNotIn('lab-signs74-motion-e-v2-fusion', HAND_SWAPPED_TRAINING)
+
+    def test_fusion_lets_motion_e_pick_inside_the_43_signs(self):
+        from app.sign_motion_e_recognition import LABELS as LABELS_43
+        from app.sign_motion_e74_fusion_recognition import SignMotionE74FusionRecognizer
+        from app.sign_motion_e74_recognition import LABELS
+        seen = {}
+        fusion = SignMotionE74FusionRecognizer.__new__(SignMotionE74FusionRecognizer)
+        fusion.labels, fusion.lock, fusion.confidence_threshold, fusion.members = LABELS, Lock(), .5, []
+        fusion.mean, fusion.std = np.full(205, 2.), np.full(205, 4.)
+        def v2_infer(x):   # v2: 0.8 on YES (a 43-sign), 0.1 on FAST (31-sign), 0.1 on REST
+            out = np.zeros((1, 76), dtype=np.float32)
+            out[0, LABELS.index('YES')], out[0, LABELS.index('FAST')], out[0, LABELS.index('REST')] = .8, .1, .1
+            return out
+        def e_infer(x):    # Motion E: MONDAY inside the 43; sees raw features through its own scalers
+            seen['e_input'] = np.asarray(x)
+            out = np.zeros((1, 43), dtype=np.float32); out[0, LABELS_43.index('MONDAY')] = .9; out[0, LABELS_43.index('YES')] = .1
+            return out
+        fusion.infer = v2_infer
+        fusion.attach_motion_e(SimpleNamespace(labels=LABELS_43, infer=e_infer, mean=np.full(205, 1.), std=np.full(205, 2.),
+                                               members=[]))
+        p = fusion.infer(np.zeros((1, 40, 205), dtype=np.float32))[0]
+        self.assertAlmostEqual(float(p.sum()), 1., places=5)
+        self.assertAlmostEqual(float(p[LABELS.index('MONDAY')]), .72, places=5)
+        self.assertAlmostEqual(float(p[LABELS.index('YES')]), .08, places=5)
+        self.assertAlmostEqual(float(p[LABELS.index('FAST')]), .1, places=5)
+        self.assertAlmostEqual(float(p[LABELS.index('REST')]), .1, places=5)
+        # v2-standardized 0 -> raw 2 -> Motion E standardized (2 - 1) / 2 = 0.5
+        np.testing.assert_allclose(seen['e_input'], .5)
+        result = fusion.predict(self.request(12))
+        self.assertEqual((result['label'], result['model']), ('MONDAY', 'lab-signs74-motion-e-v2-fusion-seed42-graph-diagnostics'))
+
+    def test_motion_e_still_loads_its_own_checkpoint(self):
+        from app.sign_motion_e_recognition import LABELS, MODEL_GROUP, MODEL_NAME, SignMotionERecognizer
+        self.assertEqual(SignMotionERecognizer.model_location, ('current', MODEL_GROUP, MODEL_NAME))
+        self.assertIs(SignMotionERecognizer.expected_labels, LABELS)
+
+    def test_signs_from_both_vocabularies_use_205_channel_features(self):
+        for label in ('WHAT', 'PERSON'):
+            seen = {}
+            result = self.recognizer(seen, label).predict(self.request(12))
+            self.assertEqual(seen['features'].shape, (1, 40, 205))
+            self.assertEqual((result['label'], result['accepted'], result['model']),
+                             (label, True, 'lab-signs74-motion-e-seed42-graph-diagnostics'))
+
+    def test_background_is_returned_as_its_own_label(self):
+        result = self.recognizer({}, 'REST').predict(self.request(12))
+        self.assertEqual(result['label'], 'REST')
+
+    def test_no_hands_is_idle_without_inference(self):
+        seen = {}
+        result = self.recognizer(seen).predict(self.request(0))
+        self.assertEqual((result['label'], result['accepted']), ('IDLE', False))
+        self.assertNotIn('features', seen)
 
 
 if __name__ == '__main__':

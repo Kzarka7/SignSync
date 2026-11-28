@@ -41,7 +41,42 @@ test('a composed sign is not reused as a part', () => {
   assert.deepEqual(transcript.map(e => e.label), ['PARENTS', 'FATHER'])
 })
 
-test('only the combined model composes', () => {
+const V4 = 'lab-signs74-motion-e-v4'
+
+test('GRANDFATHER and GRANDMOTHER become GRANDPARENTS in either order on v4', () => {
+  for (const [first, second] of [['GRANDFATHER', 'GRANDMOTHER'], ['GRANDMOTHER', 'GRANDFATHER']]) {
+    const transcript = [entry('HELLO', 0)]
+    assert.equal(appendComposed(transcript, entry(first, 1000, .9), undefined, V4), false)
+    assert.equal(appendComposed(transcript, entry(second, 2500, .7), undefined, V4), true)
+    assert.deepEqual(transcript.map(e => e.label), ['HELLO', 'GRANDPARENTS'])
+    assert.equal(transcript[1].score, .7)
+    assert.deepEqual([...transcript[1].composedFrom.map(e => e.label)], [first, second])
+  }
+})
+
+test('GRANDPARENTS composes only for v4; PARENTS still composes everywhere', () => {
+  for (const mode of [undefined, 'lab-signs74-motion-e-v2', 'lab-signs74-combined']) {
+    const transcript = []
+    appendComposed(transcript, entry('GRANDFATHER', 0), undefined, mode)
+    appendComposed(transcript, entry('GRANDMOTHER', 1000), undefined, mode)
+    appendComposed(transcript, entry('FATHER', 5000), undefined, mode)
+    appendComposed(transcript, entry('MOTHER', 6000), undefined, mode)
+    assert.deepEqual(transcript.map(e => e.label), ['GRANDFATHER', 'GRANDMOTHER', 'PARENTS'], String(mode))
+  }
+})
+
+test('parts of different composed signs do not mix', () => {
+  const transcript = []
+  appendComposed(transcript, entry('FATHER', 0), undefined, V4)
+  appendComposed(transcript, entry('GRANDMOTHER', 1000), undefined, V4)
+  appendComposed(transcript, entry('GRANDFATHER', 1000 + COMPOSITION_MAX_GAP_MS + 1), undefined, V4)
+  appendComposed(transcript, entry('GRANDFATHER', 6000), undefined, V4)
+  assert.deepEqual(transcript.map(e => e.label), ['FATHER', 'GRANDMOTHER', 'GRANDFATHER', 'GRANDFATHER'])
+})
+
+test('only the combined models compose', () => {
   assert.equal(COMPOSING_MODELS.has('lab-signs74-combined'), true)
+  assert.equal(COMPOSING_MODELS.has('lab-signs74-motion-e'), true)
+  assert.equal(COMPOSING_MODELS.has('lab-signs43-motion-e'), false)
   assert.equal(COMPOSING_MODELS.has('lab-signs32-standalone'), false)
 })

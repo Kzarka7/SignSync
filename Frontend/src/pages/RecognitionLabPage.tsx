@@ -6,14 +6,14 @@ import PageHeader from '../components/layout/PageHeader'
 import CameraPanel from '../components/live/CameraPanel'
 import LabCaptionPreview from '../components/live/LabCaptionPreview'
 import LabGlossTrack, { LabGlossSuggestions } from '../components/live/LabGlossTrack'
-import { DEFAULT_LIVE_CAPTURE_PROFILE, OPTIMIZED_LIVE_CAMERA_OPTIONS, useCameraFeed, type CaptureProfile, type LandmarkMode, type LiveCameraTiming } from '../hooks/useCameraFeed'
+import { LIVE_RECOGNITION_CAMERA_OPTIONS, OPTIMIZED_LIVE_CAMERA_OPTIONS, useCameraFeed, type CaptureProfile, type LandmarkMode, type LiveCameraTiming } from '../hooks/useCameraFeed'
 import type { HandDelegatePreference } from '../services/landmarks/visionRuntime'
 
 // Lab only: the palm detector also accepts curled-finger shapes and blurred
 // hands. Other pages keep the 0.5 default.
 import { createDiagnosticSession, FINGERSPELLING_PAUSE_MS } from '../services/landmarks/recognitionDiagnostics'
 import { CONTINUOUS_SETTINGS, displayActivity } from '../services/landmarks/continuousRecognition'
-import { getRecognitionConfirmation, LIVE_RECOGNITION_POLICY, LIVE_SIGNS_MODEL } from '../services/landmarks/liveRecognitionPolicy'
+import { getRecognitionConfirmation, LIVE_MOTION_PROFILE, LIVE_RECOGNITION_POLICY, LIVE_SIGNS_MODEL } from '../services/landmarks/liveRecognitionPolicy'
 import { replayVideo, MAX_REPLAY_SECONDS } from '../services/landmarks/videoReplay'
 import type { LabCaptionMode } from '../services/landmarks/labCaptions'
 import { labGlossReport, suggestLabGlosses, type GlossAnnotation } from '../services/landmarks/labGlosses'
@@ -33,16 +33,25 @@ type FingerspellingTrial = {
   words: { recognized: string; confirmed: string }[]
 }
 const EMPTY_FINGERSPELLING: FingerspellingTrial = { draft: '', recognized: '', words: [] }
-const BASELINE_LABEL = '43 Similar Signs (v1 baseline)'
+const BASELINE_LABEL = '43 Similar Signs (motion E)'
 const V2_MODEL = 'lab-signs43-similarity-v2'
 const EXPANDED_MODEL = 'lab-signs75-multi-batch'
 const STANDALONE_MODEL = 'lab-signs32-standalone'
 const COMBINED_MODEL = 'lab-signs74-combined'
-// Recipe E candidate: same 43 signs as v1 (sign-motion-cues-v1 features, bidirectional GRU).
-const MOTION_E_MODEL = 'lab-signs43-motion-e'
+// Replaceable candidate: 74 signs on recipe E (Motion E's features and network); PARENTS is composed.
+// Backend: app/sign_motion_e74_recognition.py. A retrained checkpoint keeps this mode and label.
+const COMBINED_E_MODEL = 'lab-signs74-motion-e'
+// Same 74 signs, v1 plus live-crop training views (samples_74_signs_motion_e_v2). Kept beside v1 for comparison.
+const COMBINED_E_V2_MODEL = 'lab-signs74-motion-e-v2'
+// v2 decides 43-sign vs other; Motion E picks the sign inside the 43 (backend app/sign_motion_e74_fusion_recognition.py).
+const COMBINED_E_FUSION_MODEL = 'lab-signs74-motion-e-v2-fusion'
+// v2 recipe retrained with the refreshed TUESDAY/THURSDAY clips (samples_74_signs_motion_e_v4); Lab-only beside v2.
+const COMBINED_E_V4_MODEL = 'lab-signs74-motion-e-v4'
+// Motion E (sign-motion-cues-v1 features, bidirectional GRU) is the live model since 2026-11-25;
+// it replaced the 43 Similar Signs v1 baseline ('lab-signs43-similarity') here and in Live Conversation.
+const MOTION_E_MODEL = LIVE_SIGNS_MODEL
 const LAB_MODES = [
   { value: LIVE_SIGNS_MODEL, label: BASELINE_LABEL },
-  { value: MOTION_E_MODEL, label: '43 Similar Signs (motion E candidate)' },
   // Archived 2026-11-24 (see SignSync Dataset/documentation/candidates-archive-20261124.md):
   // 43 v2, 75 multi-batch, 32 similarity, IX/POSS first pilot, 33 signs, 43 numbers, 43 shape-motion.
   { value: STANDALONE_MODEL, label: '32 Signs (standalone v3)' },
@@ -50,6 +59,10 @@ const LAB_MODES = [
   { value: 'lab-signs32-standalone-v5', label: '32 Signs (standalone v5, adds P4 clips)' },
   { value: 'lab-signs32-standalone-v5-motion', label: '32 Signs (standalone v5, motion + augmentation)' },
   { value: COMBINED_MODEL, label: '74 Signs + PARENTS (combined v3)' },
+  { value: COMBINED_E_MODEL, label: '74 Signs + PARENTS (combined motion E candidate)' },
+  { value: COMBINED_E_V2_MODEL, label: '74 Signs + PARENTS (combined motion E v2, live-crop)' },
+  { value: COMBINED_E_FUSION_MODEL, label: '74 Signs + PARENTS (v2 + Motion E fusion)' },
+  { value: COMBINED_E_V4_MODEL, label: '74 Signs + PARENTS + GRANDPARENTS (combined motion E v4, refreshed TUESDAY/THURSDAY)' },
   { value: 'lab-ix-poss-motion', label: 'Indexing + Possessives (motion v1)' },
   { value: 'p4-candidate', label: 'P4 experimental' },
   { value: 'lab-alphabet', label: 'Alphabet A–Z' },
@@ -219,20 +232,18 @@ export default function RecognitionLabPage() {
   const [captionMode, setCaptionMode] = useState<LabCaptionMode>('v1')
   const [benchmarking, setBenchmarking] = useState(false)
   const [benchmarkReport, setBenchmarkReport] = useState<string | null>(null)
-  const [landmarkMode, setLandmarkMode] = useState<LandmarkMode>('both')
-  const [showPoseLandmarks, setShowPoseLandmarks] = useState(true)
-  // 640 px keeps the frame's aspect ratio and normalized landmark
-  // coordinates, so recognition features are unchanged; the hand model is
-  // about 4 ms faster per frame on integrated graphics.
-  const [detectionInputWidth, setDetectionInputWidth] = useState<DetectionInputWidth>(640)
-  const [lowLightAssist, setLowLightAssist] = useState(true)
-  const [handDelegate, setHandDelegate] = useState<HandDelegatePreference>('GPU')
-  const [captureProfile, setCaptureProfile] = useState<CaptureProfile>(DEFAULT_LIVE_CAPTURE_PROFILE)
-  const [deferPose, setDeferPose] = useState(true)
-  // Lab trial before the Collector: one-hand model while a single hand is tracked.
-  const [adaptiveHandCapacity, setAdaptiveHandCapacity] = useState(true)
+  // Defaults are LIVE_RECOGNITION_CAMERA_OPTIONS, which Live Conversation uses unchanged.
+  const [landmarkMode, setLandmarkMode] = useState<LandmarkMode>(LIVE_RECOGNITION_CAMERA_OPTIONS.landmarkMode)
+  const [showPoseLandmarks, setShowPoseLandmarks] = useState<boolean>(LIVE_RECOGNITION_CAMERA_OPTIONS.showPoseLandmarks)
+  const [detectionInputWidth, setDetectionInputWidth] = useState<DetectionInputWidth>(LIVE_RECOGNITION_CAMERA_OPTIONS.detectionInputWidth)
+  const [lowLightAssist, setLowLightAssist] = useState<boolean>(LIVE_RECOGNITION_CAMERA_OPTIONS.lowLightAssist)
+  const [handDelegate, setHandDelegate] = useState<HandDelegatePreference>(LIVE_RECOGNITION_CAMERA_OPTIONS.handDelegate)
+  const [captureProfile, setCaptureProfile] = useState<CaptureProfile>(LIVE_RECOGNITION_CAMERA_OPTIONS.captureProfile)
+  const [deferPose, setDeferPose] = useState<boolean>(LIVE_RECOGNITION_CAMERA_OPTIONS.deferPose)
+  const [adaptiveHandCapacity, setAdaptiveHandCapacity] = useState<boolean>(LIVE_RECOGNITION_CAMERA_OPTIONS.adaptiveHandCapacity)
   const supportsMotionEvidence = modelMode === 'lab-signs43-shape-motion' || modelMode === LIVE_SIGNS_MODEL
-    || modelMode === V2_MODEL || modelMode === EXPANDED_MODEL || modelMode === COMBINED_MODEL
+    || modelMode === V2_MODEL || modelMode === EXPANDED_MODEL || modelMode === COMBINED_MODEL || modelMode === COMBINED_E_MODEL
+    || modelMode === COMBINED_E_V2_MODEL || modelMode === COMBINED_E_FUSION_MODEL || modelMode === COMBINED_E_V4_MODEL
   const [videoQueue, setVideoQueue] = useState<QueuedVideo[]>([])
   const [videoId, setVideoId] = useState<number | null>(null)
   const file = videoQueue.find(item => item.id === videoId)?.file ?? null
@@ -428,8 +439,10 @@ export default function RecognitionLabPage() {
         source, ...LIVE_RECOGNITION_POLICY, ...confirmation, modelMode, name,
         wallClockWindows: source === 'camera', poseGuidedOcclusion: source === 'camera',
         // Motion E: only the FIVE/WAVE_GREETING pair and the TEN -> next-sign rule (see signMotionEvidence.ts).
-        staticMotionCheck: supportsMotionEvidence || modelMode === MOTION_E_MODEL,
-        ...(modelMode === MOTION_E_MODEL ? { motionProfile: 'motion-e' as const } : {}),
+        staticMotionCheck: supportsMotionEvidence,
+        // The combined motion E candidate contains all 43 Motion E signs, so it uses the same profile.
+        ...(modelMode === MOTION_E_MODEL || modelMode === COMBINED_E_MODEL || modelMode === COMBINED_E_V2_MODEL
+          || modelMode === COMBINED_E_FUSION_MODEL || modelMode === COMBINED_E_V4_MODEL ? { motionProfile: LIVE_MOTION_PROFILE } : {}),
         predict: request => client.predict(request),
         onWordBoundary: modelMode === 'lab-alphabet' ? () => {
           if (!isCurrent() || !spelling.draft && !spelling.recognized) return
@@ -576,9 +589,9 @@ export default function RecognitionLabPage() {
   while (lastPrediction >= 0 && !rows[lastPrediction].prediction) lastPrediction--
   const signTiming = rows[lastPrediction]
   const transcript = snapshot?.transcript ?? []
-  const supportsGloss = modelMode === LIVE_SIGNS_MODEL || modelMode === V2_MODEL || modelMode === MOTION_E_MODEL
+  const supportsGloss = modelMode === LIVE_SIGNS_MODEL || modelMode === V2_MODEL
     || modelMode === 'lab-alphabet'
-  const glossSuggestions = modelMode === LIVE_SIGNS_MODEL || modelMode === V2_MODEL || modelMode === MOTION_E_MODEL
+  const glossSuggestions = modelMode === LIVE_SIGNS_MODEL || modelMode === V2_MODEL
     ? suggestLabGlosses(transcript, rows) : []
   const glossDurationMs = Math.floor(source === 'video'
     ? replayInfo.current ? replayInfo.current.durationSeconds * 1000 : videoDurationMs

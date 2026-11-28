@@ -197,6 +197,25 @@ export const OPTIMIZED_LIVE_CAMERA_OPTIONS = {
   handDetectionConfidence: LIVE_HAND_DETECTION_CONFIDENCE,
 } as const satisfies UseCameraFeedOptions;
 
+// The Recognition Lab's default camera setup (its settings panel starts here).
+// Live Conversation uses exactly these options, so live recognition gets the
+// same detection schedule, input size and frame rate as the Lab.
+export const LIVE_RECOGNITION_CAMERA_OPTIONS = {
+  ...OPTIMIZED_LIVE_CAMERA_OPTIONS,
+  trackLiveTiming: true,
+  trackOverlayPaint: true,
+  landmarkMode: "both",
+  showPoseLandmarks: true,
+  // 640 px keeps the aspect ratio and normalized landmark coordinates, so
+  // recognition features are unchanged; the hand model is faster per frame.
+  detectionInputWidth: 640,
+  lowLightAssist: true,
+  handDelegate: "GPU",
+  captureProfile: DEFAULT_LIVE_CAPTURE_PROFILE,
+  // One-hand landmarker while a single hand is tracked.
+  adaptiveHandCapacity: true,
+} as const satisfies UseCameraFeedOptions;
+
 // Owns the camera stream and the MediaPipe HandLandmarker + PoseLandmarker
 // detection loop. Renders nothing itself - callers attach
 // `videoRef`/`canvasRef` to their own <video>/<canvas> elements and read

@@ -42,6 +42,9 @@ test('lab selections verify their own checkpoint identity and reject the other m
     // The motion retrain must not accept the plain v5 checkpoint.
     ['lab-signs32-standalone-v5-motion', 'lab-signs32-standalone-v5-motion-seed42-graph-diagnostics', 'lab-signs32-standalone-v5-seed42-graph-diagnostics'],
     ['lab-signs74-combined', 'lab-signs74-combined-v3-seed42-graph-diagnostics', 'lab-signs74-combined-v1-seed42-graph-diagnostics'],
+    // The combined motion E candidate must not accept combined v3 or Motion E.
+    ['lab-signs74-motion-e', 'lab-signs74-motion-e-seed42-graph-diagnostics', 'lab-signs74-combined-v3-seed42-graph-diagnostics'],
+    ['lab-signs74-motion-e', 'lab-signs74-motion-e-seed42-graph-diagnostics', 'lab-signs43-motion-e-seed42-graph-diagnostics'],
     ['lab-ix-poss-pilot', 'lab-ix-poss-pilot-seed42-graph-diagnostics', 'lab-signs32-standalone-v3-seed42-graph-diagnostics'],
     ['lab-ix-poss-motion', 'lab-ix-poss-motion-seed42-graph-diagnostics', 'lab-ix-poss-pilot-seed42-graph-diagnostics'],
     ['lab-alphabet', 'lab-alphabet-j460-v2-seed43-graph-diagnostics', model],
