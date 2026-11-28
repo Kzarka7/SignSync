@@ -26,11 +26,22 @@ async def translate_socket(websocket: WebSocket):
                 'lab-signs43-numbers': '43-sign days-and-numbers pilot',
                 'lab-signs43-shape-motion': '43-sign handshape-and-motion pilot',
                 'lab-signs43-similarity': '43-sign similar-signs pilot',
+                'lab-signs43-motion-e': '43 Similar Signs motion E candidate',
                 'lab-signs43-similarity-v2': '43 Similar Signs v2',
                 'lab-signs75-candidate': '75-sign held-out batch experiment',
                 'lab-signs75-multi-batch': '75-sign multi-batch candidate',
-                'lab-signs32-standalone': '32-sign standalone candidate',
-                'lab-signs32-similarity': '32-sign similarity recipe'}[mode]
+                'lab-signs32-standalone': '32-sign standalone v3',
+                'lab-signs32-standalone-v4': '32-sign standalone v4',
+                'lab-signs32-standalone-v5': '32-sign standalone v5',
+                'lab-signs32-standalone-v5-motion': '32-sign standalone v5 motion + augmentation',
+                'lab-signs32-similarity': '32-sign similarity recipe',
+                'lab-ix-poss-pilot': 'Indexing and possessives first pilot',
+                'lab-ix-poss-motion': 'Indexing and possessives motion v1',
+                'lab-signs74-combined': '74-sign combined v3',
+                'lab-signs74-motion-e': '74-sign combined motion E candidate',
+                'lab-signs74-motion-e-v2': '74-sign combined motion E v2 (live-crop) candidate',
+                'lab-signs74-motion-e-v2-fusion': '74-sign v2 + Motion E fusion candidate',
+                'lab-signs74-motion-e-v4': '74-sign combined motion E v4 (refreshed TUESDAY/THURSDAY) candidate'}[mode]
         diagnostics = websocket.query_params.get('diagnostics', '0')
         if (diagnostics not in ('0', '1') or (diagnostics == '1' and mode == 'v5') or
                 (mode in LAB_EXPERIMENTS and diagnostics != '1')):

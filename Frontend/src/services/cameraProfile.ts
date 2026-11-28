@@ -133,5 +133,42 @@ function summarizeBenchmark(samples: DetectionTiming[], round: (value: number) =
     frameCopyMs: percentiles(samples.map(sample => sample.frameCopyMs ?? 0)),
     callbackToOverlayPaintOpportunityMs: percentiles(samples.flatMap(sample =>
       sample.overlayPaintOpportunityMs === undefined ? [] : [sample.overlayPaintOpportunityMs])),
+    handSides: summarizeHandSides(samples),
   }
+}
+
+// Left/right stability on distinct video frames, from the reported hand
+// count and the side of a lone hand. A lone hand that changes side between
+// consecutive frames, or a second hand present for only one or two frames
+// between one-hand frames, is usually one hand assigned twice.
+const SIDE_SWITCH_MAX_GAP_MS = 250
+const BRIEF_SECOND_HAND_FRAMES = 2
+
+export function summarizeHandSides(samples: DetectionTiming[]) {
+  let oneHandFrames = 0, twoHandFrames = 0, oneHandSideSwitches = 0, briefSecondHands = 0, secondHandOnSearch = 0
+  let previous: DetectionTiming | undefined, previousMediaTime: number | undefined
+  let lastOneHand: DetectionTiming | undefined
+  let twoHandRun = 0, runAfterOneHand = false
+  for (const sample of samples) {
+    if (sample.mediaTime === undefined || sample.mediaTime === previousMediaTime || sample.handCount === undefined) continue
+    previousMediaTime = sample.mediaTime
+    if (sample.handCount === 2) {
+      twoHandFrames++
+      if (!twoHandRun) runAfterOneHand = previous?.handCount === 1
+      twoHandRun++
+      // The two-hand search frame of one-hand mode found a second hand.
+      if (sample.handCapacity === 2 && previous?.handCapacity === 1) secondHandOnSearch++
+    } else {
+      if (sample.handCount === 1) {
+        oneHandFrames++
+        if (twoHandRun && twoHandRun <= BRIEF_SECOND_HAND_FRAMES && runAfterOneHand) briefSecondHands++
+        if (lastOneHand && previous === lastOneHand && sample.completedAt - lastOneHand.completedAt <= SIDE_SWITCH_MAX_GAP_MS
+          && sample.singleHandSide && lastOneHand.singleHandSide && sample.singleHandSide !== lastOneHand.singleHandSide) oneHandSideSwitches++
+        lastOneHand = sample
+      }
+      twoHandRun = 0
+    }
+    previous = sample
+  }
+  return { oneHandFrames, twoHandFrames, oneHandSideSwitches, briefSecondHands, secondHandOnSearch }
 }

@@ -22,6 +22,12 @@ Update the SignSync README when setup or runtime configuration changes. Use this
 
 ## Work notes
 
+- [[2026-11-19 Recognition Lab Video Queue]] — multi-video replay, per-clip results, and sequential decoding.
+
+- [[2026-11-19 Recognition Lab Live Accuracy Plan]] — model identity, live-window diagnosis, dataset review, and continuous evaluation.
+
+- [2026-11-18 BAD and Grandparent Retraining Preparation](obsidian://open?vault=SignSync%20Dataset&file=documentation%2F2026-11-18%20BAD%20and%20Grandparent%20Retraining%20Preparation) — refreshed samples, standalone v2 retraining, and Recognition Lab rollout.
+
 - [[2026-11-18 Collector Live Landmark FPS]] — shared live camera settings, recording progress, and sample parity.
 
 - [[2026-11-17 Landmark Viewer Playback]] — rendering performance and playback timing in the landmark comparison script.
@@ -42,3 +48,8 @@ Update the SignSync README when setup or runtime configuration changes. Use this
 - [2026-11-15 New 32 Signs Recognition Lab Retraining](obsidian://open?vault=SignSync%20Dataset&file=documentation%2F2026-11-15%20New%2032%20Signs%20Recognition%20Lab%20Retraining)
 
 - [[2026-11-15 Sign Language Recognition Research References]] — five published systems compared with SignSync’s recognition, segmentation, and captions.
+
+- [[2026-11-19 Uploaded Video Replay Fix]] — uploaded WebM duration validation and replay.
+
+
+- [[Graph Index]] — knowledge graph of the code and docs (graphify).
