@@ -26,19 +26,20 @@ export const SIGN_LABEL_GROUPS = [
   { title: 'Conversation and feedback', labels: [
     'YES', 'NO', 'MAYBE', 'AGAIN', 'UNDERSTAND', 'DONT_UNDERSTAND', 'CORRECT', 'WRONG', 'FINE',
     'NOT_FINE', 'KNOW', 'DONT_KNOW', 'COMMUNICATION', 'SIGN',
+    'CAN', 'CANT', 'WITH', 'WITHOUT',
   ] },
   { title: 'Questions', labels: ['WHAT', 'WHY', 'WHERE', 'WHEN', 'WHO', 'WHICH', 'HOW'] },
   { title: 'People and family', labels: [
     'PERSON', 'FRIEND', 'FAMILY', 'MOTHER', 'FATHER', 'PARENTS', 'GRANDMOTHER', 'GRANDFATHER', 'DEAF',
-    'HEARING', 'HARD_OF_HEARING', 'NAME', 'BOY', 'GIRL', 'MAN', 'WOMAN',
+    'HEARING', 'HARD_OF_HEARING', 'NAME', 'BOY', 'GIRL',
   ] },
   { title: 'Indexing', labels: indexingPrompts.map(([label]) => label) },
   { title: 'Possessives', labels: possessivePrompts.map(([label]) => label) },
   { title: 'School and places', labels: ['SCHOOL', 'TEACHER', 'STUDENT', 'ROOM'] },
   { title: 'Daily needs and actions', labels: ['HELP', 'STAY', 'WAIT', 'EAT', 'DRINK', 'WATER', 'MONEY', 'FAST', 'SLOW',
-    'GO', 'COME', 'WANT', 'NEED', 'START', 'FINISH', 'OPEN', 'CLOSE', 'ENTER',
+    'GO', 'COME', 'ENTER', 'STOP', 'LEARN',
   ] },
-  { title: 'Directions', labels: ['LEFT', 'RIGHT', 'UP', 'DOWN', 'NEAR', 'FAR', 'DIRECTION', 'EXIT'] },
+  { title: 'Directions', labels: ['LEFT', 'RIGHT', 'UP', 'DOWN', 'DIRECTION', 'EXIT'] },
   { title: 'Feelings and health', labels: ['HAPPY', 'SAD', 'TIRED', 'SICK', 'GOOD', 'BAD'] },
   { title: 'Numbers', labels: ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN', 'NUMBER'] },
   { title: 'Days and time', labels: [
@@ -50,7 +51,11 @@ export const SIGN_LABEL_GROUPS = [
 
 export const DEFAULT_SIGN_LABELS = SIGN_LABEL_GROUPS.flatMap(group => group.labels)
 
-export const RETIRED_SIGN_LABELS = new Set(['SLEEP', 'BATHROOM'])
+export const RETIRED_SIGN_LABELS = new Set([
+  'SLEEP', 'BATHROOM',
+  // Dropped from the 2026-11 batch; kept out of the picker even if samples exist.
+  'MAN', 'WOMAN', 'WANT', 'NEED', 'START', 'FINISH', 'OPEN', 'CLOSE', 'NEAR', 'FAR',
+])
 
 export const MONTH_LABELS = new Set([
   'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST',
